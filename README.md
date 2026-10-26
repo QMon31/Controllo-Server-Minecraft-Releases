@@ -1,2 +1,2 @@
 # Controllo-Server-Minecraft-Releases
-Installer e aggiornamenti di Controllo Server Minecraft (solo release, nessun codice sorgente)
+Installer e aggiornamenti di Voxarium (solo release, nessun codice sorgente)
