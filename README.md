@@ -1,91 +1,94 @@
 # Voxarium
 
-**Voxarium** è un programma per Windows che serve a gestire un server di **Minecraft Java Edition** dal proprio PC,
-da un pannello semplice, senza usare la riga di comando. Si controlla dal PC, dal browser e dal telefono, in casa e
-da fuori casa.
+**Voxarium** is a Windows program for running a **Minecraft Java Edition** server on your own PC from a simple
+control panel, without using the command line. You can manage it from the PC itself, from a browser and from your
+phone, both at home and away from home.
 
-Questo repository contiene **solo l'installer e gli aggiornamenti** del programma: il codice sorgente non è pubblico.
+This repository contains **only the installer and the updates** of the program: the source code is not public.
 
-**[Scarica l'ultima versione (Setup_Voxarium.exe)](https://github.com/QMon31/Controllo-Server-Minecraft-Releases/releases/latest/download/Setup_Voxarium.exe)**
-· [Tutte le versioni e le novità](https://github.com/QMon31/Controllo-Server-Minecraft-Releases/releases)
+**[Download the latest version (Setup_Voxarium.exe)](https://github.com/QMon31/Controllo-Server-Minecraft-Releases/releases/latest/download/Setup_Voxarium.exe)**
+· [All versions and release notes](https://github.com/QMon31/Controllo-Server-Minecraft-Releases/releases)
 
----
-
-## Cosa fa
-
-### Il server
-- **Avvio, arresto, riavvio** e arresto forzato con un clic; i giocatori vengono avvisati in chat prima di un riavvio.
-- **Riavvio programmato** (per esempio ogni 4 ore) e **riavvio automatico dopo un crash**.
-- **Modalità Eco**: spegne il server quando resta vuoto per un po', per risparmiare energia.
-- **Controllo anti-lag**: avvisa quando il server rallenta (TPS bassi) e può ripulire gli oggetti a terra.
-- **Console in tempo reale**, con invio di comandi, e **chat** per scrivere ai giocatori dal pannello.
-- **Errori e crash** raccolti e spiegati in una scheda dedicata.
-
-### Creare e gestire i server
-- **Creazione di un server da zero** in pochi passi: Forge, NeoForge, Fabric, Paper o Vanilla, nella versione di
-  Minecraft scelta (EULA, porta e RAM vengono impostate in automatico).
-- **Più server sullo stesso PC**, con il passaggio da uno all'altro.
-- **RAM del server** scelta dalle impostazioni, con le ottimizzazioni consigliate (Aikar's Flags).
-- **Editor di `server.properties`** con spiegazioni, e **file manager** per modificare i file del server dal browser.
-
-### Mod e plugin
-- Elenco delle mod installate con **scheda informazioni** (versione, autori, dipendenze...), attivazione e
-  disattivazione senza cancellarle.
-- **Store di mod e plugin** (catalogo [Modrinth](https://modrinth.com)): ricerca, installazione con un clic,
-  disinstallazione, informazioni complete e **aggiornamenti delle mod** già installate.
-
-### Giocatori
-- Giocatori online, whitelist, ban, operatori e azioni rapide (teletrasporto, modalità di gioco, oggetti...).
-
-### Backup
-- **Backup completo** di tutta la cartella del server in un file ZIP, con avanzamento e tempo rimanente.
-- Prima di partire mostra **quanto peserà il backup** e se c'è spazio sul Desktop e su Google Drive.
-- **Copia automatica su Google Drive** (serve **Google Drive per desktop** installato e collegato sul PC).
-- **Ripristino** di un backup con un clic.
-
-### Rete e accesso remoto
-- **Apertura automatica della porta** del server sul router (UPnP) e **indirizzo da copiare** da dare agli amici.
-- **Pannello dal telefono o da un altro PC** della rete di casa.
-- **Accesso da internet** in HTTPS, protetto da **PIN** (il PIN è sempre obbligatorio da fuori casa).
-- **App Android** con notifiche (server acceso o spento, crash, backup completato...).
-- Modalità **Remoto**: un altro PC può installare Voxarium solo per controllare il server che gira sul PC principale.
-
-### Risorse del PC
-- Uso di CPU, RAM e disco del PC e del server Minecraft, con grafici dell'ultimo minuto e delle ultime 24 ore.
+The program's interface is in Italian.
 
 ---
 
-## Requisiti
-- **Windows 10 o 11** (64 bit).
-- **Java** adatto alla versione di Minecraft scelta (il programma controlla se c'è e lo segnala).
-- Spazio su disco per il server e per i backup.
-- Per la copia dei backup su Drive: **Google Drive per desktop** installato e collegato al proprio account.
+## What it does
 
-Python e tutto il resto necessario al pannello sono già compresi nell'installer.
+### The server
+- **Start, stop, restart** and force-stop with one click; players are warned in chat before a restart.
+- **Scheduled restarts** (for example every 4 hours) and **automatic restart after a crash**.
+- **Eco mode**: stops the server when it has been empty for a while, to save energy.
+- **Anti-lag watchdog**: warns you when the server slows down (low TPS) and can clean up dropped items.
+- **Live console** to send commands, and a **chat** to talk to the players from the panel.
+- **Errors and crashes** collected and explained in a dedicated tab.
 
-## Installazione
-1. Scarica **[Setup_Voxarium.exe](https://github.com/QMon31/Controllo-Server-Minecraft-Releases/releases/latest/download/Setup_Voxarium.exe)**.
-2. Aprilo e scegli la modalità:
-   - **Host**: questo PC ospita il server Minecraft (la scelta normale);
-   - **Remoto**: questo PC controlla soltanto un server che gira su un altro PC.
-3. Al termine il programma si apre. Crea un nuovo server oppure scegli la cartella di un server che hai già.
-4. Dalle **Impostazioni** cambia subito il **PIN** (quello predefinito blocca l'accesso da internet finché non lo cambi).
+### Creating and managing servers
+- **Create a server from scratch** in a few steps: Forge, NeoForge, Fabric, Paper or Vanilla, in the Minecraft
+  version you choose (EULA, port and RAM are set up automatically).
+- **Several servers on the same PC**, and switching between them.
+- **Server RAM** chosen from the settings, with the recommended optimizations (Aikar's Flags).
+- **`server.properties` editor** with explanations, and a **file manager** to edit the server files from the browser.
 
-Windows può mostrare un avviso perché l'installer non è firmato da un editore noto: scegli "Ulteriori informazioni"
-e poi "Esegui comunque".
+### Mods and plugins
+- List of installed mods with an **info sheet** (version, authors, dependencies...), and enabling or disabling them
+  without deleting them.
+- **Mod and plugin store** (the [Modrinth](https://modrinth.com) catalog): search, one-click install, uninstall,
+  full details and **updates for the mods** you already have.
 
-## Aggiornamenti
-Il programma controlla da solo, ogni ora, se in questa pagina c'è una nuova versione. Quando c'è, nel pannello compare
-una barra con il pulsante **"Aggiorna ora"**: con il server Minecraft spento, il programma scarica la nuova versione,
-ne verifica l'integrità (SHA-256), la installa e si riapre da solo. Impostazioni, server e mondi restano dove sono.
+### Players
+- Online players, whitelist, bans, operators and quick actions (teleport, game mode, items...).
 
-## Sicurezza
-- Dalla rete di casa e da internet il pannello chiede il **PIN** (da 6 a 12 cifre).
-- L'accesso da internet usa **HTTPS** con un certificato generato sul tuo PC; l'app Android lo riconosce dalla sua impronta.
-- La porta del pannello in HTTP non viene mai aperta sul router: da fuori casa si passa solo dalla porta HTTPS.
-- Gli avvisi mandati al telefono sono firmati dal PC, così nessun altro può inviare avvisi falsi.
+### Backups
+- **Full backup** of the whole server folder into a ZIP file, with progress and time remaining.
+- Before starting, it shows **how big the backup will be** and whether it fits on the Desktop and on Google Drive.
+- **Automatic copy to Google Drive** (requires **Google Drive for desktop** installed and signed in on the PC).
+- **One-click restore** of a backup.
+
+### Network and remote access
+- **Automatic port opening** on the router (UPnP) and an **address to copy** and give to your friends.
+- **Control panel from your phone or another PC** on your home network.
+- **Access from the internet** over HTTPS, protected by a **PIN** (the PIN is always required from outside your home).
+- **Android app** with notifications (server started or stopped, crashes, backup completed...).
+- **Remote** mode: another PC can install Voxarium just to control the server running on the main PC.
+
+### PC resources
+- CPU, RAM and disk usage of the PC and of the Minecraft server, with charts for the last minute and the last 24 hours.
 
 ---
 
-*Voxarium non è un prodotto ufficiale di Minecraft e non è approvato né collegato a Mojang o Microsoft.
-"Minecraft" è un marchio di Mojang Synergies AB.*
+## Requirements
+- **Windows 10 or 11** (64-bit).
+- **Java** suitable for the Minecraft version you choose (the program checks whether it is installed and tells you).
+- Disk space for the server and for the backups.
+- To copy backups to Drive: **Google Drive for desktop** installed and signed in to your account.
+
+Python and everything else the panel needs are already included in the installer.
+
+## Installation
+1. Download **[Setup_Voxarium.exe](https://github.com/QMon31/Controllo-Server-Minecraft-Releases/releases/latest/download/Setup_Voxarium.exe)**.
+2. Open it and choose the mode:
+   - **Host**: this PC runs the Minecraft server (the usual choice);
+   - **Remote**: this PC only controls a server running on another PC.
+3. When it finishes, the program opens. Create a new server or choose the folder of a server you already have.
+4. In the **Settings**, change the **PIN** right away (the default PIN blocks access from the internet until you change it).
+
+Windows may show a warning because the installer is not signed by a known publisher: choose "More info" and then
+"Run anyway".
+
+## Updates
+Every hour the program checks this page for a new version. When there is one, a bar with an **"Aggiorna ora"**
+(Update now) button appears in the panel: with the Minecraft server stopped, the program downloads the new version,
+checks its integrity (SHA-256), installs it and reopens by itself. Settings, servers and worlds stay where they are.
+
+## Security
+- From your home network and from the internet, the panel asks for the **PIN** (6 to 12 digits).
+- Access from the internet uses **HTTPS** with a certificate generated on your PC; the Android app recognizes it by its
+  fingerprint.
+- The panel's HTTP port is never opened on the router: from outside your home you can only get in through the HTTPS port.
+- Notifications sent to the phone are signed by the PC, so nobody else can send fake ones.
+
+---
+
+*Voxarium is not an official Minecraft product and is not approved by or associated with Mojang or Microsoft.
+"Minecraft" is a trademark of Mojang Synergies AB.*
