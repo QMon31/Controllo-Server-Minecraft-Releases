@@ -29,6 +29,7 @@ root_files = [
     "Microsoft.Web.WebView2.WinForms.dll",
     "WebView2Loader.dll",
     "minecraft.ico",
+    "voxarium.ico",
     "minecraft_block.png",
     "Avvia_Pannello_Minecraft.bat",
     "Arresta_Pannello_Minecraft.bat",

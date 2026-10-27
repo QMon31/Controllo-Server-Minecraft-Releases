@@ -14,6 +14,7 @@ using System.Collections.Generic;
 using System.Text.RegularExpressions;
 using Microsoft.Win32;
 using System.Management;
+using System.Runtime.InteropServices;
 
 // Nome mostrato da Windows (Proprietà > Dettagli, richiesta UAC); versione e produttore: build_info.cs, generato da build_deploy.py
 [assembly: AssemblyTitle("Installazione Voxarium")]
@@ -24,6 +25,9 @@ namespace MinecraftControlCenterInstaller
     static class Program
     {
         public static bool IsUpdateMode = false;
+        // --silent: installazione senza domande (winget, script). Con Voxarium già installato vale come aggiornamento
+        // (scelte conservate); su un PC nuovo usa le opzioni predefinite, non chiede l'amministratore e non apre il programma.
+        public static bool IsSilentMode = false;
 
         [STAThread]
         static int Main(string[] args)
@@ -35,6 +39,11 @@ namespace MinecraftControlCenterInstaller
                     if (string.Equals(args[i], "--update", StringComparison.OrdinalIgnoreCase))
                     {
                         IsUpdateMode = true;
+                    }
+                    if (string.Equals(args[i], "--silent", StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(args[i], "/S", StringComparison.OrdinalIgnoreCase))
+                    {
+                        IsSilentMode = true;
                     }
                     if (string.Equals(args[i], FirewallRules.Argument, StringComparison.OrdinalIgnoreCase))
                     {
@@ -253,6 +262,24 @@ namespace MinecraftControlCenterInstaller
                 if (!string.IsNullOrEmpty(savedUrl)) txtRemoteUrl.Text = savedUrl;
             }
             catch { }
+
+            if (Program.IsSilentMode)
+            {
+                if (File.Exists(Path.Combine(defaultHostDir, "launcher_config.json")) ||
+                    File.Exists(Path.Combine(defaultRemoteDir, "launcher_config.json")))
+                {
+                    Program.IsUpdateMode = true;   // già installato: come un aggiornamento automatico
+                }
+                else
+                {
+                    // PC nuovo: PC Host nella cartella predefinita, opzioni predefinite
+                    this.Shown += new EventHandler(delegate(object s, EventArgs e) {
+                        rbModeHost.Checked = true;
+                        txtDestPath.Text = defaultHostDir;
+                        ShowStep(4);
+                    });
+                }
+            }
 
             if (Program.IsUpdateMode)
             {
@@ -1183,8 +1210,11 @@ namespace MinecraftControlCenterInstaller
                         : string.Format("Modalità attiva: Controllo Remoto (Connesso a {0})", txtRemoteUrl.Text.Trim());
                 }
 
-                if (Program.IsUpdateMode)
+                if (Program.IsUpdateMode || Program.IsSilentMode)
                 {
+                    // Senza domande su un PC nuovo il programma non si apre da solo; se era già installato (aggiornamento con
+                    // winget) si riapre come prima, altrimenti su un PC Host il pannello resterebbe spento
+                    if (Program.IsSilentMode && !Program.IsUpdateMode) chkLaunchNow.Checked = false;
                     System.Windows.Forms.Timer autoFinish = new System.Windows.Forms.Timer();
                     autoFinish.Interval = 800;
                     autoFinish.Tick += new EventHandler(delegate(object s, EventArgs e) {
@@ -1385,6 +1415,7 @@ namespace MinecraftControlCenterInstaller
                                         !entry.Name.Equals("Microsoft.Web.WebView2.WinForms.dll", StringComparison.OrdinalIgnoreCase) &&
                                         !entry.Name.Equals("WebView2Loader.dll", StringComparison.OrdinalIgnoreCase) &&
                                         !entry.Name.Equals("minecraft.ico", StringComparison.OrdinalIgnoreCase) &&
+                                        !entry.Name.Equals("voxarium.ico", StringComparison.OrdinalIgnoreCase) &&
                                         !entry.Name.Equals("minecraft_block.png", StringComparison.OrdinalIgnoreCase))
                                     {
                                         continue;
@@ -1472,7 +1503,9 @@ namespace MinecraftControlCenterInstaller
                 // create dall'installer stesso come amministratore (FirewallRules). Solo modalità Host.
                 // In aggiornamento, se le regole ci sono già, niente richiesta di amministratore e niente regole ricreate
                 // (una regola spenta dall'utente resta spenta)
-                if (!isRemote && !(Program.IsUpdateMode && FirewallRules.AlreadyPresent()))
+                // Senza domande (--silent) niente richiesta di amministratore: Windows chiederà il permesso del firewall
+                // al primo avvio del pannello
+                if (!isRemote && !Program.IsSilentMode && !(Program.IsUpdateMode && FirewallRules.AlreadyPresent()))
                 {
                     bw.ReportProgress(80, "Regole firewall per l'accesso dal telefono (porte 8080 e 8443)...");
                     FirewallRules.RequestElevated();
@@ -1481,7 +1514,10 @@ namespace MinecraftControlCenterInstaller
                 // Create Shortcuts
                 bw.ReportProgress(84, "Creazione collegamenti Desktop e Menu Start...");
                 string mainExe = Path.Combine(destDir, "Controllo Server Minecraft.exe");
-                string iconPath = Path.Combine(destDir, "minecraft.ico");
+                // Icona dei collegamenti: voxarium.ico (un nome nuovo). Con lo stesso percorso di prima Windows continuava
+                // a mostrare la vecchia icona che tiene in memoria; minecraft.ico resta per le versioni precedenti.
+                string iconPath = Path.Combine(destDir, "voxarium.ico");
+                if (!File.Exists(iconPath)) iconPath = Path.Combine(destDir, "minecraft.ico");
                 string shortcutName = isRemote ? "Voxarium (Remoto).lnk" : "Voxarium.lnk";
                 string shortcutDesc = isRemote ? "Controllo Remoto per Server Minecraft su PC Secondario" : "Pannello di Controllo per Server Minecraft";
 
@@ -1634,6 +1670,7 @@ namespace MinecraftControlCenterInstaller
                     RegisterUninstaller(destDir, uninstallBat, iconPath, isRemote);
                 }
 
+                RefreshShellIcons();
                 bw.ReportProgress(100, "Completato!");
             };
 
@@ -1835,6 +1872,15 @@ namespace MinecraftControlCenterInstaller
             }
         }
 
+        [DllImport("shell32.dll")]
+        static extern void SHChangeNotify(int eventId, uint flags, IntPtr item1, IntPtr item2);
+
+        /// <summary>Chiede a Windows di ricaricare le icone (collegamenti con l'icona nuova subito visibili).</summary>
+        static void RefreshShellIcons()
+        {
+            try { SHChangeNotify(0x08000000 /* SHCNE_ASSOCCHANGED */, 0 /* SHCNF_IDLIST */, IntPtr.Zero, IntPtr.Zero); } catch { }
+        }
+
         private void CreateShortcut(string shortcutPath, string targetExe, string workingDir, string iconPath, string description)
         {
             try
@@ -1876,8 +1922,10 @@ namespace MinecraftControlCenterInstaller
                     {
                         string dispName = isRemote ? "Voxarium (Client Remoto)" : "Voxarium";
                         key.SetValue("DisplayName", dispName);
-                        key.SetValue("DisplayVersion", "3.0.0");
-                        key.SetValue("Publisher", "Minecraft Server Control Team");
+                        // Versione vera (winget la usa per capire cosa è installato e se c'è un aggiornamento): era fissa a "3.0.0"
+                        Version v = Assembly.GetExecutingAssembly().GetName().Version;
+                        key.SetValue("DisplayVersion", v.Major + "." + v.Minor + "." + v.Build);
+                        key.SetValue("Publisher", "QMon31");
                         key.SetValue("UninstallString", string.Format("cmd.exe /c \"{0}\"", uninstallBat));
                         key.SetValue("InstallLocation", installDir);
                         if (File.Exists(iconPath))

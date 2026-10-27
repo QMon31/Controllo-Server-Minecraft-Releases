@@ -2012,6 +2012,8 @@ window.I18N_DICTS.de = {
   'notes.backup_piu_sicuro': "Sichereres Backup ({0})",
   'notes.copia_drive_avanzamento_avvio_bloccato': ": Das Kopieren auf Google Drive zeigt seinen Fortschritt statt bei 99 % stehen zu bleiben und ersetzt die alte Kopie erst, wenn es fertig ist; während eines Backups oder einer Wiederherstellung startet der Server nicht (auch nicht durch automatische Neustarts) und das Handy zeigt den Grund.",
   'notes.tempo_reale_porta_mc': ": Das Panel aktualisiert sich jetzt auch auf PCs ohne installiertes Python in Echtzeit (eine fehlende Bibliothek ist jetzt enthalten); die App zeigt den echten Port des Minecraft-Servers statt 32769.",
+  'notes.winget': "Installation mit winget ({0})",
+  'notes.winget_silent_app_installate': ": Voxarium lässt sich auch mit winget installieren (winget install QMon31.Voxarium) und das Installationsprogramm akzeptiert --silent für eine Installation ohne Rückfragen; unter „Installierte Apps“ stehen die echte Version und der Herausgeber; die Verknüpfungen auf dem Desktop und im Startmenü zeigen das neue Symbol.",
   'notes.icona_correzioni': "Neues Symbol und Korrekturen ({0})",
   'notes.icona_lingue_licenze_pannello': ": neues Voxarium-Symbol, von Grund auf gezeichnet (vorher war es der Grasblock aus Minecraft); Menü des Symbols neben der Uhr, Hinweise und Ladefenster in 6 Sprachen; die Installation enthält die Lizenztexte; im Panel haben die Schaltflächen bei Dateien und Fehlern eine Beschriftung, Konsole und Dateien funktionieren auch auf dem Handy, Seitenmenü und Store schneiden lange Texte nicht mehr ab.",
   'notes.icona_app': "Neues Symbol ({0})",

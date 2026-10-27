@@ -114,6 +114,34 @@ class IconTest(unittest.TestCase):
             self.assertIn((16, 16), ico.ico.sizes())
             self.assertIn((256, 256), ico.ico.sizes())
 
+    def test_shortcuts_use_new_icon_file_and_refresh_windows(self):
+        # Stesso percorso di prima = Windows mostrava ancora la vecchia icona in memoria
+        src = _read("Installer.cs")
+        self.assertIn('string iconPath = Path.Combine(destDir, "voxarium.ico");', src)
+        self.assertIn("RefreshShellIcons();", src)
+        self.assertIn('"voxarium.ico"', _read("create_package.py"))
+        self.assertTrue(os.path.isfile(os.path.join(ROOT, "voxarium.ico")))
+
+
+class SilentInstallTest(unittest.TestCase):
+    """winget installa senza domande (--silent) e riconosce la versione installata da "App installate"."""
+
+    def test_silent_switch_and_real_version(self):
+        src = _read("Installer.cs")
+        self.assertIn('"--silent"', src)
+        self.assertNotIn('"DisplayVersion", "3.0.0"', src)
+        self.assertIn('key.SetValue("Publisher", "QMon31");', src)
+        self.assertIn("!Program.IsSilentMode && !(Program.IsUpdateMode", src)   # niente richiesta di amministratore
+        self.assertIn("Program.IsSilentMode && !Program.IsUpdateMode) chkLaunchNow.Checked = false", src)
+
+    def test_winget_manifest_matches_installer(self):
+        sys.path.insert(0, ROOT)
+        import make_winget_manifest as m
+        self.assertEqual(m.IDENTIFIER, "QMon31.Voxarium")
+        src = _read("make_winget_manifest.py")
+        self.assertIn("Silent: --silent", src)
+        self.assertIn("ProductCode: ControlloServerMinecraft", src)
+
 
 class AppVersionFallbackTest(unittest.TestCase):
     def test_no_invented_app_version_when_version_json_missing(self):

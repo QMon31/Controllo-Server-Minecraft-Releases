@@ -4,6 +4,8 @@ Disegnata da zero da questo script (nessuna immagine o risorsa di Minecraft): ri
 
 Uso: python voxarium_icon.py [cartella_android]
   - minecraft.ico, favicon.ico (radice e static/): 16-256 px; 16, 20 e 24 px ritoccati a pixel
+  - voxarium.ico: la stessa icona per i collegamenti di Desktop e Menu Start (un nome nuovo, così Windows non
+    continua a mostrare la vecchia icona che tiene in memoria per minecraft.ico)
   - minecraft_block.png e static/minecraft_block.png: 256 px (pannello, favicon PNG, pacchetto Linux)
   - <cartella_android>/res/drawable/ic_launcher.png: 192 px (icona dell'app), se la cartella è indicata
 I nomi dei file restano quelli di prima perché li usano installer, Launcher, pannello e aggiornamenti.
@@ -75,7 +77,7 @@ def save_ico(path, sizes):
 
 def main():
     ico_sizes = [16, 20, 24, 32, 40, 48, 64, 96, 128, 256]
-    for rel in ("minecraft.ico", "favicon.ico", os.path.join("static", "minecraft.ico"), os.path.join("static", "favicon.ico")):
+    for rel in ("minecraft.ico", "voxarium.ico", "favicon.ico", os.path.join("static", "minecraft.ico"), os.path.join("static", "favicon.ico")):
         save_ico(os.path.join(ROOT, rel), ico_sizes)
     for rel in ("minecraft_block.png", os.path.join("static", "minecraft_block.png")):
         icon(256).save(os.path.join(ROOT, rel))
