@@ -16,9 +16,6 @@ from pc_version import LEGACY_UPDATE_REPO, PC_BUILD, PC_VERSION, UPDATE_REPO
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SETUP_PATH = os.path.join(BASE_DIR, "Setup_Voxarium.exe")
 SETUP_NAME = "Setup_Voxarium.exe"
-# Pacchetto Linux (create_linux_package.py): si pubblica solo se è stato creato, insieme alla voce "linux" del manifest
-LINUX_NAME = "voxarium-linux.tar.gz"
-LINUX_PATH = os.path.join(BASE_DIR, LINUX_NAME)
 TOKEN_FILE = os.path.join(os.path.expanduser("~"), ".controllo_mc_github_token")
 API = "https://api.github.com"
 
@@ -86,22 +83,6 @@ def main(notes: str):
         "size": len(setup_bytes),
         "notes": notes,
     }
-    linux_bytes = None
-    if os.path.isfile(LINUX_PATH):
-        with open(LINUX_PATH, "rb") as f:
-            linux_bytes = f.read()
-        import io, tarfile
-        with tarfile.open(fileobj=io.BytesIO(linux_bytes)) as tf:
-            packed = tf.extractfile("voxarium/pc_version.py").read().decode("utf-8")
-        if f"PC_BUILD = {PC_BUILD}" not in packed:
-            sys.exit(f"ERRORE: {LINUX_NAME} è di un'altra build: ricrearlo con create_linux_package.py")
-        manifest["linux"] = {
-            "version": PC_VERSION,
-            "build": PC_BUILD,
-            "url": f"https://github.com/{UPDATE_REPO}/releases/download/{tag}/{LINUX_NAME}",
-            "sha256": hashlib.sha256(linux_bytes).hexdigest(),
-            "size": len(linux_bytes),
-        }
     try:
         release = _request("POST", f"{API}/repos/{UPDATE_REPO}/releases", token, json.dumps({
             "tag_name": tag,
@@ -112,8 +93,6 @@ def main(notes: str):
         }).encode("utf-8"))
         upload_base = release["upload_url"].split("{")[0]
         _request("POST", f"{upload_base}?name={SETUP_NAME}", token, setup_bytes, "application/octet-stream")
-        if linux_bytes:
-            _request("POST", f"{upload_base}?name={LINUX_NAME}", token, linux_bytes, "application/gzip")
         _request("POST", f"{upload_base}?name=pc_version.json", token,
                  json.dumps(manifest, ensure_ascii=False, indent=2).encode("utf-8"))
     except urllib.error.HTTPError as e:

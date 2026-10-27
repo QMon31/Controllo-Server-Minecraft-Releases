@@ -1,7 +1,8 @@
 """
 Controllo e installazione degli aggiornamenti del programma PC dal repository pubblico delle release.
 Il manifest pc_version.json della release più recente indica versione, build, URL e SHA-256 dell'installer.
-Su Linux si usa la sua voce "linux" (pacchetto .tar.gz installato con install.sh --update); i PC Windows la ignorano.
+Su Linux le release sono separate da quelle Windows: tag "linux-…", mai segnate come "latest", con il proprio
+linux_version.json (stesse chiavi) e il pacchetto .tar.gz installato con install.sh --update.
 """
 
 import hashlib
@@ -26,6 +27,10 @@ CHECK_INTERVAL_SECONDS = 6 * 3600
 USER_AGENT = f"ControlloServerMinecraft/{PC_VERSION}"
 DETACHED_PROCESS = 0x00000008
 IS_LINUX = sys.platform.startswith("linux")
+LINUX_TAG_PREFIX = "linux-"
+LINUX_MANIFEST_NAME = "linux_version.json"
+# Le release Linux non sono "latest" (quella resta l'installer Windows): si cercano tra le ultime con l'API pubblica
+RELEASES_API_URL = f"https://api.github.com/repos/{UPDATE_REPO}/releases?per_page=30"
 
 _lock = threading.Lock()
 _state: Dict[str, Any] = {
@@ -59,14 +64,29 @@ def status() -> Dict[str, Any]:
         }
 
 
-def platform_manifest(manifest: Dict[str, Any]) -> Dict[str, Any]:
-    """Su Linux la voce "linux" del manifest con le stesse chiavi di quello Windows; su Windows il manifest com'è.
-    Senza voce "linux" (release solo Windows) la build è 0: nessun aggiornamento."""
+def linux_manifest_url(releases) -> str:
+    """Indirizzo del linux_version.json della release Linux più recente (l'API le elenca dalla più nuova); "" se nessuna."""
+    for rel in releases or []:
+        if rel.get("draft") or not str(rel.get("tag_name", "")).startswith(LINUX_TAG_PREFIX):
+            continue
+        for asset in rel.get("assets") or []:
+            if asset.get("name") == LINUX_MANIFEST_NAME:
+                return str(asset.get("browser_download_url", ""))
+    return ""
+
+
+def _fetch_manifest() -> Dict[str, Any]:
     if not IS_LINUX:
-        return manifest
-    lin = manifest.get("linux") or {}
-    return {"version": lin.get("version"), "build": int(lin.get("build", 0) or 0), "setup_url": lin.get("url", ""),
-            "sha256": lin.get("sha256", ""), "size": lin.get("size"), "notes": manifest.get("notes", "")}
+        with _http_get(MANIFEST_URL) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    with _http_get(RELEASES_API_URL) as resp:
+        url = linux_manifest_url(json.loads(resp.read().decode("utf-8")))
+    if not url:
+        return {}  # nessuna release Linux pubblicata: nessun aggiornamento
+    if not url.startswith(SETUP_URL_PREFIXES):
+        raise ValueError("indirizzo del manifest Linux non valido")
+    with _http_get(url) as resp:
+        return json.loads(resp.read().decode("utf-8"))
 
 
 def check_for_update(force: bool = False) -> Dict[str, Any]:
@@ -74,8 +94,7 @@ def check_for_update(force: bool = False) -> Dict[str, Any]:
         if not force and time.time() - _state["checked_at"] < CHECK_INTERVAL_SECONDS:
             return status()
     try:
-        with _http_get(MANIFEST_URL) as resp:
-            manifest = platform_manifest(json.loads(resp.read().decode("utf-8")))
+        manifest = _fetch_manifest()
         latest_build = int(manifest.get("build", 0))
         if latest_build and not str(manifest.get("setup_url", "")).startswith(SETUP_URL_PREFIXES):
             raise ValueError("indirizzo dell'installer non valido nel manifest")

@@ -2010,6 +2010,8 @@ window.I18N_DICTS.pt = {
   'notes.backup_piu_sicuro': "Backup mais seguro ({0})",
   'notes.copia_drive_avanzamento_avvio_bloccato': ": a cópia para o Google Drive mostra o progresso em vez de ficar parada em 99% e substitui a antiga só quando está completa; durante um backup ou uma restauração o servidor não inicia (nem pelos reinícios automáticos) e o celular mostra o motivo.",
   'notes.tempo_reale_porta_mc': ": o painel atualiza em tempo real também nos PCs sem Python instalado (faltava uma biblioteca, agora incluída); o app mostra a porta real do servidor Minecraft em vez de 32769.",
+  'notes.versione_linux': "Versão para Linux ({0})",
+  'notes.versione_linux_servizio_browser': ": o Voxarium também funciona no Ubuntu e no Debian, com uma versão separada da do Windows: instala-se com install.sh, roda como serviço ao ligar o PC, o painel abre no navegador e o app se conecta como no Windows.",
   'notes.errori_backup_drive': "Erros e backup no Drive ({0})",
   'notes.errori_veri_avviso_copia_drive': ": a aba Erros conta só os erros reais (não mais os avisos dos mods nem a mensagem do Forge sobre os arquivos dos mods); a janela do backup avisa se a cópia no Google Drive está faltando, é mais antiga que a da Área de Trabalho ou tem tamanho diferente.",
   'notes.correzioni_chiavi_testi': "Correções e chaves dos textos ({0})",

@@ -81,25 +81,37 @@ class LaunchScriptTest(unittest.TestCase):
 
 
 class LinuxUpdaterTest(unittest.TestCase):
-    MANIFEST = {"version": "4.20.0", "build": 97, "setup_url": "https://github.com/QMon31/Voxarium/releases/download/x/S.exe",
-                "sha256": "aa", "notes": "novità",
-                "linux": {"version": "4.20.0", "build": 97, "url": "https://github.com/QMon31/Voxarium/releases/download/x/v.tar.gz",
-                          "sha256": "bb", "size": 10}}
+    """Release Linux separate da quelle Windows: tag "linux-…" con il proprio linux_version.json."""
+    BASE = "https://github.com/QMon31/Voxarium/releases/download/"
+    RELEASES = [  # come l'API di GitHub: dalla più nuova
+        {"tag_name": "v4.20.0-b98", "draft": False,
+         "assets": [{"name": "pc_version.json", "browser_download_url": BASE + "v4.20.0-b98/pc_version.json"}]},
+        {"tag_name": "linux-v4.19.3-b97", "draft": True,
+         "assets": [{"name": "linux_version.json", "browser_download_url": BASE + "linux-v4.19.3-b97/linux_version.json"}]},
+        {"tag_name": "linux-v4.19.2-b97", "draft": False,
+         "assets": [{"name": "voxarium-linux.tar.gz", "browser_download_url": BASE + "linux-v4.19.2-b97/voxarium-linux.tar.gz"},
+                    {"name": "linux_version.json", "browser_download_url": BASE + "linux-v4.19.2-b97/linux_version.json"}]},
+    ]
 
-    def test_windows_reads_manifest_as_before(self):
-        with mock.patch.object(pc_updater, "IS_LINUX", False):
-            self.assertIs(pc_updater.platform_manifest(self.MANIFEST), self.MANIFEST)
+    def test_finds_newest_published_linux_manifest(self):
+        self.assertEqual(pc_updater.linux_manifest_url(self.RELEASES),
+                         self.BASE + "linux-v4.19.2-b97/linux_version.json")
 
-    def test_linux_reads_linux_entry(self):
-        with mock.patch.object(pc_updater, "IS_LINUX", True):
-            m = pc_updater.platform_manifest(self.MANIFEST)
-        self.assertEqual((m["build"], m["setup_url"], m["sha256"], m["notes"]),
-                         (97, self.MANIFEST["linux"]["url"], "bb", "novità"))
+    def test_no_linux_release_means_no_update(self):
+        self.assertEqual(pc_updater.linux_manifest_url(self.RELEASES[:1]), "")
 
-    def test_linux_without_linux_entry_has_no_update(self):
-        only_windows = {k: v for k, v in self.MANIFEST.items() if k != "linux"}
-        with mock.patch.object(pc_updater, "IS_LINUX", True):
-            self.assertEqual(pc_updater.platform_manifest(only_windows)["build"], 0)
+    def test_windows_still_reads_latest_manifest(self):
+        with mock.patch.object(pc_updater, "IS_LINUX", False), \
+                mock.patch.object(pc_updater, "_http_get") as get:
+            get.return_value.__enter__.return_value.read.return_value = b'{"build": 1}'
+            pc_updater._fetch_manifest()
+        get.assert_called_once_with(pc_updater.MANIFEST_URL)
+
+    def test_windows_release_script_has_no_linux_and_linux_is_never_latest(self):
+        with open(os.path.join(ROOT, "publish_release.py"), encoding="utf-8") as fh:
+            self.assertNotIn("linux", fh.read().lower())
+        with open(os.path.join(ROOT, "publish_linux_release.py"), encoding="utf-8") as fh:
+            self.assertIn('"make_latest": "false"', fh.read())
 
     def test_update_archive_with_unsafe_path_is_refused(self):
         d = tempfile.mkdtemp(prefix="csm_linux_")
