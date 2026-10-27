@@ -20,6 +20,9 @@ control panel, without using the command line: from the PC, from a browser and f
 open it and choose **Host** (this PC runs the server) or **Remote** (this PC controls a server on another PC).
 Programs already installed update themselves from the "Aggiorna ora" (Update now) bar in the panel.
 
+**Using Linux (Ubuntu / Debian)?** The Linux version has its own release: see the
+[Download section](https://github.com/QMon31/Voxarium#download) of the README.
+
 More details in the [README](https://github.com/QMon31/Voxarium#readme).
 
 *Voxarium is not an official Minecraft product and is not associated with Mojang or Microsoft.*

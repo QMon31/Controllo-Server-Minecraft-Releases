@@ -1,14 +1,28 @@
 # Voxarium
 
-**Voxarium** is a Windows program for running a **Minecraft Java Edition** server on your own PC from a simple
+**Voxarium** is a program for **Windows** and **Linux** for running a **Minecraft Java Edition** server on your own PC from a simple
 control panel, without using the command line. You can manage it from the PC itself, from a browser and from your
 phone, both at home and away from home.
 
-Voxarium is **free and open source** (GNU GPL v3): this repository contains the source code of the Windows program
+Voxarium is **free and open source** (GNU GPL v3): this repository contains the source code of the PC program for Windows and Linux
 ([`pc/`](pc)) and of the Android app ([`android/`](android)), and the installers in the Releases.
 
-**[Download the latest version (Setup_Voxarium.exe)](https://github.com/QMon31/Voxarium/releases/latest/download/Setup_Voxarium.exe)**
-· [All versions and release notes](https://github.com/QMon31/Voxarium/releases)
+## Download
+
+Choose the version for your system:
+
+<!-- download:start -->
+| | **Windows 10 / 11** | **Linux** (Ubuntu / Debian) |
+|---|---|---|
+| **Download** | [⬇ Setup_Voxarium.exe](https://github.com/QMon31/Voxarium/releases/latest/download/Setup_Voxarium.exe) | [⬇ voxarium-linux.tar.gz](https://github.com/QMon31/Voxarium/releases/download/linux-v4.19.2-b97/voxarium-linux.tar.gz) |
+| **Version** | always the latest | v4.19.2 (Build 97) |
+| **Install** | open the file and follow the steps | `tar xzf voxarium-linux.tar.gz` then `sh voxarium/install.sh` (as your normal user) |
+| **Release notes** | [Windows release](https://github.com/QMon31/Voxarium/releases/latest) | [Linux release](https://github.com/QMon31/Voxarium/releases/tag/linux-v4.19.2-b97) |
+
+Both versions have the same control panel, work with the same Android app and update themselves from the panel.
+<!-- download:end -->
+
+[All versions and release notes](https://github.com/QMon31/Voxarium/releases)
 
 The control panel is available in Italian, English, German, Spanish, French and Portuguese (choose the language in its header).
 
@@ -59,14 +73,17 @@ The control panel is available in Italian, English, German, Spanish, French and 
 ---
 
 ## Requirements
-- **Windows 10 or 11** (64-bit).
+- **Windows 10 or 11** (64-bit), or **Linux** with systemd (tested on Ubuntu; Debian and derivatives work the same way).
 - **Java** suitable for the Minecraft version you choose (the program checks whether it is installed and tells you).
 - Disk space for the server and for the backups.
 - To copy backups to Drive: **Google Drive for desktop** installed and signed in to your account.
 
-Python and everything else the panel needs are already included in the installer.
+On Windows, Python and everything else the panel needs are already included in the installer. On Linux the install
+script installs Python and Java with `sudo` if they are missing.
 
 ## Installation
+
+### Windows
 1. Download **[Setup_Voxarium.exe](https://github.com/QMon31/Voxarium/releases/latest/download/Setup_Voxarium.exe)**.
 2. Open it and choose the mode:
    - **Host**: this PC runs the Minecraft server (the usual choice);
@@ -76,6 +93,17 @@ Python and everything else the panel needs are already included in the installer
 
 Windows may show a warning because the installer is not signed by a known publisher: choose "More info" and then
 "Run anyway".
+
+### Linux (Ubuntu / Debian)
+1. Download **voxarium-linux.tar.gz** from the [Download](#download) table above.
+2. In a terminal, as your normal user (not root):
+   ```sh
+   tar xzf voxarium-linux.tar.gz
+   sh voxarium/install.sh
+   ```
+   `sudo` is asked once, only to install Python and Java if they are missing and to open the ports in `ufw` if it is active.
+3. Voxarium runs as a background service (systemd, starts with the PC). Open the panel in the browser at
+   `http://IP-of-the-PC:8080` and change the **PIN** in the **Settings**.
 
 ## Updates
 Every hour the program checks this page for a new version. When there is one, a bar with an **"Aggiorna ora"**
@@ -90,7 +118,8 @@ checks its integrity (SHA-256), installs it and reopens by itself. Settings, ser
 - Notifications sent to the phone are signed by the PC, so nobody else can send fake ones.
 
 ## Source code
-- [`pc/`](pc): Python backend (FastAPI), web control panel, Windows launcher and installer (C#).
+- [`pc/`](pc): Python backend (FastAPI) and web control panel, shared by both systems; Windows launcher and installer
+  (C#); Linux install script and systemd service ([`pc/linux/`](pc/linux)).
 - [`android/`](android): the Android app.
 - How to build both: [BUILDING.md](BUILDING.md).
 

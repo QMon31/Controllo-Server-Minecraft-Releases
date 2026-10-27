@@ -32,7 +32,7 @@ to open the ports in `ufw` if it is active. Voxarium then runs as a background s
 and the panel opens in the browser at `http://IP-of-the-PC:8080`. The Android app connects as with the Windows version.
 Installed copies update themselves from the panel.
 
-*This is the Linux version. The Windows installer is in the [latest release](https://github.com/QMon31/Voxarium/releases/latest).*
+*This is the Linux version. For Windows 10/11 download [Setup_Voxarium.exe](https://github.com/QMon31/Voxarium/releases/latest/download/Setup_Voxarium.exe) (all downloads: [README](https://github.com/QMon31/Voxarium#download)).*
 
 *Voxarium is not an official Minecraft product and is not associated with Mojang or Microsoft.*"""
 
@@ -71,6 +71,9 @@ def main(notes: str):
         sys.exit(f"ERRORE GitHub {e.code}: {e.read().decode('utf-8', 'replace')}"
                  + ("\n(Se il tag esiste già: aumentare PC_BUILD in pc_version.py)" if e.code == 422 else ""))
     print(f"Pubblicata {tag}: {release['html_url']}")
+    # La sezione Download del README pubblico deve puntare al pacchetto Linux appena pubblicato
+    import publish_source
+    publish_source.update_readme_download(tag, PC_VERSION, PC_BUILD)
 
 
 if __name__ == "__main__":

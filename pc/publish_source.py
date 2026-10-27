@@ -110,12 +110,8 @@ def check(root):
     return problems
 
 
-def main():
-    push = "--push" in sys.argv
-    message = sys.argv[sys.argv.index("--push") + 1] if push and sys.argv.index("--push") + 1 < len(sys.argv) else ""
-    if push and not message:
-        sys.exit('Uso: python publish_source.py --push "messaggio del commit"')
-
+def ensure_checkout():
+    """Copia locale del repository pubblico, aggiornata."""
     if os.path.isdir(os.path.join(PUBLIC_CHECKOUT, ".git")):
         git(PUBLIC_CHECKOUT, "pull", "-q", "--ff-only")
     else:
@@ -123,6 +119,71 @@ def main():
         res = subprocess.run([GIT, "clone", "-q", PUBLIC_REPO_URL, PUBLIC_CHECKOUT], capture_output=True, text=True)
         if res.returncode != 0:
             sys.exit(f"ERRORE clone: {res.stderr}")
+
+
+# ---------- sezione Download del README pubblico: Windows e Linux uno accanto all'altro ----------
+DOWNLOAD_START = "<!-- download:start -->"
+DOWNLOAD_END = "<!-- download:end -->"
+RELEASES = "https://github.com/QMon31/Voxarium/releases"
+
+
+def download_block(linux_tag: str, version: str, build: int) -> str:
+    """Tabella dei download. Windows punta sempre all'ultima release ("latest"); Linux ha release a parte
+    (tag linux-…, mai "latest"), quindi il suo link si riscrive a ogni release Linux."""
+    linux_file = f"{RELEASES}/download/{linux_tag}/voxarium-linux.tar.gz"
+    return "\n".join([
+        DOWNLOAD_START,
+        "| | **Windows 10 / 11** | **Linux** (Ubuntu / Debian) |",
+        "|---|---|---|",
+        f"| **Download** | [⬇ Setup_Voxarium.exe]({RELEASES}/latest/download/Setup_Voxarium.exe) "
+        f"| [⬇ voxarium-linux.tar.gz]({linux_file}) |",
+        f"| **Version** | always the latest | v{version} (Build {build}) |",
+        "| **Install** | open the file and follow the steps "
+        "| `tar xzf voxarium-linux.tar.gz` then `sh voxarium/install.sh` (as your normal user) |",
+        f"| **Release notes** | [Windows release]({RELEASES}/latest) | [Linux release]({RELEASES}/tag/{linux_tag}) |",
+        "",
+        "Both versions have the same control panel, work with the same Android app and update themselves from the panel.",
+        DOWNLOAD_END,
+    ])
+
+
+def set_download_block(readme: str, linux_tag: str, version: str, build: int) -> str:
+    start, end = readme.find(DOWNLOAD_START), readme.find(DOWNLOAD_END)
+    if start < 0 or end < start:
+        raise ValueError("README senza la sezione Download (" + DOWNLOAD_START + " … " + DOWNLOAD_END + ")")
+    return readme[:start] + download_block(linux_tag, version, build) + readme[end + len(DOWNLOAD_END):]
+
+
+def update_readme_download(linux_tag: str, version: str, build: int, push: bool = True):
+    """Riscrive la sezione Download del README pubblico con la release Linux indicata e la pubblica."""
+    ensure_checkout()
+    path = os.path.join(PUBLIC_CHECKOUT, "README.md")
+    with open(path, encoding="utf-8", newline="") as f:
+        old = f.read()
+    new = set_download_block(old, linux_tag, version, build)
+    if new == old:
+        print("README: sezione Download già aggiornata.")
+        return
+    with open(path, "w", encoding="utf-8", newline="") as f:
+        f.write(new)
+    problems = check(PUBLIC_CHECKOUT)
+    if problems:
+        git(PUBLIC_CHECKOUT, "checkout", "--", "README.md")
+        sys.exit("README NON pubblicato:\n" + "\n".join("  " + p for p in problems))
+    if push:
+        git(PUBLIC_CHECKOUT, "add", "README.md")
+        git(PUBLIC_CHECKOUT, "commit", "-q", "-m", f"README: download for Linux v{version} (Build {build})")
+        git(PUBLIC_CHECKOUT, "push", "-q")
+        print(f"README pubblico aggiornato: download Linux {linux_tag}")
+
+
+def main():
+    push = "--push" in sys.argv
+    message = sys.argv[sys.argv.index("--push") + 1] if push and sys.argv.index("--push") + 1 < len(sys.argv) else ""
+    if push and not message:
+        sys.exit('Uso: python publish_source.py --push "messaggio del commit"')
+
+    ensure_checkout()
 
     android_repo = find_android_repo()
     pc_files = export(BASE_DIR, os.path.join(PUBLIC_CHECKOUT, "pc"), EXCLUDED)

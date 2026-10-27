@@ -1472,5 +1472,30 @@ class BackupPhasesAndStartGuardTest(unittest.TestCase):
         self.assertIsNone(self.mgr.busy_message())
 
 
+class PublicDownloadsTest(unittest.TestCase):
+    """README pubblico: Windows e Linux scaricabili uno accanto all'altro; il link Linux segue la sua ultima release."""
+
+    def test_download_block(self):
+        import publish_source as ps
+        readme = "# Voxarium\n\n## Download\n\n" + ps.DOWNLOAD_START + "\nvecchio\n" + ps.DOWNLOAD_END + "\n\n## Altro\n"
+        out = ps.set_download_block(readme, "linux-v4.19.2-b97", "4.19.2", 97)
+        self.assertIn("releases/latest/download/Setup_Voxarium.exe", out)
+        self.assertIn("releases/download/linux-v4.19.2-b97/voxarium-linux.tar.gz", out)
+        self.assertIn("v4.19.2 (Build 97)", out)
+        self.assertNotIn("vecchio", out)
+        self.assertTrue(out.endswith("\n\n## Altro\n"))
+        again = ps.set_download_block(out, "linux-v4.20.0-b98", "4.20.0", 98)
+        self.assertNotIn("linux-v4.19.2-b97", again)
+        self.assertEqual(again.count(ps.DOWNLOAD_START), 1)
+        with self.assertRaises(ValueError):
+            ps.set_download_block("# senza sezione", "linux-v1-b1", "1", 1)
+
+    def test_linux_release_updates_readme_and_windows_page_points_to_linux(self):
+        with open(os.path.join(ROOT, "publish_linux_release.py"), encoding="utf-8") as fh:
+            self.assertIn("update_readme_download(tag", fh.read())
+        with open(os.path.join(ROOT, "release_about.md"), encoding="utf-8") as fh:
+            self.assertIn("Voxarium#download", fh.read())
+
+
 if __name__ == "__main__":
     unittest.main()
