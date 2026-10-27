@@ -2010,6 +2010,8 @@ window.I18N_DICTS.pt = {
   'notes.backup_piu_sicuro': "Backup mais seguro ({0})",
   'notes.copia_drive_avanzamento_avvio_bloccato': ": a cópia para o Google Drive mostra o progresso em vez de ficar parada em 99% e substitui a antiga só quando está completa; durante um backup ou uma restauração o servidor não inicia (nem pelos reinícios automáticos) e o celular mostra o motivo.",
   'notes.tempo_reale_porta_mc': ": o painel atualiza em tempo real também nos PCs sem Python instalado (faltava uma biblioteca, agora incluída); o app mostra a porta real do servidor Minecraft em vez de 32769.",
+  'notes.pc_remoti_aggiornati': "PCs remotos atualizados sozinhos ({0})",
+  'notes.pc_remoti_aggiornamento_impostazioni': ": os PCs no modo Controle Remoto procuram sozinhos as novas versões e perguntam se devem atualizar (também em \"Procurar atualizações\" no menu do ícone); as atualizações não reativam mais a inicialização automática desligada, não recriam atalhos apagados e não pedem permissão de administrador toda vez; os PCs Linux encontram a sua versão mesmo depois de muitas versões para Windows.",
   'notes.versione_linux': "Versão para Linux ({0})",
   'notes.versione_linux_servizio_browser': ": o Voxarium também funciona no Ubuntu e no Debian, com uma versão separada da do Windows: instala-se com install.sh, roda como serviço ao ligar o PC, o painel abre no navegador e o app se conecta como no Windows.",
   'notes.errori_backup_drive': "Erros e backup no Drive ({0})",

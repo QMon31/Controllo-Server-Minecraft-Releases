@@ -4,6 +4,7 @@ pacchetto per Linux. I test simulano Windows e Linux cambiando IS_WINDOWS/IS_LIN
 Avvio a mano:  python -m unittest discover -s tests -v
 """
 import io
+import json
 import os
 import shutil
 import sys
@@ -99,6 +100,40 @@ class LinuxUpdaterTest(unittest.TestCase):
 
     def test_no_linux_release_means_no_update(self):
         self.assertEqual(pc_updater.linux_manifest_url(self.RELEASES[:1]), "")
+
+    def test_linux_release_found_after_many_windows_releases(self):
+        """Più di 100 release Windows dopo l'ultima Linux: si legge la pagina successiva dell'elenco."""
+        windows = [{"tag_name": f"v5.0.{i}-b{200 - i}", "draft": False, "assets": []} for i in range(100)]
+        pages = {1: windows, 2: self.RELEASES[2:]}
+        requested = []
+
+        def fake_get(url, timeout=15):
+            requested.append(url)
+            resp = mock.MagicMock()
+            if "page=" in url:
+                body = pages.get(int(url.rsplit("page=", 1)[1]), [])
+            else:
+                body = {"build": 97, "setup_url": self.BASE + "linux-v4.19.2-b97/voxarium-linux.tar.gz"}
+            resp.__enter__.return_value.read.return_value = json.dumps(body).encode("utf-8")
+            return resp
+
+        with mock.patch.object(pc_updater, "IS_LINUX", True), mock.patch.object(pc_updater, "_http_get", fake_get):
+            self.assertEqual(pc_updater._fetch_manifest()["build"], 97)
+        self.assertEqual(requested, [pc_updater.RELEASES_API_URL.format(page=1), pc_updater.RELEASES_API_URL.format(page=2),
+                                     self.BASE + "linux-v4.19.2-b97/linux_version.json"])
+
+    def test_linux_search_stops_on_last_page(self):
+        calls = []
+
+        def fake_get(url, timeout=15):
+            calls.append(url)
+            resp = mock.MagicMock()
+            resp.__enter__.return_value.read.return_value = json.dumps(self.RELEASES[:1]).encode("utf-8")
+            return resp
+
+        with mock.patch.object(pc_updater, "IS_LINUX", True), mock.patch.object(pc_updater, "_http_get", fake_get):
+            self.assertEqual(pc_updater._fetch_manifest(), {})
+        self.assertEqual(len(calls), 1)
 
     def test_windows_still_reads_latest_manifest(self):
         with mock.patch.object(pc_updater, "IS_LINUX", False), \

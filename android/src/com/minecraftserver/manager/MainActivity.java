@@ -58,8 +58,8 @@ import java.util.regex.Pattern;
 
 public class MainActivity extends Activity implements View.OnClickListener {
 
-    public static final int CURRENT_VERSION_CODE = 96;
-    public static final String CURRENT_VERSION_NAME = "4.12.4";
+    public static final int CURRENT_VERSION_CODE = 97;
+    public static final String CURRENT_VERSION_NAME = "4.12.5-beta.1";
 
     private int dpToPx(int dp) {
         return Math.round(dp * getResources().getDisplayMetrics().density);
@@ -239,6 +239,7 @@ public class MainActivity extends Activity implements View.OnClickListener {
         I18n.attach(getWindow().getDecorView());
 
         PcTls.install(this);
+        if (savedInstanceState == null) deleteOldUpdateApks();
         initNotificationChannels();
         checkNotificationPermission();
         loadPreferences();
@@ -5003,14 +5004,6 @@ public class MainActivity extends Activity implements View.OnClickListener {
                     tempFile.delete();
                 }
 
-                // Replica anche in cache/updates/update.apk e filesDir per massima compatibilità con AppUpdateProvider
-                try {
-                    File subDir = new File(cacheDir, "updates");
-                    if (!subDir.exists()) subDir.mkdirs();
-                    copyFileSimple(apkFile, new File(subDir, "update.apk"));
-                    copyFileSimple(apkFile, new File(getFilesDir(), "update.apk"));
-                } catch (Exception ignored) {}
-
                 return apkFile;
             }
         } catch (Exception ignored) {
@@ -5021,6 +5014,23 @@ public class MainActivity extends Activity implements View.OnClickListener {
             if (conn != null) conn.disconnect();
         }
         return null;
+    }
+
+    /**
+     * All'apertura dell'app l'aggiornamento scaricato non serve più (già installato o rifiutato): si cancella, con le
+     * copie in cache/updates/ e nei file dell'app lasciate dalle versioni fino alla 4.12.4, che non venivano mai tolte.
+     */
+    private void deleteOldUpdateApks() {
+        File[] old = {
+            new File(getCacheDir(), "update.apk"),
+            new File(getCacheDir(), "update.apk.part"),
+            new File(new File(getCacheDir(), "updates"), "update.apk"),
+            new File(getFilesDir(), "update.apk"),
+            new File(new File(getFilesDir(), "updates"), "update.apk"),
+        };
+        for (File f : old) {
+            try { if (f.exists()) f.delete(); } catch (Exception ignored) {}
+        }
     }
 
     private void checkPermissionAndInstall(final File apkFile) {

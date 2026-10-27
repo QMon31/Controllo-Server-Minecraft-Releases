@@ -29,8 +29,10 @@ DETACHED_PROCESS = 0x00000008
 IS_LINUX = sys.platform.startswith("linux")
 LINUX_TAG_PREFIX = "linux-"
 LINUX_MANIFEST_NAME = "linux_version.json"
-# Le release Linux non sono "latest" (quella resta l'installer Windows): si cercano tra le ultime con l'API pubblica
-RELEASES_API_URL = f"https://api.github.com/repos/{UPDATE_REPO}/releases?per_page=30"
+# Le release Linux non sono "latest" (quella resta l'installer Windows): si cercano con l'API pubblica, pagina per pagina
+# (100 release a pagina, dalla più nuova), così si trovano anche se dopo l'ultima Linux sono uscite molte release Windows
+RELEASES_API_URL = f"https://api.github.com/repos/{UPDATE_REPO}/releases?per_page=100&page={{page}}"
+RELEASES_MAX_PAGES = 10
 
 _lock = threading.Lock()
 _state: Dict[str, Any] = {
@@ -79,8 +81,13 @@ def _fetch_manifest() -> Dict[str, Any]:
     if not IS_LINUX:
         with _http_get(MANIFEST_URL) as resp:
             return json.loads(resp.read().decode("utf-8"))
-    with _http_get(RELEASES_API_URL) as resp:
-        url = linux_manifest_url(json.loads(resp.read().decode("utf-8")))
+    url = ""
+    for page in range(1, RELEASES_MAX_PAGES + 1):
+        with _http_get(RELEASES_API_URL.format(page=page)) as resp:
+            releases = json.loads(resp.read().decode("utf-8"))
+        url = linux_manifest_url(releases)
+        if url or len(releases) < 100:
+            break  # trovata, oppure era l'ultima pagina
     if not url:
         return {}  # nessuna release Linux pubblicata: nessun aggiornamento
     if not url.startswith(SETUP_URL_PREFIXES):

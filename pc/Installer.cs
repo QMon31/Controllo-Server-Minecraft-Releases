@@ -84,6 +84,24 @@ namespace MinecraftControlCenterInstaller
             }
         }
 
+        /// <summary>True se le due regole ci sono già (anche disattivate dall'utente): la lettura non richiede l'amministratore.</summary>
+        public static bool AlreadyPresent()
+        {
+            try
+            {
+                dynamic policy = Activator.CreateInstance(Type.GetTypeFromProgID("HNetCfg.FwPolicy2"));
+                foreach (string name in new string[] { "Controllo Server Minecraft (8080)", "Controllo Server Minecraft (8443)" })
+                {
+                    try { policy.Rules.Item(name); } catch { return false; }
+                }
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         static void AddRule(dynamic policy, string name, string port, int profiles, string description)
         {
             for (int i = 0; i < 5; i++)   // toglie eventuali copie della regola lasciate da installazioni precedenti
@@ -1448,7 +1466,9 @@ namespace MinecraftControlCenterInstaller
 
                 // Accesso dal telefono: regole firewall per le porte 8080 (rete di casa) e 8443 (da internet),
                 // create dall'installer stesso come amministratore (FirewallRules). Solo modalità Host.
-                if (!isRemote)
+                // In aggiornamento, se le regole ci sono già, niente richiesta di amministratore e niente regole ricreate
+                // (una regola spenta dall'utente resta spenta)
+                if (!isRemote && !(Program.IsUpdateMode && FirewallRules.AlreadyPresent()))
                 {
                     bw.ReportProgress(80, "Regole firewall per l'accesso dal telefono (porte 8080 e 8443)...");
                     FirewallRules.RequestElevated();
@@ -1461,14 +1481,21 @@ namespace MinecraftControlCenterInstaller
                 string shortcutName = isRemote ? "Voxarium (Remoto).lnk" : "Voxarium.lnk";
                 string shortcutDesc = isRemote ? "Controllo Remoto per Server Minecraft su PC Secondario" : "Pannello di Controllo per Server Minecraft";
 
+                // Aggiornamento automatico: si rispettano le scelte fatte dopo l'installazione. Collegamenti rinnovati solo
+                // dove ci sono ancora (uno cancellato dall'utente non torna), avvio automatico lasciato com'era.
+                bool update = Program.IsUpdateMode;
+
                 // 1. Desktop Shortcut across all desktop profiles
                 if (chkDesktop.Checked)
                 {
-                    CreateDesktopShortcuts(mainExe, destDir, iconPath, shortcutName, shortcutDesc);
+                    CreateDesktopShortcuts(mainExe, destDir, iconPath, shortcutName, shortcutDesc, update);
                 }
 
                 // 2. Start Menu Shortcut
-                if (chkStartMenu.Checked)
+                string programsMenu = Environment.GetFolderPath(Environment.SpecialFolder.Programs);
+                bool hadStartMenu = Directory.Exists(Path.Combine(programsMenu, "Voxarium")) ||
+                                    Directory.Exists(Path.Combine(programsMenu, LegacyName));
+                if (chkStartMenu.Checked && (!update || hadStartMenu))
                 {
                     string startMenu = Environment.GetFolderPath(Environment.SpecialFolder.Programs);
                     // Il programma si chiamava "Controllo Server Minecraft": toglie la vecchia cartella del Menu Start
@@ -1485,7 +1512,24 @@ namespace MinecraftControlCenterInstaller
                 }
 
                 // 3. Auto-start on Windows Boot
-                if (chkAutoStart != null && chkAutoStart.Checked)
+                if (update)
+                {
+                    // La voce del registro (scritta dall'installer, dal pannello o dal menu dell'icona, con o senza
+                    // --autostart) resta com'è; un vecchio collegamento in Esecuzione automatica diventa la voce del registro
+                    if (StartupShortcutExists() && !AutoStartRegistered())
+                    {
+                        try
+                        {
+                            using (RegistryKey rk = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run", true))
+                            {
+                                if (rk != null) rk.SetValue("ControlloServerMinecraft", string.Format("\"{0}\"", mainExe));
+                            }
+                        }
+                        catch { }
+                    }
+                    RemoveStartupShortcuts();
+                }
+                else if (chkAutoStart != null && chkAutoStart.Checked)
                 {
                     bw.ReportProgress(88, "Configurazione avvio automatico con Windows...");
                     try
@@ -1678,14 +1722,43 @@ namespace MinecraftControlCenterInstaller
 
         // Collegamenti di avvio delle versioni precedenti (prima e dopo il nome Voxarium): l'avvio automatico
         // usa solo la voce ControlloServerMinecraft nel registro
+        static readonly string[] StartupShortcutNames = { "Controllo Server Minecraft.lnk", "Controllo Server Minecraft (Remoto).lnk",
+                                                          "Voxarium.lnk", "Voxarium (Remoto).lnk" };
+
+        static bool AutoStartRegistered()
+        {
+            try
+            {
+                using (RegistryKey rk = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run", false))
+                {
+                    return rk != null && rk.GetValue("ControlloServerMinecraft") != null;
+                }
+            }
+            catch { return false; }
+        }
+
+        static bool StartupShortcutExists()
+        {
+            try
+            {
+                string startupFolder = Environment.GetFolderPath(Environment.SpecialFolder.Startup);
+                if (string.IsNullOrEmpty(startupFolder)) return false;
+                foreach (string name in StartupShortcutNames)
+                {
+                    if (File.Exists(Path.Combine(startupFolder, name))) return true;
+                }
+            }
+            catch { }
+            return false;
+        }
+
         static void RemoveStartupShortcuts()
         {
             try
             {
                 string startupFolder = Environment.GetFolderPath(Environment.SpecialFolder.Startup);
                 if (string.IsNullOrEmpty(startupFolder) || !Directory.Exists(startupFolder)) return;
-                foreach (string name in new string[] { "Controllo Server Minecraft.lnk", "Controllo Server Minecraft (Remoto).lnk",
-                                                       "Voxarium.lnk", "Voxarium (Remoto).lnk" })
+                foreach (string name in StartupShortcutNames)
                 {
                     try
                     {
@@ -1700,7 +1773,8 @@ namespace MinecraftControlCenterInstaller
 
         const string LegacyName = "Controllo Server Minecraft";
 
-        private void CreateDesktopShortcuts(string targetExe, string workingDir, string iconPath, string shortcutName, string description)
+        /// <summary>onlyExisting (aggiornamento): rinnova il collegamento solo sui Desktop dove c'è già, col nome nuovo o vecchio.</summary>
+        private void CreateDesktopShortcuts(string targetExe, string workingDir, string iconPath, string shortcutName, string description, bool onlyExisting)
         {
             HashSet<string> desktopDirs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
@@ -1731,6 +1805,11 @@ namespace MinecraftControlCenterInstaller
             {
                 try
                 {
+                    if (onlyExisting)
+                    {
+                        string legacyName = shortcutName.Replace("Voxarium", LegacyName);
+                        if (!File.Exists(Path.Combine(dir, shortcutName)) && !File.Exists(Path.Combine(dir, legacyName))) continue;
+                    }
                     // Collegamenti col vecchio nome del programma
                     foreach (string legacy in new string[] { LegacyName + ".lnk", LegacyName + " (Remoto).lnk" })
                     {

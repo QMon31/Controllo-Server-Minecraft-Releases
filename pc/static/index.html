@@ -128,7 +128,7 @@
 
       <button class="sidebar-nav-item" id="snav-changelog" onclick="toggleSidebarDrawer(false); openChangelogModal();">
         <span class="snav-icon info-circle-nav-icon">i</span>
-        <span class="snav-label">Info &amp; Versioni (v4.19.2)</span>
+        <span class="snav-label">Info &amp; Versioni (v4.20.0)</span>
       </button>
 
       <button class="sidebar-nav-item" id="snav-settings" onclick="toggleSidebarDrawer(false); openSettingsModal();">
@@ -2687,7 +2687,7 @@
           <div class="modal-info-circle-badge">i</div>
           <div>
             <h3 style="margin: 0; font-size: 1.15rem; color: #f4f4f5;" data-i18n="ui.informazioni_novita_cronologia_versioni">Informazioni, Novità &amp; Cronologia Versioni</h3>
-            <span id="changelog-header-badge" style="font-size: 0.75rem; color: #8db6e8; font-weight: 600;">Release Ufficiale v4.19.2 (Build 97) &bull; Attiva</span>
+            <span id="changelog-header-badge" style="font-size: 0.75rem; color: #8db6e8; font-weight: 600;">Release Ufficiale v4.20.0 (Build 98) &bull; Attiva</span>
           </div>
         </div>
         <div style="display: flex; gap: 8px; align-items: center;">
@@ -2703,7 +2703,7 @@
             <div class="row-center">
               <span style="font-size: 1.1rem;"></span>
               <span style="font-size: 0.92rem; font-weight: 700; color: #f4f4f5;" data-i18n="ui.diagnostica_specifiche_sistema">Diagnostica &amp; Specifiche di Sistema</span>
-              <span id="sys-release-badge" class="badge badge-emerald" style="font-size: 0.7rem;">v4.19.2 (Build 97)</span>
+              <span id="sys-release-badge" class="badge badge-emerald" style="font-size: 0.7rem;">v4.20.0 (Build 98)</span>
               <button class="btn btn-xs btn-secondary" onclick="checkPcUpdate(true)" title="Verifica la disponibilità di una nuova versione del programma PC" data-i18n-title="ui.verifica_disponibilita_nuova_versione_programma" data-i18n="ui.controlla_aggiornamenti_programma">Controlla aggiornamenti programma</button>
             </div>
             <div style="display: flex; gap: 6px;">
@@ -2756,7 +2756,7 @@
         <!-- SEZIONE 1: ULTIME NOVITÀ -->
         <h4 style="margin: 0 0 10px; color: #f4f4f5; font-size: 1rem; display: flex; align-items: center; gap: 8px;">
           <span></span>
-          <span>Novità Ultimo Aggiornamento (PC v4.19.2 - Build 97 &bull; App v4.12.4 - Build 96):</span>
+          <span>Novità Ultimo Aggiornamento (PC v4.20.0 - Build 98 &bull; App v4.12.4 - Build 96):</span>
         </h4>
 
         <!-- SOTTOSEZIONE: PC (Visibile solo su PC o in modalità Tutti) -->
@@ -2766,6 +2766,7 @@
             <span data-i18n="ui.novita_pc_server_pannello_desktop">NOVITÀ PER PC (Server &amp; Pannello Desktop):</span>
           </h5>
           <ul style="margin: 0; padding-left: 20px; font-size: 0.85rem; color: #e7e7e9; display: flex; flex-direction: column; gap: 8px;">
+            <li><b>PC Remoti aggiornati da soli (v4.20.0)</b><span data-i18n="notes.pc_remoti_aggiornamento_impostazioni">: i PC con Controllo Remoto controllano da soli le nuove versioni e chiedono se aggiornarsi (anche dalla voce &quot;Controlla aggiornamenti&quot; nel menu dell'icona); gli aggiornamenti non riaccendono più l'avvio automatico spento, non ricreano i collegamenti cancellati e non chiedono ogni volta il permesso di amministratore; i PC Linux trovano la loro versione anche dopo molte release per Windows.</span></li>
             <li><b>Versione per Linux (v4.19.2)</b><span data-i18n="notes.versione_linux_servizio_browser">: Voxarium funziona anche su Ubuntu e Debian, con una release separata da quella per Windows: si installa con install.sh, gira come servizio all'accensione del PC, il pannello si apre nel browser e l'app si collega come con Windows.</span></li>
             <li><b>Correzioni (v4.19.2)</b><span data-i18n="notes.tempo_reale_porta_mc">: il pannello si aggiorna in tempo reale anche sui PC senza Python installato (mancava una libreria, ora inclusa); l'app mostra la porta vera del server Minecraft invece di 32769.</span></li>
             <li><b>Backup più sicuro (v4.19.1)</b><span data-i18n="notes.copia_drive_avanzamento_avvio_bloccato">: la copia su Google Drive mostra il suo avanzamento invece di restare ferma al 99% e sostituisce quella vecchia solo quando è completa; durante un backup o un ripristino il server non si avvia (anche dai riavvii automatici) e il telefono mostra il motivo.</span></li>

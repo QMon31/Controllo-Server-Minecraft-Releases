@@ -911,7 +911,7 @@ class AutostartTest(unittest.TestCase):
             src = fh.read()
         block = src[src.index("// 3. Auto-start on Windows Boot"):src.index("// 4. Uninstaller Script and Registry")]
         self.assertNotIn("CreateShortcut(", block)
-        self.assertEqual(block.count("RemoveStartupShortcuts();"), 2)
+        self.assertEqual(block.count("RemoveStartupShortcuts();"), 3)  # aggiornamento, avvio acceso, avvio spento
         self.assertIn("Voxarium*.lnk", src)
 
 

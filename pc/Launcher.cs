@@ -551,6 +551,289 @@ namespace MinecraftControlCenter
         }
     }
 
+    /// <summary>
+    /// Aggiornamento automatico dei PC Remoti: qui non c'è il backend Python (che sul PC Host controlla gli aggiornamenti),
+    /// quindi è il Launcher a leggere pc_version.json della release più recente. Se la Build è più nuova chiede all'utente,
+    /// scarica l'installer (solo dagli indirizzi delle release, SHA-256 verificato) e lo avvia con --update: l'installer
+    /// chiude questo programma, sostituisce i file conservando l'Host salvato e riapre il programma.
+    /// </summary>
+    static class RemoteUpdater
+    {
+        // Stessi indirizzi di pc_updater.py (UPDATE_REPO e LEGACY_UPDATE_REPO in pc_version.py)
+        const string ManifestUrl = "https://github.com/QMon31/Voxarium/releases/latest/download/pc_version.json";
+        static readonly string[] SetupUrlPrefixes = {
+            "https://github.com/QMon31/Voxarium/releases/download/",
+            "https://github.com/QMon31/Controllo-Server-Minecraft-Releases/releases/download/"
+        };
+        const int FirstCheckDelayMs = 45 * 1000;
+        const int CheckIntervalMs = 6 * 3600 * 1000;
+
+        static NotifyIcon tray;
+        static int busy = 0;            // 1 durante un controllo o un download
+        static int declinedBuild = 0;   // Build rifiutata dall'utente: non la si richiede fino al prossimo avvio
+
+        public class Manifest
+        {
+            public string Version = "";
+            public int Build = 0;
+            public string SetupUrl = "";
+            public string Sha256 = "";
+        }
+
+        /// <summary>Build di questo eseguibile (ultima cifra della versione scritta da build_deploy.py); 0 se compilato senza.</summary>
+        public static int CurrentBuild()
+        {
+            try { return Math.Max(0, Assembly.GetExecutingAssembly().GetName().Version.Revision); }
+            catch { return 0; }
+        }
+
+        public static string CurrentVersion()
+        {
+            try
+            {
+                Version v = Assembly.GetExecutingAssembly().GetName().Version;
+                return v.Major + "." + v.Minor + "." + v.Build;
+            }
+            catch { return "?"; }
+        }
+
+        /// <summary>Legge il manifest; null se manca qualcosa o se l'installer non viene dalle release del programma.</summary>
+        public static Manifest ParseManifest(string json)
+        {
+            if (string.IsNullOrEmpty(json)) return null;
+            Match b = Regex.Match(json, "\"build\"\\s*:\\s*(\\d{1,6})");
+            Manifest m = new Manifest();
+            m.Version = ReadString(json, "version");
+            m.SetupUrl = ReadString(json, "setup_url");
+            m.Sha256 = ReadString(json, "sha256").ToLowerInvariant();
+            m.Build = b.Success ? int.Parse(b.Groups[1].Value) : 0;
+            if (m.Build <= 0 || !Regex.IsMatch(m.Sha256, "^[0-9a-f]{64}$") || !IsAllowedSetupUrl(m.SetupUrl)) return null;
+            if (!Regex.IsMatch(m.Version, "^[0-9A-Za-z.+-]{1,32}$")) m.Version = "?";
+            return m;
+        }
+
+        public static bool IsAllowedSetupUrl(string url)
+        {
+            if (string.IsNullOrEmpty(url) || url.Contains("..") || !url.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) return false;
+            foreach (string p in SetupUrlPrefixes)
+            {
+                if (url.StartsWith(p, StringComparison.Ordinal)) return true;
+            }
+            return false;
+        }
+
+        static string ReadString(string json, string key)
+        {
+            Match m = Regex.Match(json, "\"" + Regex.Escape(key) + "\"\\s*:\\s*\"([^\"]*)\"");
+            return m.Success ? m.Groups[1].Value.Trim() : "";
+        }
+
+        public static void Start(NotifyIcon trayIcon)
+        {
+            tray = trayIcon;
+            if (CurrentBuild() == 0) return;  // compilazione di prova senza versione: niente aggiornamenti
+            Thread t = new Thread(() => {
+                Thread.Sleep(FirstCheckDelayMs);  // lascia aprire il pannello
+                while (true)
+                {
+                    CheckNow(false);
+                    Thread.Sleep(CheckIntervalMs);
+                }
+            });
+            t.IsBackground = true;
+            t.SetApartmentState(ApartmentState.STA);
+            t.Start();
+        }
+
+        /// <summary>Voce "Controlla aggiornamenti" del menu: controllo subito, con l'esito anche se non c'è niente di nuovo.</summary>
+        public static void CheckFromMenu()
+        {
+            Thread t = new Thread(() => CheckNow(true));
+            t.IsBackground = true;
+            t.SetApartmentState(ApartmentState.STA);
+            t.Start();
+        }
+
+        static void CheckNow(bool manual)
+        {
+            if (Interlocked.CompareExchange(ref busy, 1, 0) != 0) return;
+            try
+            {
+                Manifest m;
+                try
+                {
+                    m = ParseManifest(Download(ManifestUrl));
+                    if (m == null) throw new InvalidDataException("pc_version.json");
+                }
+                catch (Exception ex)
+                {
+                    if (manual) Balloon(LauncherText.T("upd.check_failed", ex.Message), ToolTipIcon.Warning);
+                    return;
+                }
+                int current = CurrentBuild();
+                if (m.Build <= current)
+                {
+                    if (manual) Balloon(LauncherText.T("upd.up_to_date", CurrentVersion(), current), ToolTipIcon.Info);
+                    return;
+                }
+                if (!manual && m.Build == declinedBuild) return;
+
+                DialogResult answer;
+                using (Form owner = new Form())
+                {
+                    owner.TopMost = true;
+                    owner.ShowInTaskbar = false;
+                    answer = MessageBox.Show(owner,
+                        LauncherText.T("upd.ask", m.Version, m.Build, CurrentVersion(), current),
+                        LauncherText.T("upd.title"), MessageBoxButtons.YesNo, MessageBoxIcon.Information);
+                }
+                if (answer != DialogResult.Yes)
+                {
+                    declinedBuild = m.Build;
+                    return;
+                }
+                Balloon(LauncherText.T("upd.downloading"), ToolTipIcon.Info);
+                try
+                {
+                    string setup = DownloadInstaller(m);
+                    Process.Start(new ProcessStartInfo(setup, "--update") { UseShellExecute = true });
+                }
+                catch (Exception ex)
+                {
+                    Balloon(LauncherText.T("upd.failed", ex.Message), ToolTipIcon.Error);
+                }
+            }
+            finally
+            {
+                Interlocked.Exchange(ref busy, 0);
+            }
+        }
+
+        static HttpWebRequest NewRequest(string url, int timeoutMs)
+        {
+            HttpWebRequest req = (HttpWebRequest)WebRequest.Create(url);
+            req.UserAgent = "ControlloServerMinecraft/" + CurrentVersion();
+            req.Timeout = timeoutMs;
+            req.ReadWriteTimeout = timeoutMs;
+            req.AllowAutoRedirect = true;  // GitHub reindirizza i file delle release ai suoi server dei download
+            return req;
+        }
+
+        static string Download(string url)
+        {
+            using (HttpWebResponse resp = (HttpWebResponse)NewRequest(url, 15000).GetResponse())
+            using (StreamReader reader = new StreamReader(resp.GetResponseStream()))
+            {
+                return reader.ReadToEnd();
+            }
+        }
+
+        /// <summary>Scarica l'installer nella cartella temporanea e ne verifica lo SHA-256; restituisce il percorso.</summary>
+        static string DownloadInstaller(Manifest m)
+        {
+            string dest = Path.Combine(Path.GetTempPath(), "Setup_Voxarium_b" + m.Build + ".exe");
+            string part = dest + ".part";
+            using (SHA256 sha = SHA256.Create())
+            {
+                using (HttpWebResponse resp = (HttpWebResponse)NewRequest(m.SetupUrl, 60000).GetResponse())
+                using (Stream input = resp.GetResponseStream())
+                using (FileStream output = new FileStream(part, FileMode.Create, FileAccess.Write))
+                {
+                    byte[] buffer = new byte[1024 * 1024];
+                    int read;
+                    while ((read = input.Read(buffer, 0, buffer.Length)) > 0)
+                    {
+                        output.Write(buffer, 0, read);
+                        sha.TransformBlock(buffer, 0, read, null, 0);
+                    }
+                    sha.TransformFinalBlock(buffer, 0, 0);
+                }
+                string hex = BitConverter.ToString(sha.Hash).Replace("-", "").ToLowerInvariant();
+                if (hex != m.Sha256)
+                {
+                    try { File.Delete(part); } catch { }
+                    throw new InvalidDataException("SHA-256");
+                }
+            }
+            if (File.Exists(dest)) File.Delete(dest);
+            File.Move(part, dest);
+            return dest;
+        }
+
+        static void Balloon(string text, ToolTipIcon icon)
+        {
+            try { if (tray != null) tray.ShowBalloonTip(5000, "Voxarium", text, icon); } catch { }
+        }
+    }
+
+    /// <summary>Testi del Launcher per l'aggiornamento dei PC Remoti, nella lingua scelta durante l'installazione.</summary>
+    static class LauncherText
+    {
+        static readonly Dictionary<string, Dictionary<string, string>> Texts = new Dictionary<string, Dictionary<string, string>> {
+            { "it", new Dictionary<string, string> {
+                { "upd.title", "Aggiornamento disponibile" },
+                { "upd.ask", "È disponibile Voxarium v{0} (Build {1}); questo PC ha la v{2} (Build {3}).\n\nAggiornarlo adesso? Il programma si chiude durante l'aggiornamento e si riapre da solo; l'indirizzo del PC Host resta quello salvato." },
+                { "upd.downloading", "Download dell'aggiornamento in corso..." },
+                { "upd.failed", "Aggiornamento non riuscito: {0}" },
+                { "upd.check_failed", "Controllo aggiornamenti non riuscito: {0}" },
+                { "upd.up_to_date", "Il programma è aggiornato (v{0}, Build {1})." },
+                { "upd.menu", "Controlla aggiornamenti" } } },
+            { "en", new Dictionary<string, string> {
+                { "upd.title", "Update available" },
+                { "upd.ask", "Voxarium v{0} (Build {1}) is available; this PC has v{2} (Build {3}).\n\nUpdate it now? The program closes during the update and reopens by itself; the Host PC address stays the saved one." },
+                { "upd.downloading", "Downloading the update..." },
+                { "upd.failed", "Update failed: {0}" },
+                { "upd.check_failed", "Update check failed: {0}" },
+                { "upd.up_to_date", "The program is up to date (v{0}, Build {1})." },
+                { "upd.menu", "Check for updates" } } },
+            { "es", new Dictionary<string, string> {
+                { "upd.title", "Actualización disponible" },
+                { "upd.ask", "Está disponible Voxarium v{0} (Build {1}); este PC tiene la v{2} (Build {3}).\n\n¿Actualizarlo ahora? El programa se cierra durante la actualización y se vuelve a abrir solo; la dirección del PC Host sigue siendo la guardada." },
+                { "upd.downloading", "Descargando la actualización..." },
+                { "upd.failed", "La actualización no se pudo completar: {0}" },
+                { "upd.check_failed", "No se pudo buscar actualizaciones: {0}" },
+                { "upd.up_to_date", "El programa está actualizado (v{0}, Build {1})." },
+                { "upd.menu", "Buscar actualizaciones" } } },
+            { "fr", new Dictionary<string, string> {
+                { "upd.title", "Mise à jour disponible" },
+                { "upd.ask", "Voxarium v{0} (Build {1}) est disponible ; ce PC a la v{2} (Build {3}).\n\nLe mettre à jour maintenant ? Le programme se ferme pendant la mise à jour et se rouvre tout seul ; l'adresse du PC Hôte reste celle enregistrée." },
+                { "upd.downloading", "Téléchargement de la mise à jour..." },
+                { "upd.failed", "Échec de la mise à jour : {0}" },
+                { "upd.check_failed", "Échec de la recherche de mises à jour : {0}" },
+                { "upd.up_to_date", "Le programme est à jour (v{0}, Build {1})." },
+                { "upd.menu", "Rechercher des mises à jour" } } },
+            { "de", new Dictionary<string, string> {
+                { "upd.title", "Update verfügbar" },
+                { "upd.ask", "Voxarium v{0} (Build {1}) ist verfügbar; dieser PC hat v{2} (Build {3}).\n\nJetzt aktualisieren? Das Programm schließt sich während des Updates und öffnet sich danach von selbst; die Adresse des Host-PCs bleibt die gespeicherte." },
+                { "upd.downloading", "Update wird heruntergeladen..." },
+                { "upd.failed", "Update fehlgeschlagen: {0}" },
+                { "upd.check_failed", "Suche nach Updates fehlgeschlagen: {0}" },
+                { "upd.up_to_date", "Das Programm ist aktuell (v{0}, Build {1})." },
+                { "upd.menu", "Nach Updates suchen" } } },
+            { "pt", new Dictionary<string, string> {
+                { "upd.title", "Atualização disponível" },
+                { "upd.ask", "O Voxarium v{0} (Build {1}) está disponível; este PC tem a v{2} (Build {3}).\n\nAtualizar agora? O programa fecha durante a atualização e reabre sozinho; o endereço do PC Host continua o que foi salvo." },
+                { "upd.downloading", "Baixando a atualização..." },
+                { "upd.failed", "Falha na atualização: {0}" },
+                { "upd.check_failed", "Falha ao procurar atualizações: {0}" },
+                { "upd.up_to_date", "O programa está atualizado (v{0}, Build {1})." },
+                { "upd.menu", "Procurar atualizações" } } }
+        };
+
+        public static IEnumerable<string> Languages { get { return Texts.Keys; } }
+
+        public static IEnumerable<string> Keys(string lang) { return Texts[lang].Keys; }
+
+        public static string T(string key, params object[] args)
+        {
+            Dictionary<string, string> d;
+            string s;
+            if (!Texts.TryGetValue(Program.AppLanguage ?? "", out d) || !d.TryGetValue(key, out s))
+                s = Texts["it"].TryGetValue(key, out s) ? s : key;
+            return args.Length > 0 ? string.Format(s, args) : s;
+        }
+    }
+
     static class Program
     {
         public const string WM_SHOW_APP_NAME = "SHOW_MINECRAFT_CONTROL_CENTER_MAIN_WINDOW";
@@ -683,6 +966,7 @@ namespace MinecraftControlCenter
                     mainWindow = new MainWindow(remoteUrl, appIcon, trayIcon);
                     string startUrl = remoteUrl;
                     Task.Factory.StartNew(() => LearnHostIdentity(startUrl));
+                    RemoteUpdater.Start(trayIcon);
 
                     if (isAutostart)
                     {
@@ -877,6 +1161,7 @@ namespace MinecraftControlCenter
                     trayIcon.ShowBalloonTip(3000, "Avvio Automatico", "Avvio automatico con Windows disattivato.", ToolTipIcon.Info);
             };
             menu.MenuItems.Add(itemAutoRemote);
+            menu.MenuItems.Add(LauncherText.T("upd.menu"), (s, e) => RemoteUpdater.CheckFromMenu());
             menu.MenuItems.Add("-");
             menu.MenuItems.Add("Esci", (s, e) => {
                 trayIcon.Visible = false;

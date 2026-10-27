@@ -16,17 +16,10 @@ public class AppUpdateProvider extends ContentProvider {
         return true;
     }
 
+    /** L'unico aggiornamento scaricato: cache/update.apk (MainActivity.tryDownloadApk). */
     private File getApkFile() {
         if (getContext() == null) return null;
-        File f1 = new File(getContext().getCacheDir(), "update.apk");
-        if (f1.exists() && f1.length() > 0) return f1;
-        File f2 = new File(new File(getContext().getCacheDir(), "updates"), "update.apk");
-        if (f2.exists() && f2.length() > 0) return f2;
-        File f3 = new File(getContext().getFilesDir(), "update.apk");
-        if (f3.exists() && f3.length() > 0) return f3;
-        File f4 = new File(new File(getContext().getFilesDir(), "updates"), "update.apk");
-        if (f4.exists() && f4.length() > 0) return f4;
-        return f1;
+        return new File(getContext().getCacheDir(), "update.apk");
     }
 
     @Override

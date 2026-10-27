@@ -1195,12 +1195,8 @@ def get_app_version():
         except Exception:
             pass
     if not data:
-        data = {
-            "version_code": 68,
-            "version_name": "4.9.4",
-            "download_url": "/static/Controllo_Server_Minecraft.apk",
-            "release_notes": "Novità v4.9.4: Tasti modalità interattivi con evidenziazione grafica e vibrazione aptica; auto-switch intelligente Wi-Fi ↔ 4G/5G; sincronizzazione automatica URL da ntfy; rimozione barre superflue; eliminazione ridondanze tasto info."
-        }
+        # Niente versione inventata: l'app mostra "impossibile verificare gli aggiornamenti" invece di un annuncio sbagliato
+        raise HTTPException(status_code=404, detail="version.json dell'app non trovato")
     return data
 
 @app.get("/api/app/download")
