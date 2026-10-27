@@ -6,10 +6,10 @@ phone, both at home and away from home.
 
 This repository contains **only the installer and the updates** of the program: the source code is not public.
 
-**[Download the latest version (Setup_Voxarium.exe)](https://github.com/QMon31/Controllo-Server-Minecraft-Releases/releases/latest/download/Setup_Voxarium.exe)**
-· [All versions and release notes](https://github.com/QMon31/Controllo-Server-Minecraft-Releases/releases)
+**[Download the latest version (Setup_Voxarium.exe)](https://github.com/QMon31/Voxarium/releases/latest/download/Setup_Voxarium.exe)**
+· [All versions and release notes](https://github.com/QMon31/Voxarium/releases)
 
-The program's interface is in Italian.
+The control panel is available in Italian, English, German, Spanish, French and Portuguese (choose the language in its header).
 
 ---
 
@@ -66,7 +66,7 @@ The program's interface is in Italian.
 Python and everything else the panel needs are already included in the installer.
 
 ## Installation
-1. Download **[Setup_Voxarium.exe](https://github.com/QMon31/Controllo-Server-Minecraft-Releases/releases/latest/download/Setup_Voxarium.exe)**.
+1. Download **[Setup_Voxarium.exe](https://github.com/QMon31/Voxarium/releases/latest/download/Setup_Voxarium.exe)**.
 2. Open it and choose the mode:
    - **Host**: this PC runs the Minecraft server (the usual choice);
    - **Remote**: this PC only controls a server running on another PC.
