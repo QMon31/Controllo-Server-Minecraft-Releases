@@ -1,0 +1,21 @@
+<p>Voxarium is the companion app of the <b>Voxarium</b> program for Windows and Linux, which runs a Minecraft Java server on your own computer. The app lets you manage that server from your phone, at home or away.</p>
+
+<p><b>What you can do</b></p>
+<ul>
+<li>Start, stop and restart the server, and see its state, players, TPS, RAM and CPU load</li>
+<li>Manage players and the whitelist, game rules and server settings</li>
+<li>Use the live console and the in-game chat</li>
+<li>Schedule restarts, see errors, make and restore world backups</li>
+<li>Tune RAM and Java options, eco mode (stops the server when nobody plays) and anti-lag</li>
+<li>Edit server.properties and mod configuration files</li>
+<li>Home screen widget and notifications when the server starts, stops or crashes</li>
+<li>Available in English, Italian, German, Spanish, French and Portuguese</li>
+</ul>
+
+<p><b>Your server, your data</b></p>
+<p>The app talks only to your own computer: over your home Wi-Fi, or from the internet over HTTPS, recognising your PC's certificate by its fingerprint. Access is protected by the PIN set on the PC, and the app can ask for your fingerprint when it opens. No accounts, no ads, no tracking. Notifications use the open source ntfy.sh service.</p>
+
+<p><b>Requirements</b></p>
+<p>The Voxarium program installed on a Windows or Linux PC (free and open source, from github.com/QMon31/Voxarium).</p>
+
+<p>Voxarium is not an official Minecraft product and is not affiliated with Mojang or Microsoft.</p>

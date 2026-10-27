@@ -82,6 +82,7 @@
 "ui.visualizza_modifica_server_properties": "View and edit server.properties and mod configs (.toml, .json, .cfg):",
 "ui.esplora_modifica_file_config": "Browse & edit config files",
 "ui.sicurezza_aggiornamenti_ota": "Security & OTA updates",
+"ui.sicurezza": "Security",
 "ui.blocco_impronta_pin_all_apertura": "Fingerprint / PIN lock on opening",
 "ui.controlla_aggiornamenti_ora": "Check for updates now",
 "ui.server_principale": "Main Server",

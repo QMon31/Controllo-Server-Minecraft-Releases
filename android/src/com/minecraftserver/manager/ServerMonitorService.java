@@ -599,6 +599,7 @@ public class ServerMonitorService extends Service {
     }
 
     private void triggerUpdateNotification(String title, String message) {
+        if (!Flavor.SELF_UPDATE) return;
         try {
             Intent notificationIntent = new Intent(this, MainActivity.class);
             notificationIntent.putExtra("navigate_to", "settings");
@@ -721,6 +722,7 @@ public class ServerMonitorService extends Service {
     }
 
     private void startPeriodicUpdateChecker() {
+        if (!Flavor.SELF_UPDATE) return;
         if (mUpdateThread != null && mUpdateThread.isAlive()) return;
         mUpdateThread = new Thread(new Runnable() {
             @Override

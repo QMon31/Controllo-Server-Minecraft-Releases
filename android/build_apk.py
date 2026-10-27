@@ -4,10 +4,13 @@ Uso (dalla cartella android_project o da qualunque altra):
     python build_apk.py                         compila soltanto (STAGING): nessun telefono riceve l'aggiornamento
     python build_apk.py --publish --notes "..." compila e pubblica in OTA (static/ + version.json) per i telefoni
     python build_apk.py --no-r8                 compila senza offuscamento (solo per capire un problema causato da R8)
+    python build_apk.py --fdroid                variante F-Droid (Voxarium-fdroid.apk): senza aggiornamento interno,
+                                                mai pubblicata in OTA. F-Droid compila invece con Gradle (build.gradle).
 
 La versione si cambia SOLO in AndroidManifest.xml (android:versionCode / android:versionName): questo script
 la legge da lì, allinea CURRENT_VERSION_CODE / CURRENT_VERSION_NAME in MainActivity.java e la scrive in version.json.
 Regole di pubblicazione: vedi AGENTS.md (sezione 1, Policy OTA). Mai copiare l'APK sul Desktop.
+Il package dell'app (PACKAGE) non sta nel manifest, come chiede Gradle: questo script lo aggiunge alla copia in bin/.
 """
 import json
 import os
@@ -24,6 +27,10 @@ RES_DIR = os.path.join(PROJECT_DIR, "res")
 BIN_DIR = os.path.join(PROJECT_DIR, "bin")
 OBJ_DIR = os.path.join(PROJECT_DIR, "obj")
 MANIFEST = os.path.join(PROJECT_DIR, "AndroidManifest.xml")
+PACKAGE = "com.minecraftserver.manager"  # uguale a namespace/applicationId in build.gradle
+# Variante: "ota" (normale, si aggiorna da sola dal PC) o "fdroid"; Flavor.java è in flavors/<variante>/java
+FLAVOR = "fdroid" if "--fdroid" in sys.argv else "ota"
+FLAVOR_SRC = os.path.join(PROJECT_DIR, "flavors", FLAVOR, "java", "com", "minecraftserver", "manager")
 MAIN_ACTIVITY = os.path.join(SRC_DIR, "MainActivity.java")
 PROGUARD_RULES = os.path.join(PROJECT_DIR, "proguard-rules.pro")
 
@@ -44,6 +51,14 @@ KEYTOOL = os.path.join(JDK_BIN, "keytool.exe")
 JAR = os.path.join(JDK_BIN, "jar.exe")
 
 OUTPUT_APK_NAME = "Controllo_Server_Minecraft.apk"
+FDROID_APK_NAME = "Voxarium-fdroid.apk"
+# Nella variante F-Droid si tolgono permesso, query e provider dell'aggiornamento interno
+# (come flavors/fdroid/AndroidManifest.xml per Gradle)
+FDROID_REMOVED = [
+    r'[ \t]*<uses-permission android:name="android\.permission\.REQUEST_INSTALL_PACKAGES" />\r?\n',
+    r'[ \t]*<queries>.*?</queries>\r?\n',
+    r'[ \t]*<!--[^>]*OTA -->\r?\n[ \t]*<provider\s[^>]*AppUpdateProvider.*?/>\r?\n',
+]
 
 # Firma dell'APK: keystore e password solo su questo PC (signing.properties e *.keystore sono esclusi da git).
 # Chi ha la chiave può pubblicare aggiornamenti dell'app: non va mai condivisa.
@@ -140,6 +155,24 @@ def sync_main_activity_version(code, name):
         log(f"MainActivity.java allineato al manifest: v{name} (Build {code})")
 
 
+def build_manifest():
+    """Copia del manifest per aapt2 in bin/: con il package e, per F-Droid, senza aggiornamento interno."""
+    with open(MANIFEST, encoding="utf-8") as f:
+        xml = f.read()
+    xml = xml.replace("<manifest ", f'<manifest package="{PACKAGE}" ', 1)
+    if FLAVOR == "fdroid":
+        for pattern in FDROID_REMOVED:
+            xml, n = re.subn(pattern, "", xml, count=1, flags=re.S)
+            if n != 1:
+                sys.exit(f"[APK BUILDER] ERRORE variante F-Droid: elemento non trovato nel manifest ({pattern})")
+        if "REQUEST_INSTALL_PACKAGES" in xml or "AppUpdateProvider" in xml or "<queries" in xml:
+            sys.exit("[APK BUILDER] ERRORE variante F-Droid: nel manifest resta l'aggiornamento interno")
+    out = os.path.join(BIN_DIR, "AndroidManifest.xml")
+    with open(out, "w", encoding="utf-8") as f:
+        f.write(xml)
+    return out
+
+
 def compile_apk():
     os.makedirs(BIN_DIR, exist_ok=True)
     compiled_res = os.path.join(BIN_DIR, "compiled_resources.zip")
@@ -147,11 +180,12 @@ def compile_apk():
     gen_src_dir = os.path.join(PROJECT_DIR, "gen")
     os.makedirs(gen_src_dir, exist_ok=True)
     aapt_rules = os.path.join(BIN_DIR, "aapt_rules.pro")
+    manifest = build_manifest()
 
     # 1-2. Risorse (aapt2 scrive anche le regole R8 per le classi nominate nel manifest e nei layout)
     run_cmd(f'"{AAPT2}" compile --dir "{RES_DIR}" -o "{compiled_res}"', "aapt2 compile")
     run_cmd(
-        f'"{AAPT2}" link -I "{PLATFORM_JAR}" "{compiled_res}" --manifest "{MANIFEST}" '
+        f'"{AAPT2}" link -I "{PLATFORM_JAR}" "{compiled_res}" --manifest "{manifest}" '
         f'-o "{unaligned_apk}" --java "{gen_src_dir}" --proguard "{aapt_rules}" --auto-add-overlay',
         "aapt2 link"
     )
@@ -161,6 +195,7 @@ def compile_apk():
         shutil.rmtree(OBJ_DIR)
     os.makedirs(OBJ_DIR, exist_ok=True)
     java_files = [os.path.join(SRC_DIR, f) for f in sorted(os.listdir(SRC_DIR)) if f.endswith(".java")]
+    java_files.append(os.path.join(FLAVOR_SRC, "Flavor.java"))
     java_files.append(os.path.join(gen_src_dir, "com", "minecraftserver", "manager", "R.java"))
     java_files_str = " ".join(f'"{f}"' for f in java_files)
     run_cmd(
@@ -185,7 +220,8 @@ def compile_apk():
         code, name = read_manifest_version()
         mapping_dir = os.path.join(BIN_DIR, "mapping")
         os.makedirs(mapping_dir, exist_ok=True)
-        mapping_file = os.path.join(mapping_dir, f"mapping-v{name}-b{code}.txt")
+        suffix = "-fdroid" if FLAVOR == "fdroid" else ""
+        mapping_file = os.path.join(mapping_dir, f"mapping-v{name}-b{code}{suffix}.txt")
         run_cmd(
             f'"{JAVA}" -cp "{D8_JAR}" com.android.tools.r8.R8 --release --min-api 26 --lib "{PLATFORM_JAR}" '
             f'--pg-conf "{PROGUARD_RULES}" --pg-conf "{aapt_rules}" --pg-map-output "{mapping_file}" '
@@ -208,7 +244,7 @@ def compile_apk():
 
     # 7-9. Firma (keystore e password locali, esclusi da git) e verifica
     keystore_path, alias, store_pass, key_pass = signing_config()
-    final_apk = os.path.join(PROJECT_DIR, OUTPUT_APK_NAME)
+    final_apk = os.path.join(PROJECT_DIR, FDROID_APK_NAME if FLAVOR == "fdroid" else OUTPUT_APK_NAME)
     if os.path.exists(final_apk):
         os.remove(final_apk)
     shutil.copy2(aligned_apk, final_apk)
@@ -257,6 +293,9 @@ if __name__ == "__main__":
         # La vecchia opzione rigenerava i sorgenti da una copia vecchia (v4.8.5) sovrascrivendo il codice reale
         log("ERRORE: --generate non esiste più. I sorgenti sono quelli in android_project (repository GitHub).")
         sys.exit(1)
+    if FLAVOR == "fdroid" and "--publish" in sys.argv:
+        log("ERRORE: la variante F-Droid non si pubblica in OTA (la distribuisce F-Droid).")
+        sys.exit(1)
     # Traduzioni con chiavi identificative: stesse chiavi in tutte le lingue, chiavi usate esistenti (check_i18n.py)
     import check_i18n
     i18n_errors = check_i18n.check()
@@ -267,11 +306,13 @@ if __name__ == "__main__":
         sys.exit(1)
     log("Traduzioni: OK")
     code, name = read_manifest_version()
-    log(f"Versione dal manifest: v{name} (Build {code})")
+    log(f"Versione dal manifest: v{name} (Build {code}), variante {FLAVOR}")
     sync_main_activity_version(code, name)
     apk = compile_apk()
     log(f"SUCCESS! APK: {apk} ({os.path.getsize(apk):,} bytes)")
     if "--publish" in sys.argv:
         publish_ota(apk, code, name, arg_value("--notes") or f"v{name} (Build {code})")
+    elif FLAVOR == "fdroid":
+        log("  -> Variante F-Droid compilata: solo per provarla, non va nelle cartelle static/.")
     else:
         log("  -> APK compilato su disco (STAGING). Per i telefoni: --publish --notes \"...\"")

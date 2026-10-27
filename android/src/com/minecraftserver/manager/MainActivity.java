@@ -511,6 +511,13 @@ public class MainActivity extends Activity implements View.OnClickListener {
         chkBiometric = findViewById(R.id.chkBiometric);
         txtAppVersionStatus = findViewById(R.id.txtAppVersionStatus);
         btnCheckUpdates = findViewById(R.id.btnCheckUpdates);
+        // Variante F-Droid: gli aggiornamenti arrivano da F-Droid, l'app non scarica APK da sola
+        if (!Flavor.SELF_UPDATE) {
+            if (btnCheckUpdates != null) btnCheckUpdates.setVisibility(View.GONE);
+            TextView securityTitle = findViewById(R.id.txtSecurityTitle);
+            securityTitle.setTag("t:ui.sicurezza");
+            securityTitle.setText(I18n.t("ui.sicurezza"));
+        }
 
         // Eco Mode
         txtEcoModeStatusBadge = findViewById(R.id.txtEcoModeStatusBadge);
@@ -4766,6 +4773,7 @@ public class MainActivity extends Activity implements View.OnClickListener {
     // ================= OTA AUTO-UPDATER =================
 
     private void checkForUpdates(final boolean silent) {
+        if (!Flavor.SELF_UPDATE) return;
         if (!silent) {
             I18n.makeText(this, I18n.t("app.verifica_aggiornamenti_corso"), Toast.LENGTH_SHORT).show();
         }

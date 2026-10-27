@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Il package (com.minecraftserver.manager) e' in build.gradle (namespace) e in build_apk.py (PACKAGE) -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.minecraftserver.manager"
     android:versionCode="102"
     android:versionName="4.12.5">
 

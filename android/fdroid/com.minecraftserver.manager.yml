@@ -1,0 +1,27 @@
+# Ricetta per F-Droid (va nel repository fdroiddata: metadata/com.minecraftserver.manager.yml).
+Categories:
+  - Games
+  - Internet
+License: GPL-3.0-only
+AuthorName: QMon31
+SourceCode: https://github.com/QMon31/Voxarium
+IssueTracker: https://github.com/QMon31/Voxarium/issues
+Changelog: https://github.com/QMon31/Voxarium/releases
+
+AutoName: Voxarium
+
+RepoType: git
+Repo: https://github.com/QMon31/Voxarium.git
+
+Builds:
+  - versionName: 4.12.5
+    versionCode: 102
+    commit: android-v4.12.5-b102
+    subdir: android
+    gradle:
+      - fdroid
+
+AutoUpdateMode: Version
+UpdateCheckMode: Tags ^android-v
+CurrentVersion: 4.12.5
+CurrentVersionCode: 102

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Variante F-Droid (Gradle): tolti il permesso di installare APK e il provider dell'aggiornamento interno.
+     build_apk.py con l'opzione fdroid toglie gli stessi elementi (FDROID_REMOVED). -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" tools:node="remove" />
+
+    <queries tools:node="remove" />
+
+    <application>
+        <provider android:name=".AppUpdateProvider" tools:node="remove" />
+    </application>
+</manifest>

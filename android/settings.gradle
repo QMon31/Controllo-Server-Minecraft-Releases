@@ -1,0 +1,16 @@
+// Compilazione con Gradle: la usa F-Droid (vedi fdroid/README.md). Sul PC di sviluppo si usa build_apk.py.
+pluginManagement {
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+rootProject.name = 'Voxarium'

@@ -1,0 +1,61 @@
+// Stessi sorgenti di build_apk.py, in due varianti:
+//   ota    = app normale, si aggiorna da sola dal PC (assembleOtaRelease)
+//   fdroid = senza aggiornamento interno, per F-Droid (assembleFdroidRelease)
+// versionCode e versionName restano solo in AndroidManifest.xml (regola di AGENTS.md).
+plugins {
+    id 'com.android.application' version '8.7.3'
+}
+
+android {
+    namespace 'com.minecraftserver.manager'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.minecraftserver.manager'
+        minSdk 26
+        targetSdk 35
+    }
+
+    flavorDimensions 'distribution'
+    productFlavors {
+        ota { dimension 'distribution' }
+        fdroid { dimension 'distribution' }
+    }
+
+    sourceSets {
+        main {
+            manifest.srcFile 'AndroidManifest.xml'
+            java.srcDirs = ['src']
+            res.srcDirs = ['res']
+        }
+        ota {
+            java.srcDirs = ['flavors/ota/java']
+        }
+        fdroid {
+            java.srcDirs = ['flavors/fdroid/java']
+            manifest.srcFile 'flavors/fdroid/AndroidManifest.xml'
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled true
+            proguardFiles 'proguard-rules.pro'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+
+    buildFeatures {
+        buildConfig false
+    }
+
+    // Niente blocco cifrato con l'elenco delle dipendenze dentro l'APK (F-Droid lo chiede)
+    dependenciesInfo {
+        includeInApk = false
+        includeInBundle = false
+    }
+}

@@ -30,3 +30,8 @@ __pycache__/
 
 # Percorsi di questo PC (build_apk.py)
 local_extra_dirs.txt
+
+# Gradle (compilazione per F-Droid)
+.gradle/
+build/
+local.properties
