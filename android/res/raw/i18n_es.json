@@ -560,5 +560,7 @@
 "pc.backup_avvio_bloccato_backup": "Backup en curso: el servidor se podrá iniciar cuando termine.",
 "pc.backup_avvio_bloccato_ripristino": "Restauración en curso: el servidor se podrá iniciar cuando termine.",
 "pc.console_avvio_server_bloccato": "[Panel] Inicio del servidor bloqueado. {0}",
-"pc.backup_server_deve_essere_spento": "El servidor de Minecraft debe estar COMPLETAMENTE DETENIDO para una copia segura."
+"pc.backup_server_deve_essere_spento": "El servidor de Minecraft debe estar COMPLETAMENTE DETENIDO para una copia segura.",
+"ui.correzione_v4_12_4_testi_non_tradotti": "Corrección (v4.12.4): los textos sin traducir (historial antiguo, nombres, mensajes) ya no se modifican por error en otros idiomas.",
+"ui.v4_12_4_build_96_testi_non_tradotti": "• v4.12.4 (Build 96):\nLos textos sin traducir ya no se modifican por error en otros idiomas."
 }

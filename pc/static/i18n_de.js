@@ -1684,6 +1684,7 @@ window.I18N_DICTS.de = {
   'msg.server_configurato_ed_associato_successo': "Server eingerichtet und mit dem Panel verknüpft!",
   'msg.selezione_file_nativa_explorer_disponibile': "Die Windows-Dateiauswahl ist nur auf dem Host-Computer verfügbar.",
   'msg.errore_selezione_windows': "Fehler bei der Windows-Auswahl:",
+  'msg.selezione_file_non_disponibile': "Auf diesem Computer ist keine Dateiauswahl verfügbar: Gib den Pfad in das Feld ein.",
   'msg.cartella_server_impostata': "Serverordner festgelegt: {0}",
   'msg.file_avvio_impostato': "Startdatei festgelegt: {0}",
   'msg.cartella_installazione': "Installationsordner: {0}",
@@ -2008,6 +2009,7 @@ window.I18N_DICTS.de = {
   'notes.nell_installazione_si_sceglie_lingua': ": Die Sprache wird bei der Installation gewählt (Standard: die von Windows) und das Programm startet in dieser Sprache; Fenster, Meldungen und Deinstallation sind übersetzt.",
   'notes.backup_piu_sicuro': "Sichereres Backup ({0})",
   'notes.copia_drive_avanzamento_avvio_bloccato': ": Das Kopieren auf Google Drive zeigt seinen Fortschritt statt bei 99 % stehen zu bleiben und ersetzt die alte Kopie erst, wenn es fertig ist; während eines Backups oder einer Wiederherstellung startet der Server nicht (auch nicht durch automatische Neustarts) und das Handy zeigt den Grund.",
+  'notes.tempo_reale_porta_mc': ": Das Panel aktualisiert sich jetzt auch auf PCs ohne installiertes Python in Echtzeit (eine fehlende Bibliothek ist jetzt enthalten); die App zeigt den echten Port des Minecraft-Servers statt 32769.",
   'notes.errori_backup_drive': "Fehler und Drive-Backup ({0})",
   'notes.errori_veri_avviso_copia_drive': ": Der Reiter Fehler zählt nur echte Fehler (keine Mod-Warnungen und keine Forge-Meldung zu Mod-Dateien mehr); das Backup-Fenster warnt, wenn die Kopie auf Google Drive fehlt, älter als die auf dem Desktop ist oder eine andere Größe hat.",
   'notes.correzioni_chiavi_testi': "Korrekturen und Textschlüssel ({0})",
@@ -2019,4 +2021,5 @@ window.I18N_DICTS.de = {
   'notes.pulsante_lingua_alto_it_en': ": Sprachknopf oben (IT, EN, ES, FR, DE, PT); ein Sprachwechsel öffnet die App nicht mehr neu und fragt nicht erneut nach dem Fingerabdruck; auch Verbindungsfehler und Benachrichtigungsarten sind übersetzt.",
   'notes.ram_backup': "RAM und Backup ({0})",
   'notes.ram_server_scelta_elenco_fino': ": Server-RAM aus einer Liste bis zur RAM des PCs wählbar; das Backup-Fenster zeigt die Größe an; die Entsperr-PIN prüft der PC, nach einer PIN-Änderung gilt also sofort die neue.",
+  'notes.testi_non_tradotti_app_4124': ": Nicht übersetzte Texte (alter Verlauf, Namen, Nachrichten) werden in anderen Sprachen nicht mehr versehentlich verändert.",
 };

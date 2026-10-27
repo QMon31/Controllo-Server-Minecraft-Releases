@@ -23,6 +23,7 @@ import shutil
 
 import psutil
 from mc_ping import query_server_status
+from platform_utils import IS_WINDOWS, LAUNCH_SCRIPT, LAUNCH_SCRIPT_CANDIDATES, split_java_line, script_fallback_command
 
 # Processi figli (java, jcmd, run.bat) senza finestra: il pannello gira senza console, quindi ogni processo
 # avviato senza questo flag aprirebbe una propria finestra cmd
@@ -778,17 +779,17 @@ class ServerManager:
         server_dir = self.config.get("server_dir", "")
         if not server_dir:
             return ""
-        run_bat = self.config.get("server_run_bat") or os.path.join(server_dir, "run.bat")
+        run_bat = self.config.get("server_run_bat") or os.path.join(server_dir, LAUNCH_SCRIPT)
         if not os.path.isabs(run_bat):
             run_bat = os.path.join(server_dir, run_bat)
-        for c_bat in (run_bat, os.path.join(server_dir, "run.bat"), os.path.join(server_dir, "start.bat")):
+        for c_bat in (run_bat,) + tuple(os.path.join(server_dir, n) for n in LAUNCH_SCRIPT_CANDIDATES):
             if os.path.isfile(c_bat):
                 return c_bat
         return ""
 
     def get_launch_command(self) -> List[str]:
         server_dir = self.config.get("server_dir", "")
-        run_bat = self.config.get("server_run_bat", os.path.join(server_dir, "run.bat"))
+        run_bat = self.config.get("server_run_bat", os.path.join(server_dir, LAUNCH_SCRIPT))
         cmd_str = self.config.get("server_command", "").strip()
 
         # 1. If run.bat or start.bat exists, parse java arguments from it
@@ -799,14 +800,10 @@ class ServerManager:
                     for line in f:
                         s = line.strip()
                         if s.startswith("java "):
-                            if "%*" in s:
-                                s = s.replace("%*", "nogui")
-                            elif "nogui" not in s:
-                                s += " nogui"
-                            return shlex.split(s, posix=False)
+                            return split_java_line(s, server_dir)
             except Exception:
                 pass
-            return ["cmd.exe", "/c", c_bat, "nogui"]
+            return script_fallback_command(c_bat)
 
         # 2. Check if a server.jar exists (Vanilla, Fabric, Paper, Spigot)
         jar_path = os.path.join(server_dir, "server.jar")
@@ -815,9 +812,9 @@ class ServerManager:
 
         # 3. Fallback to configured custom command
         if cmd_str:
-            return shlex.split(cmd_str, posix=False)
+            return shlex.split(cmd_str, posix=not IS_WINDOWS)
 
-        return ["cmd.exe", "/c", run_bat, "nogui"]
+        return script_fallback_command(run_bat)
 
     def start_server(self) -> Dict[str, Any]:
         # Backup o ripristino in corso (impostato da app.py): il server non parte, nemmeno dai riavvii automatici
@@ -843,7 +840,7 @@ class ServerManager:
                 return {"status": "error", "message": "La porta del server Minecraft è già aperta e il server risponde!"}
 
             server_dir = self.config.get("server_dir", "")
-            run_bat = self.config.get("server_run_bat", os.path.join(server_dir, "run.bat"))
+            run_bat = self.config.get("server_run_bat", os.path.join(server_dir, LAUNCH_SCRIPT))
 
             if not os.path.isdir(server_dir):
                 return {"status": "error", "message": f"Cartella del server non trovata: {server_dir}"}
@@ -1958,6 +1955,8 @@ class ServerManager:
                 "online": self.state == "ONLINE",
                 "server_dir_exists": server_dir_exists,
                 "server_dir": server_dir,
+                # Porta vera da server.properties: senza, l'app mostrava sempre la sua predefinita (32769)
+                "server_port": self.get_server_port(),
                 "uptime_seconds": uptime_seconds,
                 "uptime_formatted": self.format_seconds(uptime_seconds),
                 "start_time": self.start_time,

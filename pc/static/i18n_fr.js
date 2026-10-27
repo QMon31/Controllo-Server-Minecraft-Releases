@@ -1684,6 +1684,7 @@ window.I18N_DICTS.fr = {
   'msg.server_configurato_ed_associato_successo': "Serveur configuré et relié au panneau !",
   'msg.selezione_file_nativa_explorer_disponibile': "Le sélecteur de fichiers de Windows n'est disponible que sur l'ordinateur hôte.",
   'msg.errore_selezione_windows': "Erreur de sélection Windows :",
+  'msg.selezione_file_non_disponibile': "Aucun sélecteur de fichiers n'est disponible sur cet ordinateur : saisissez le chemin dans le champ.",
   'msg.cartella_server_impostata': "Dossier du serveur défini : {0}",
   'msg.file_avvio_impostato': "Fichier de démarrage défini : {0}",
   'msg.cartella_installazione': "Dossier d'installation : {0}",
@@ -2008,6 +2009,7 @@ window.I18N_DICTS.fr = {
   'notes.nell_installazione_si_sceglie_lingua': ": la langue se choisit pendant l'installation (celle de Windows par défaut) et le programme s'ouvre dans cette langue ; fenêtres, messages et désinstallation traduits.",
   'notes.backup_piu_sicuro': "Sauvegarde plus sûre ({0})",
   'notes.copia_drive_avanzamento_avvio_bloccato': " : la copie sur Google Drive affiche sa progression au lieu de rester à 99 % et remplace l'ancienne seulement quand elle est complète ; pendant une sauvegarde ou une restauration le serveur ne démarre pas (même avec les redémarrages automatiques) et le téléphone affiche la raison.",
+  'notes.tempo_reale_porta_mc': " : le panneau se met à jour en temps réel aussi sur les PC sans Python installé (une bibliothèque manquait, elle est maintenant incluse) ; l'application affiche le vrai port du serveur Minecraft au lieu de 32769.",
   'notes.errori_backup_drive': "Erreurs et sauvegarde sur Drive ({0})",
   'notes.errori_veri_avviso_copia_drive': " : l'onglet Erreurs ne compte que les vraies erreurs (plus les avertissements des mods ni le message de Forge sur les fichiers des mods) ; la fenêtre de sauvegarde avertit si la copie sur Google Drive manque, est plus ancienne que celle du Bureau ou n'a pas la même taille.",
   'notes.correzioni_chiavi_testi': "Corrections et clés des textes ({0})",
@@ -2019,4 +2021,5 @@ window.I18N_DICTS.fr = {
   'notes.pulsante_lingua_alto_it_en': ": bouton de langue en haut (IT, EN, ES, FR, DE, PT) ; changer de langue ne rouvre plus l'application et ne redemande plus l'empreinte ; erreurs de connexion et types de notifications traduits aussi.",
   'notes.ram_backup': "RAM et sauvegarde ({0})",
   'notes.ram_server_scelta_elenco_fino': ": RAM du serveur choisie dans une liste jusqu'à la RAM du PC ; la fenêtre de sauvegarde indique sa taille ; le PIN de déverrouillage est vérifié par le PC, donc après un changement le nouveau PIN vaut tout de suite.",
+  'notes.testi_non_tradotti_app_4124': " : les textes non traduits (ancien historique, noms, messages) ne sont plus modifiés par erreur dans les autres langues.",
 };

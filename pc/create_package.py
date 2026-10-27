@@ -14,6 +14,7 @@ py_files = [
     "remote_access.py",
     "upnp_manager.py",
     "server_installer.py",
+    "platform_utils.py",
     "instance_manager.py",
     "file_manager.py",
     "modrinth_store.py",

@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.minecraftserver.manager"
-    android:versionCode="95"
-    android:versionName="4.12.3">
+    android:versionCode="96"
+    android:versionName="4.12.4">
 
     <uses-sdk
         android:minSdkVersion="26"

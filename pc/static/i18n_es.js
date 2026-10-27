@@ -1684,6 +1684,7 @@ window.I18N_DICTS.es = {
   'msg.server_configurato_ed_associato_successo': "¡Servidor configurado y enlazado al panel!",
   'msg.selezione_file_nativa_explorer_disponibile': "El selector de archivos de Windows solo está disponible en el ordenador anfitrión.",
   'msg.errore_selezione_windows': "Error de selección de Windows:",
+  'msg.selezione_file_non_disponibile': "En este ordenador no hay selector de archivos: escribe la ruta en el campo.",
   'msg.cartella_server_impostata': "Carpeta del servidor establecida: {0}",
   'msg.file_avvio_impostato': "Archivo de inicio establecido: {0}",
   'msg.cartella_installazione': "Carpeta de instalación: {0}",
@@ -2008,6 +2009,7 @@ window.I18N_DICTS.es = {
   'notes.nell_installazione_si_sceglie_lingua': ": el idioma se elige durante la instalación (parte del de Windows) y el programa se abre en ese idioma; ventanas, mensajes y desinstalador traducidos.",
   'notes.backup_piu_sicuro': "Backup más seguro ({0})",
   'notes.copia_drive_avanzamento_avvio_bloccato': ": la copia a Google Drive muestra su progreso en lugar de quedarse en el 99% y sustituye la anterior solo cuando está completa; durante un backup o una restauración el servidor no se inicia (ni siquiera con los reinicios automáticos) y el teléfono muestra el motivo.",
+  'notes.tempo_reale_porta_mc': ": el panel se actualiza en tiempo real también en los PC sin Python instalado (faltaba una biblioteca, ahora incluida); la app muestra el puerto real del servidor de Minecraft en lugar de 32769.",
   'notes.errori_backup_drive': "Errores y backup en Drive ({0})",
   'notes.errori_veri_avviso_copia_drive': ": la pestaña Errores cuenta solo los errores reales (ya no los avisos de los mods ni el mensaje de Forge sobre los archivos de los mods); la ventana del backup avisa si la copia en Google Drive falta, es más antigua que la del Escritorio o pesa distinto.",
   'notes.correzioni_chiavi_testi': "Correcciones y claves de los textos ({0})",
@@ -2019,4 +2021,5 @@ window.I18N_DICTS.es = {
   'notes.pulsante_lingua_alto_it_en': ": botón del idioma arriba (IT, EN, ES, FR, DE, PT); cambiar de idioma ya no reabre la app ni vuelve a pedir la huella; también se traducen los errores de conexión y los tipos de notificación.",
   'notes.ram_backup': "RAM y copias de seguridad ({0})",
   'notes.ram_server_scelta_elenco_fino': ": RAM del servidor elegida de una lista hasta la RAM del PC; la ventana de copia muestra cuánto ocupará; el PIN de desbloqueo lo comprueba el PC, así que tras cambiarlo vale enseguida el nuevo.",
+  'notes.testi_non_tradotti_app_4124': ": los textos sin traducir (historial antiguo, nombres, mensajes) ya no se modifican por error en otros idiomas.",
 };

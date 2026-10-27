@@ -17,6 +17,7 @@ import threading
 # Java e gli installer Forge/NeoForge senza finestra cmd (il pannello gira senza console)
 NO_WINDOW = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
 from typing import Dict, Any, Optional, List
+from platform_utils import LAUNCH_SCRIPT, FORGE_ARGS_FILE, write_launch_script
 
 FORGE_PROMOTIONS_URL = "https://files.minecraftforge.net/net/minecraftforge/forge/promotions_slim.json"
 NEOFORGE_MAVEN_URL = "https://maven.neoforged.net/releases/net/neoforged/neoforge/maven-metadata.xml"
@@ -860,19 +861,14 @@ class ForgeServerInstaller:
             f.write("enable-rcon=false\n")
         self._append_log(f"[OK] server.properties configurato (porta UPnP: {port}).")
 
-        # Step 6: Create run.bat
+        # Step 6: Create run.bat (run.sh su Linux)
         with self.lock:
             self.progress_pct = 90
-            self.step_text = "Creazione script di avvio run.bat..."
+            self.step_text = f"Creazione script di avvio {LAUNCH_SCRIPT}..."
 
-        run_bat_path = os.path.join(target_dir, "run.bat")
         launch_cmd = f"java -Xms{ram_gb}G -Xmx{ram_gb}G -jar server.jar nogui"
-        with open(run_bat_path, "w", encoding="utf-8") as f:
-            f.write("@echo off\n")
-            f.write(f"REM Voxarium Vanilla {mc_version} Launcher\n")
-            f.write(f"{launch_cmd} %*\n")
-            f.write("pause\n")
-        self._append_log(f"[OK] run.bat creato con allocazione {ram_gb} GB RAM.")
+        run_bat_path = write_launch_script(target_dir, f"Vanilla {mc_version}", launch_cmd)
+        self._append_log(f"[OK] {LAUNCH_SCRIPT} creato con allocazione {ram_gb} GB RAM.")
 
         # Step 7: Update config.json & reload manager
         self._finalize_config(target_dir, run_bat_path, launch_cmd, port, server_manager)
@@ -1002,19 +998,14 @@ class ForgeServerInstaller:
             f.write("enable-rcon=false\n")
         self._append_log(f"[OK] server.properties configurato (porta UPnP: {port}).")
 
-        # Step 6: Create run.bat
+        # Step 6: Create run.bat (run.sh su Linux)
         with self.lock:
             self.progress_pct = 90
-            self.step_text = "Creazione script di avvio run.bat..."
+            self.step_text = f"Creazione script di avvio {LAUNCH_SCRIPT}..."
 
-        run_bat_path = os.path.join(target_dir, "run.bat")
         launch_cmd = f"java -Xms{ram_gb}G -Xmx{ram_gb}G -jar paper.jar nogui"
-        with open(run_bat_path, "w", encoding="utf-8") as f:
-            f.write("@echo off\n")
-            f.write(f"REM Voxarium Paper {mc_version} Launcher\n")
-            f.write(f"{launch_cmd} %*\n")
-            f.write("pause\n")
-        self._append_log(f"[OK] run.bat creato con allocazione {ram_gb} GB RAM.")
+        run_bat_path = write_launch_script(target_dir, f"Paper {mc_version}", launch_cmd)
+        self._append_log(f"[OK] {LAUNCH_SCRIPT} creato con allocazione {ram_gb} GB RAM.")
 
         # Step 7: Update config.json & reload manager
         self._finalize_config(target_dir, run_bat_path, launch_cmd, port, server_manager)
@@ -1128,19 +1119,14 @@ class ForgeServerInstaller:
             f.write("enable-rcon=false\n")
         self._append_log(f"[OK] server.properties configurato (porta UPnP: {port}).")
 
-        # Step 6: Create run.bat
+        # Step 6: Create run.bat (run.sh su Linux)
         with self.lock:
             self.progress_pct = 90
-            self.step_text = "Creazione script di avvio run.bat..."
+            self.step_text = f"Creazione script di avvio {LAUNCH_SCRIPT}..."
 
-        run_bat_path = os.path.join(target_dir, "run.bat")
         launch_cmd = f"java -Xms{ram_gb}G -Xmx{ram_gb}G -jar fabric-server-launch.jar nogui"
-        with open(run_bat_path, "w", encoding="utf-8") as f:
-            f.write("@echo off\n")
-            f.write(f"REM Voxarium Fabric {mc_version} Launcher\n")
-            f.write(f"{launch_cmd} %*\n")
-            f.write("pause\n")
-        self._append_log(f"[OK] run.bat creato con allocazione {ram_gb} GB RAM.")
+        run_bat_path = write_launch_script(target_dir, f"Fabric {mc_version}", launch_cmd)
+        self._append_log(f"[OK] {LAUNCH_SCRIPT} creato con allocazione {ram_gb} GB RAM.")
 
         # Step 7: Finalize config and register instance
         self._finalize_config(target_dir, run_bat_path, launch_cmd, port, server_manager)
@@ -1302,9 +1288,8 @@ class ForgeServerInstaller:
         self._append_log(f"[OK] user_jvm_args.txt generato ({ram_gb} GB RAM con flag Aikar).")
 
         # Step 7: Create/verify run.bat and win_args.txt
-        win_args_rel = f"libraries/net/minecraftforge/forge/{mc_version}-{forge_build}/win_args.txt"
+        win_args_rel = f"libraries/net/minecraftforge/forge/{mc_version}-{forge_build}/{FORGE_ARGS_FILE}"
         win_args_full = os.path.join(target_dir, win_args_rel)
-        run_bat_path = os.path.join(target_dir, "run.bat")
 
         legacy_jar = None
         if not os.path.exists(win_args_full):
@@ -1318,14 +1303,10 @@ class ForgeServerInstaller:
             self._append_log(f"[INFO] Struttura Forge Legacy rilevata ({legacy_jar}).")
         else:
             launch_cmd = f"java @user_jvm_args.txt @{win_args_rel} nogui"
-            self._append_log("[INFO] Struttura Forge Modern rilevata (win_args.txt).")
+            self._append_log(f"[INFO] Struttura Forge Modern rilevata ({FORGE_ARGS_FILE}).")
 
-        with open(run_bat_path, "w", encoding="utf-8") as f:
-            f.write("@echo off\n")
-            f.write(f"REM Voxarium Forge {mc_version} Launcher\n")
-            f.write(f"{launch_cmd} %*\n")
-            f.write("pause\n")
-        self._append_log("[OK] run.bat creato.")
+        run_bat_path = write_launch_script(target_dir, f"Forge {mc_version}", launch_cmd)
+        self._append_log(f"[OK] {LAUNCH_SCRIPT} creato.")
 
         # Create mods folder
         os.makedirs(os.path.join(target_dir, "mods"), exist_ok=True)
@@ -1502,23 +1483,18 @@ class ForgeServerInstaller:
         # Step 7: Locate win_args.txt or run.bat
         win_args_path = None
         for root, dirs, files in os.walk(os.path.join(target_dir, "libraries")):
-            if "win_args.txt" in files:
-                win_args_path = os.path.relpath(os.path.join(root, "win_args.txt"), target_dir)
+            if FORGE_ARGS_FILE in files:
+                win_args_path = os.path.relpath(os.path.join(root, FORGE_ARGS_FILE), target_dir)
                 break
 
-        run_bat_path = os.path.join(target_dir, "run.bat")
         if win_args_path:
             launch_cmd = f"java @user_jvm_args.txt @{win_args_path} nogui"
             self._append_log(f"[INFO] Trovato file argomenti NeoForge: {win_args_path}")
         else:
             launch_cmd = "java @user_jvm_args.txt -jar server.jar nogui"
 
-        with open(run_bat_path, "w", encoding="utf-8") as f:
-            f.write("@echo off\n")
-            f.write(f"REM Voxarium NeoForge {mc_version} Launcher\n")
-            f.write(f"{launch_cmd} %*\n")
-            f.write("pause\n")
-        self._append_log("[OK] run.bat creato.")
+        run_bat_path = write_launch_script(target_dir, f"NeoForge {mc_version}", launch_cmd)
+        self._append_log(f"[OK] {LAUNCH_SCRIPT} creato.")
 
         # Create mods folder
         os.makedirs(os.path.join(target_dir, "mods"), exist_ok=True)

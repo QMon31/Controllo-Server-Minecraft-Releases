@@ -72,6 +72,7 @@ FILES_TO_SYNC = [
     "backup_manager.py",
     "upnp_manager.py",
     "server_manager.py",
+    "platform_utils.py",
     "remote_access.py",
     "mc_ping.py",
     "Launcher.cs",

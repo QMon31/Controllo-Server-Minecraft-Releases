@@ -560,5 +560,7 @@
 "pc.backup_avvio_bloccato_backup": "Sauvegarde en cours : le serveur pourra démarrer quand elle sera terminée.",
 "pc.backup_avvio_bloccato_ripristino": "Restauration en cours : le serveur pourra démarrer quand elle sera terminée.",
 "pc.console_avvio_server_bloccato": "[Panneau] Démarrage du serveur bloqué. {0}",
-"pc.backup_server_deve_essere_spento": "Le serveur Minecraft doit être COMPLÈTEMENT ARRÊTÉ pour une sauvegarde sûre."
+"pc.backup_server_deve_essere_spento": "Le serveur Minecraft doit être COMPLÈTEMENT ARRÊTÉ pour une sauvegarde sûre.",
+"ui.correzione_v4_12_4_testi_non_tradotti": "Correction (v4.12.4) : les textes non traduits (ancien historique, noms, messages) ne sont plus modifiés par erreur dans les autres langues.",
+"ui.v4_12_4_build_96_testi_non_tradotti": "• v4.12.4 (Build 96) :\nLes textes non traduits ne sont plus modifiés par erreur dans les autres langues."
 }

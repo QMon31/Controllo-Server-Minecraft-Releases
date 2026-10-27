@@ -1684,6 +1684,7 @@ window.I18N_DICTS.en = {
   'msg.server_configurato_ed_associato_successo': "Server set up and linked to the panel!",
   'msg.selezione_file_nativa_explorer_disponibile': "The native Explorer file picker is only available on the host computer.",
   'msg.errore_selezione_windows': "Windows selection error:",
+  'msg.selezione_file_non_disponibile': "No file picker is available on this computer: type the path in the field.",
   'msg.cartella_server_impostata': "Server folder set: {0}",
   'msg.file_avvio_impostato': "Startup file set: {0}",
   'msg.cartella_installazione': "Install folder: {0}",
@@ -2008,6 +2009,7 @@ window.I18N_DICTS.en = {
   'notes.nell_installazione_si_sceglie_lingua': ": the language is chosen during setup (starting from the Windows one) and the program opens in that language; windows, messages and the uninstaller are translated.",
   'notes.backup_piu_sicuro': "Safer backup ({0})",
   'notes.copia_drive_avanzamento_avvio_bloccato': ": copying to Google Drive shows its progress instead of staying at 99% and replaces the old copy only once it is complete; during a backup or restore the server does not start (not even from automatic restarts) and the phone shows why.",
+  'notes.tempo_reale_porta_mc': ": the panel updates in real time also on PCs without Python installed (a library was missing, now included); the app shows the Minecraft server's real port instead of 32769.",
   'notes.errori_backup_drive': "Errors and Drive backup ({0})",
   'notes.errori_veri_avviso_copia_drive': ": the Errors tab counts only real errors (no longer mod warnings or Forge's message about mod files); the backup window warns if the copy on Google Drive is missing, older than the one on the Desktop or a different size.",
   'notes.correzioni_chiavi_testi': "Fixes and text keys ({0})",
@@ -2019,4 +2021,5 @@ window.I18N_DICTS.en = {
   'notes.pulsante_lingua_alto_it_en': ": language button at the top (IT, EN, ES, FR, DE, PT); changing language no longer reopens the app or asks for the fingerprint again; connection errors and notification types are translated too.",
   'notes.ram_backup': "RAM and backup ({0})",
   'notes.ram_server_scelta_elenco_fino': ": server RAM picked from a list up to the PC's RAM; the backup window shows how big it will be; the unlock PIN is checked by the PC, so after a PIN change the new one works right away.",
+  'notes.testi_non_tradotti_app_4124': ": untranslated texts (old history, names, messages) are no longer changed by mistake in other languages.",
 };

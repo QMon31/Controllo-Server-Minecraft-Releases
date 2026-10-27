@@ -44,6 +44,7 @@ from contextlib import asynccontextmanager
 from typing import List, Dict, Any, Optional
 
 import re
+import shutil
 import urllib.request
 import threading
 import qrcode
@@ -445,6 +446,10 @@ FORBIDDEN_ROOTS = [
     os.path.normpath(os.environ.get("SystemDrive", "C:") + "\\").lower(),
 ]
 
+# Su Linux: cartelle di sistema in cui non va mai messo un server
+LINUX_SYSTEM_DIRS = ("/bin", "/boot", "/dev", "/etc", "/lib", "/lib64", "/proc", "/root", "/run", "/sbin", "/sys",
+                     "/usr", "/var/lib", "/var/log")
+
 def is_safe_server_path(p: Optional[str]) -> bool:
     if not p:
         return True
@@ -457,6 +462,10 @@ def is_safe_server_path(p: Optional[str]) -> bool:
     win_dir = os.environ.get("SystemRoot", r"C:\Windows").lower()
     if norm.startswith(win_dir):
         return False
+    if sys.platform != "win32":
+        real = os.path.normpath(os.path.abspath(p))
+        if real == "/" or any(real == d or real.startswith(d + "/") for d in LINUX_SYSTEM_DIRS):
+            return False
     return True
 
 DEFAULT_PIN_INTERNET_MSG = ("PIN predefinito (1234): l'accesso da internet è bloccato. "
@@ -1293,9 +1302,18 @@ APP_RUN_NAME = "ControlloServerMinecraft"
 STARTUP_SHORTCUT_NAMES = ("Controllo Server Minecraft.lnk", "Controllo Server Minecraft (Remoto).lnk",
                           "Voxarium.lnk", "Voxarium (Remoto).lnk")
 
+LINUX_SERVICE = "voxarium.service"
+
+def _linux_systemctl(*args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(["systemctl", "--user", *args, LINUX_SERVICE], capture_output=True, text=True,
+                          timeout=15, creationflags=0)
+
 def get_windows_autostart() -> bool:
     if sys.platform != "win32":
-        return False
+        try:
+            return _linux_systemctl("is-enabled").stdout.strip() == "enabled"
+        except Exception:
+            return False
     try:
         import winreg
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY_PATH, 0, winreg.KEY_READ) as key:
@@ -1306,7 +1324,12 @@ def get_windows_autostart() -> bool:
 
 def set_windows_autostart(enable: bool) -> bool:
     if sys.platform != "win32":
-        return False
+        # Il servizio c'è solo se il programma è stato installato con install.sh
+        try:
+            return _linux_systemctl("enable" if enable else "disable").returncode == 0
+        except Exception as e:
+            print(f"Avvio automatico (systemd): {e}")
+            return False
     try:
         import winreg
         app_dir = os.path.dirname(os.path.abspath(__file__))
@@ -1814,7 +1837,7 @@ async def api_filesystem_native_browse(request: Request):
         pass
 
     s_dir = manager.config.get("server_dir")
-    curr_dir = initial_path if (initial_path and os.path.exists(initial_path)) else (s_dir if (s_dir and os.path.exists(s_dir)) else os.path.join(os.environ.get("USERPROFILE", ""), "Desktop"))
+    curr_dir = initial_path if (initial_path and os.path.exists(initial_path)) else (s_dir if (s_dir and os.path.exists(s_dir)) else os.path.join(os.environ.get("USERPROFILE", "") or os.path.expanduser("~"), "Desktop"))
     if os.path.isfile(curr_dir):
         curr_dir = os.path.dirname(curr_dir)
 
@@ -1825,6 +1848,9 @@ async def api_filesystem_native_browse(request: Request):
     else:
         title = "Seleziona Server Minecraft (entra nella cartella e seleziona run.bat o qualsiasi file)"
         filter_str = "File del Server (*.bat;*.jar;server.properties;*.*)|*.bat;*.jar;server.properties;*.*|Tutti i file (*.*)|*.*"
+
+    if sys.platform != "win32":
+        return await asyncio.to_thread(_linux_browse, title, curr_dir, target)
 
     def _ps_quote(s: str) -> str:
         return (s or "").replace("'", "''")
@@ -1902,6 +1928,30 @@ $topForm.Dispose()
     except Exception as e:
         return {"success": False, "target": target, "error": str(e)}
 
+
+
+def _linux_browse(title: str, curr_dir: str, target: str) -> dict:
+    """Finestra di scelta file su Linux (zenity o kdialog). Senza desktop: "unavailable", il percorso si scrive a mano."""
+    has_display = bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
+    start = (curr_dir.rstrip("/") + "/") if curr_dir else os.path.expanduser("~/")
+    if has_display and shutil.which("zenity"):
+        cmd = ["zenity", "--file-selection", f"--title={title}", f"--filename={start}"]
+    elif has_display and shutil.which("kdialog"):
+        cmd = ["kdialog", "--title", title, "--getopenfilename", start]
+    else:
+        return {"success": False, "target": target, "unavailable": True}
+    try:
+        res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=300,
+                             creationflags=0)
+    except Exception as e:
+        return {"success": False, "target": target, "error": str(e)}
+    chosen = res.stdout.strip()
+    if not chosen or not os.path.exists(chosen):
+        return {"success": False, "target": target, "cancelled": True}
+    is_file = os.path.isfile(chosen)
+    return {"success": True, "target": target, "selected_path": chosen,
+            "folder_path": os.path.dirname(chosen) if is_file else chosen,
+            "file_path": chosen if is_file else None, "is_file": is_file}
 
 
 # Funzioni di servizio usate sia qui sia nei file di routes/

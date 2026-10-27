@@ -5,3 +5,4 @@ pydantic
 qrcode
 pillow
 cryptography
+websockets

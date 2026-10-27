@@ -58,8 +58,8 @@ import java.util.regex.Pattern;
 
 public class MainActivity extends Activity implements View.OnClickListener {
 
-    public static final int CURRENT_VERSION_CODE = 95;
-    public static final String CURRENT_VERSION_NAME = "4.12.3";
+    public static final int CURRENT_VERSION_CODE = 96;
+    public static final String CURRENT_VERSION_NAME = "4.12.4";
 
     private int dpToPx(int dp) {
         return Math.round(dp * getResources().getDisplayMetrics().density);

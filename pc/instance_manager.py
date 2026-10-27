@@ -6,6 +6,10 @@ from typing import List, Dict, Any
 
 INSTANCES_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "instances.json")
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
+# Script di avvio del server: run.bat su Windows, run.sh su Linux (come platform_utils.LAUNCH_SCRIPT)
+DEFAULT_LAUNCH_SCRIPT = "run.bat" if os.name == "nt" else "run.sh"
+LAUNCH_SCRIPT_SEARCH = (["run.bat", "start.bat", "launch.bat", "server.bat", "run.cmd", "run.sh"] if os.name == "nt"
+                        else ["run.sh", "start.sh", "launch.sh", "server.sh", "run.bat", "start.bat"])
 
 
 def _is_stale_path(server_dir: str) -> bool:
@@ -13,6 +17,9 @@ def _is_stale_path(server_dir: str) -> bool:
     non un disco esterno scollegato."""
     if not server_dir or os.path.isdir(server_dir):
         return False
+    # Su Linux un percorso di Windows (config.json copiato da un PC Windows) è sempre di un altro PC
+    if os.name != "nt" and len(server_dir) > 2 and server_dir[1] == ":" and server_dir[0].isalpha():
+        return True
     drive = os.path.splitdrive(os.path.abspath(server_dir))[0]
     return bool(drive) and os.path.isdir(drive + os.sep)
 
@@ -162,7 +169,7 @@ def add_instance(name: str, server_dir: str, server_run_bat: str = "", server_co
         "id": inst_id,
         "name": name.strip() or f"Server {mc_version}",
         "server_dir": server_dir.strip(),
-        "server_run_bat": server_run_bat.strip() or os.path.join(server_dir.strip(), "run.bat"),
+        "server_run_bat": server_run_bat.strip() or os.path.join(server_dir.strip(), DEFAULT_LAUNCH_SCRIPT),
         "server_command": server_command.strip() or "java -jar server.jar nogui",
         "server_port": int(server_port) if server_port else 25565,
         "server_type": server_type.strip().lower(),
@@ -265,7 +272,7 @@ def detect_server_details(folder_path: str) -> Dict[str, Any]:
     detected_type = ""
     detected_version = ""
     detected_port = 25565
-    detected_bat = "run.bat"
+    detected_bat = DEFAULT_LAUNCH_SCRIPT
     detected_cmd = ""
     motd = ""
     level_name = "world"
@@ -297,7 +304,7 @@ def detect_server_details(folder_path: str) -> Dict[str, Any]:
 
     # 2. Check for startup scripts (run.bat, start.bat, launch.bat, etc.)
     found_bat = False
-    for bat_candidate in ["run.bat", "start.bat", "launch.bat", "server.bat", "run.cmd", "run.sh"]:
+    for bat_candidate in LAUNCH_SCRIPT_SEARCH:
         p = os.path.join(norm_dir, bat_candidate)
         if os.path.isfile(p):
             detected_bat = bat_candidate

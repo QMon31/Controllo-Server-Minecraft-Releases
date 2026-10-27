@@ -98,6 +98,7 @@ class StaleInstanceTest(unittest.TestCase):
         d = _sandbox(["instance_manager.py"], instances=[_auto_instance(real)])
         self.assertEqual(len(_load(d, "instance_manager").load_instances_data()), 1)
 
+    @unittest.skipUnless(sys.platform == "win32", "lettere di unità: solo Windows")
     def test_disconnected_drive_kept(self):
         drive = next((c for c in "ZYXWVQ" if not os.path.exists(c + ":\\")), None)
         if not drive:
@@ -114,7 +115,7 @@ class StaleInstanceTest(unittest.TestCase):
 
 
 class ServerManagerConfigTest(unittest.TestCase):
-    FILES = ["server_manager.py", "instance_manager.py", "mc_ping.py"]
+    FILES = ["server_manager.py", "instance_manager.py", "mc_ping.py", "platform_utils.py"]
 
     def _manager(self, config):
         d = _sandbox(self.FILES, config=config)
@@ -627,6 +628,14 @@ class PackageContentsTest(unittest.TestCase):
         imported = set(re.findall(r"^(?:from|import)\s+(\w+)", app_src, re.M)) & local
         missing = [m for m in sorted(imported) if f'"{m}.py"' not in pkg]
         self.assertEqual(missing, [], "moduli usati da app.py ma assenti da create_package.py")
+        # e ogni modulo del pacchetto va copiato anche nel programma installato su questo PC da build_deploy.py:
+        # platform_utils.py mancava, e il pannello di questo PC non partiva più (ModuleNotFoundError)
+        with open(os.path.join(ROOT, "build_deploy.py"), encoding="utf-8") as fh:
+            deploy = fh.read()
+        sync = deploy[deploy.index("FILES_TO_SYNC = ["):]
+        sync = sync[:sync.index("]")]
+        packaged = re.findall(r'^\s*"(\w+\.py)",', pkg[pkg.index("py_files = ["):], re.M)
+        self.assertEqual([f for f in packaged if f'"{f}"' not in sync], [], "moduli del pacchetto assenti da FILES_TO_SYNC")
         # la cartella routes/ (rotte divise per argomento) va nel pacchetto per intero
         self.assertIn('os.listdir("routes")', pkg)
         for f in os.listdir(os.path.join(ROOT, "routes")):
@@ -838,6 +847,7 @@ class UpnpDiscoveryInterfaceTest(unittest.TestCase):
         self.assertEqual(calls[:3], [("bind", "192.168.1.50"), ("multicast_if", "192.168.1.50"), ("sendto", "239.255.255.250")])
 
 
+@unittest.skipUnless(sys.platform == "win32", "avvio automatico dal registro: solo Windows (su Linux è systemd)")
 class AutostartTest(unittest.TestCase):
     """Avvio automatico solo dalla voce del registro: i collegamenti in Esecuzione automatica (vecchio nome e Voxarium)
     vanno tolti, altrimenti con l'avvio spento dal pannello il programma partiva lo stesso."""
@@ -1040,7 +1050,7 @@ class FirstInstallNamesTest(unittest.TestCase):
 
 class PanelFixesOct26Test(unittest.TestCase):
     """Correzioni del 26/10: RAM, porta, file manager senza server, primo server attivo, UPnP, Store."""
-    FILES = ["server_manager.py", "instance_manager.py", "mc_ping.py", "file_manager.py"]
+    FILES = ["server_manager.py", "instance_manager.py", "mc_ping.py", "platform_utils.py", "file_manager.py"]
 
     def setUp(self):
         self.d = _sandbox(self.FILES, instances=[], config={"server_dir": ""})
@@ -1282,11 +1292,42 @@ class PanelFixesOct26Test(unittest.TestCase):
         self.assertIn("msg.type === 'network'", js)      # IP aggiornato senza riavviare il programma
         self.assertNotIn("_initialJvmRam", js)          # RAM confrontata con il valore letto dal server
 
+class StatusServerPortTest(unittest.TestCase):
+    """/api/status manda la porta vera del server (server.properties): l'app mostrava sempre la sua predefinita 32769."""
+
+    def test_status_has_real_port(self):
+        d = _sandbox(["server_manager.py", "instance_manager.py", "mc_ping.py", "platform_utils.py"], instances=[])
+        try:
+            srv = os.path.join(d, "srv")
+            os.makedirs(srv)
+            with open(os.path.join(srv, "server.properties"), "w", encoding="utf-8") as fh:
+                fh.write("motd=prova\nserver-port=35565\n")
+            with open(os.path.join(d, "config.json"), "w", encoding="utf-8") as fh:
+                json.dump({"server_dir": srv}, fh)
+            sm = _load(d, "server_manager")
+            m = sm.ServerManager(config_path=os.path.join(d, "config.json"))
+            self.assertEqual(m.get_full_status()["server_port"], 35565)
+        finally:
+            shutil.rmtree(d, ignore_errors=True)
+
+
+class RequirementsTest(unittest.TestCase):
+    """Senza una libreria WebSocket uvicorn rifiuta /ws: il pannello perdeva il collegamento in tempo reale sui PC
+    senza Python installato (qui funzionava solo grazie al Python personale dell'utente)."""
+
+    def test_websockets_in_requirements_and_runtime_check(self):
+        with open(os.path.join(ROOT, "requirements.txt"), encoding="utf-8") as fh:
+            reqs = [l.strip().lower() for l in fh if l.strip()]
+        self.assertIn("websockets", reqs)
+        with open(os.path.join(ROOT, "build_runtime.py"), encoding="utf-8") as fh:
+            self.assertIn("uvicorn, websockets", fh.read())
+
+
 class McCpuPercentTest(unittest.TestCase):
     """La CPU di Minecraft è in percentuale di tutta la CPU (psutil la dà per un solo core: 466% su 8 core)."""
 
     def setUp(self):
-        self.d = _sandbox(["server_manager.py", "instance_manager.py", "mc_ping.py"], instances=[], config={"server_dir": ""})
+        self.d = _sandbox(["server_manager.py", "instance_manager.py", "mc_ping.py", "platform_utils.py"], instances=[], config={"server_dir": ""})
         self.sm = _load(self.d, "server_manager")
 
     def tearDown(self):
@@ -1313,7 +1354,7 @@ class ErrorClassificationTest(unittest.TestCase):
     """Scheda Errori: conta il livello vero della riga, non la parola "Error" o un'eccezione citata in un WARN."""
 
     def setUp(self):
-        self.d = _sandbox(["server_manager.py", "instance_manager.py", "mc_ping.py"], instances=[], config={"server_dir": ""})
+        self.d = _sandbox(["server_manager.py", "instance_manager.py", "mc_ping.py", "platform_utils.py"], instances=[], config={"server_dir": ""})
         self.sm = _load(self.d, "server_manager")
         self.m = self.sm.ServerManager(config_path=os.path.join(self.d, "config.json"))
 
@@ -1384,7 +1425,7 @@ class BackupPhasesAndStartGuardTest(unittest.TestCase):
     """Copia su Google Drive con avanzamento fino al 100%, e server che non parte durante backup o ripristino."""
 
     def setUp(self):
-        self.d = _sandbox(["backup_manager.py", "server_manager.py", "instance_manager.py", "mc_ping.py"],
+        self.d = _sandbox(["backup_manager.py", "server_manager.py", "instance_manager.py", "mc_ping.py", "platform_utils.py"],
                           instances=[], config={"server_dir": ""})
         self.bm = _load(self.d, "backup_manager")
         self.sm = _load(self.d, "server_manager")

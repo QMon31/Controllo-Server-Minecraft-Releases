@@ -1,0 +1,18 @@
+# Servizio systemd dell'utente per Voxarium (install.sh sostituisce @APP_DIR@ con la cartella di installazione)
+[Unit]
+Description=Voxarium - pannello del server Minecraft
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=@APP_DIR@
+ExecStart=@APP_DIR@/venv/bin/python @APP_DIR@/app.pyc
+Restart=on-failure
+RestartSec=5
+# Arresto ordinato: SIGINT arriva al pannello e al server Minecraft (stesso gruppo), che salva il mondo e si chiude
+KillSignal=SIGINT
+TimeoutStopSec=90
+
+[Install]
+WantedBy=default.target

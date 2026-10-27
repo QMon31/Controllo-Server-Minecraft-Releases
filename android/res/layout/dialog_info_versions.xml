@@ -83,14 +83,23 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Novità per telefono (v4.12.3)"
-                android:tag="t:ui.novita_telefono|v4.12.3"
+                android:text="Novità per telefono (v4.12.4)"
+                android:tag="t:ui.novita_telefono|v4.12.4"
                 android:textColor="#f4f4f5"
                 android:textSize="12sp"
                 android:textStyle="bold"
                 android:layout_marginBottom="8dp" />
 
             <!-- CONTENUTO NOVITÀ TELEFONO -->
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Correzione (v4.12.4): i testi non tradotti (cronologia vecchia, nomi, messaggi) non vengono più modificati per sbaglio nelle altre lingue."
+                    android:tag="t:ui.correzione_v4_12_4_testi_non_tradotti"
+                    android:textColor="#c4c4c8"
+                    android:textSize="10sp"
+                    android:layout_marginBottom="6dp" />
+
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -175,6 +184,15 @@
                 android:background="#0f0f11"
                 android:padding="12dp"
                 android:layout_marginBottom="8dp">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="• v4.12.4 (Build 96):\nI testi non tradotti non vengono più modificati per sbaglio nelle altre lingue."
+                    android:tag="t:ui.v4_12_4_build_96_testi_non_tradotti"
+                    android:textColor="#c4c4c8"
+                    android:textSize="10sp"
+                    android:layout_marginBottom="4dp" />
 
                 <TextView
                     android:layout_width="match_parent"

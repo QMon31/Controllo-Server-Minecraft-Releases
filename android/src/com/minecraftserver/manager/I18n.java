@@ -212,6 +212,9 @@ public final class I18n {
             String out = cur.get(e.getKey());
             if (out == null) continue;
             if (!PLACEHOLDER.matcher(it).find()) { exact.put(it, out); continue; }
+            // Modelli con {0}: solo per i testi del PC (sezione pc.). Quelli dell'app si usano solo dalla chiave, altrimenti
+            // un modello come "{0} e {1}" cambiava ogni testo con " e " (note vecchie, nomi, MOTD: "toast und dialoghi")
+            if (!e.getKey().startsWith("pc.")) continue;
             Template t = new Template();
             StringBuilder re = new StringBuilder("^");
             List<Integer> order = new ArrayList<>();

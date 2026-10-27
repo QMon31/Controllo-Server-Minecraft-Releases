@@ -45,7 +45,7 @@ def main():
     )
 
     check = subprocess.run(
-        [os.path.join(OUT_DIR, "python.exe"), "-c", "import fastapi, uvicorn, psutil, pydantic, qrcode, PIL, cryptography; print('OK')"],
+        [os.path.join(OUT_DIR, "python.exe"), "-c", "import fastapi, uvicorn, websockets, psutil, pydantic, qrcode, PIL, cryptography; print('OK')"],
         capture_output=True, text=True,
     )
     if check.returncode != 0 or "OK" not in check.stdout:

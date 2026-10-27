@@ -560,5 +560,7 @@
 "pc.backup_avvio_bloccato_backup": "Backup in corso: il server si potrà avviare quando sarà finito.",
 "pc.backup_avvio_bloccato_ripristino": "Ripristino in corso: il server si potrà avviare quando sarà finito.",
 "pc.console_avvio_server_bloccato": "[Pannello] Avvio del server bloccato. {0}",
-"pc.backup_server_deve_essere_spento": "Il server Minecraft deve essere COMPLETAMENTE SPENTO per effettuare il backup sicuro."
+"pc.backup_server_deve_essere_spento": "Il server Minecraft deve essere COMPLETAMENTE SPENTO per effettuare il backup sicuro.",
+"ui.correzione_v4_12_4_testi_non_tradotti": "Correzione (v4.12.4): i testi non tradotti (cronologia vecchia, nomi, messaggi) non vengono più modificati per sbaglio nelle altre lingue.",
+"ui.v4_12_4_build_96_testi_non_tradotti": "• v4.12.4 (Build 96):\nI testi non tradotti non vengono più modificati per sbaglio nelle altre lingue."
 }

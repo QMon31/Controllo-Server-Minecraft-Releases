@@ -1,12 +1,16 @@
 """
 Controllo e installazione degli aggiornamenti del programma PC dal repository pubblico delle release.
 Il manifest pc_version.json della release più recente indica versione, build, URL e SHA-256 dell'installer.
+Su Linux si usa la sua voce "linux" (pacchetto .tar.gz installato con install.sh --update); i PC Windows la ignorano.
 """
 
 import hashlib
 import json
 import os
+import shutil
 import subprocess
+import sys
+import tarfile
 import tempfile
 import threading
 import time
@@ -21,6 +25,7 @@ SETUP_URL_PREFIXES = tuple(f"https://github.com/{r}/releases/download/" for r in
 CHECK_INTERVAL_SECONDS = 6 * 3600
 USER_AGENT = f"ControlloServerMinecraft/{PC_VERSION}"
 DETACHED_PROCESS = 0x00000008
+IS_LINUX = sys.platform.startswith("linux")
 
 _lock = threading.Lock()
 _state: Dict[str, Any] = {
@@ -54,15 +59,25 @@ def status() -> Dict[str, Any]:
         }
 
 
+def platform_manifest(manifest: Dict[str, Any]) -> Dict[str, Any]:
+    """Su Linux la voce "linux" del manifest con le stesse chiavi di quello Windows; su Windows il manifest com'è.
+    Senza voce "linux" (release solo Windows) la build è 0: nessun aggiornamento."""
+    if not IS_LINUX:
+        return manifest
+    lin = manifest.get("linux") or {}
+    return {"version": lin.get("version"), "build": int(lin.get("build", 0) or 0), "setup_url": lin.get("url", ""),
+            "sha256": lin.get("sha256", ""), "size": lin.get("size"), "notes": manifest.get("notes", "")}
+
+
 def check_for_update(force: bool = False) -> Dict[str, Any]:
     with _lock:
         if not force and time.time() - _state["checked_at"] < CHECK_INTERVAL_SECONDS:
             return status()
     try:
         with _http_get(MANIFEST_URL) as resp:
-            manifest = json.loads(resp.read().decode("utf-8"))
+            manifest = platform_manifest(json.loads(resp.read().decode("utf-8")))
         latest_build = int(manifest.get("build", 0))
-        if not str(manifest.get("setup_url", "")).startswith(SETUP_URL_PREFIXES):
+        if latest_build and not str(manifest.get("setup_url", "")).startswith(SETUP_URL_PREFIXES):
             raise ValueError("indirizzo dell'installer non valido nel manifest")
         with _lock:
             _state.update(checked_at=time.time(), latest=manifest, available=latest_build > PC_BUILD, error=None)
@@ -85,7 +100,8 @@ def download_and_run_installer() -> Dict[str, Any]:
 
 
 def _download_worker(manifest: Dict[str, Any]):
-    dest = os.path.join(tempfile.gettempdir(), f"Setup_Voxarium_b{int(manifest.get('build', 0))}.exe")
+    ext = ".tar.gz" if IS_LINUX else ".exe"
+    dest = os.path.join(tempfile.gettempdir(), f"Setup_Voxarium_b{int(manifest.get('build', 0))}{ext}")
     try:
         sha = hashlib.sha256()
         done = 0
@@ -106,11 +122,34 @@ def _download_worker(manifest: Dict[str, Any]):
             raise ValueError("verifica SHA-256 dell'installer non riuscita")
         with _lock:
             _state["progress"] = 100
-        # L'installer chiude da solo pannello, backend ed eventuale vecchio tunnel (versioni precedenti alla 4.10) prima di sostituire i file (Installer.cs, avvio)
-        subprocess.Popen([dest, "--update"], close_fds=True, creationflags=DETACHED_PROCESS)
+        if IS_LINUX:
+            _run_linux_update(dest)
+        else:
+            # L'installer chiude da solo pannello, backend ed eventuale vecchio tunnel (versioni precedenti alla 4.10) prima di sostituire i file (Installer.cs, avvio)
+            subprocess.Popen([dest, "--update"], close_fds=True, creationflags=DETACHED_PROCESS)
     except Exception as e:
         with _lock:
             _state["error"] = f"Aggiornamento non riuscito: {e}"
     finally:
         with _lock:
             _state["downloading"] = False
+
+
+def _run_linux_update(archive: str):
+    """Estrae il pacchetto e avvia install.sh --update fuori dal servizio: lo script riavvia voxarium.service, e
+    systemd chiuderebbe con il servizio anche i processi avviati da lui (systemd-run li mette in un'unità a parte)."""
+    dest_dir = tempfile.mkdtemp(prefix="voxarium_update_")
+    with tarfile.open(archive) as tf:
+        members = tf.getmembers()
+        for m in members:
+            if not (m.isfile() or m.isdir()) or m.name.startswith("/") or ".." in m.name.split("/"):
+                raise ValueError(f"file non valido nel pacchetto: {m.name}")
+        tf.extractall(dest_dir, members=members)
+    script = os.path.join(dest_dir, "voxarium", "install.sh")
+    if not os.path.isfile(script):
+        raise ValueError("install.sh mancante nel pacchetto")
+    cmd = ["sh", script, "--update"]
+    if shutil.which("systemd-run"):
+        cmd = ["systemd-run", "--user", "--collect", "--unit", "voxarium-update"] + cmd
+    subprocess.Popen(cmd, close_fds=True, start_new_session=True, creationflags=0,
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

@@ -9110,6 +9110,8 @@ async function openNativeBrowse(targetField = 'server_dir') {
     const data = await requestNativeBrowse(targetField, initPath);
     if (data && data.success && data.selected_path) {
       applyBrowseResult(targetField, data);
+    } else if (data && data.unavailable) {
+      showToast(t('msg.selezione_file_non_disponibile'), 'warning');
     } else if (data && data.error) {
       showToast((t('msg.errore_selezione_windows') + " ") + data.error, 'error');
     }

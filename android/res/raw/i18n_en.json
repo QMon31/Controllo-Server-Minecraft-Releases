@@ -560,5 +560,7 @@
 "pc.backup_avvio_bloccato_backup": "Backup in progress: the server can be started once it has finished.",
 "pc.backup_avvio_bloccato_ripristino": "Restore in progress: the server can be started once it has finished.",
 "pc.console_avvio_server_bloccato": "[Panel] Server start blocked. {0}",
-"pc.backup_server_deve_essere_spento": "The Minecraft server must be COMPLETELY STOPPED for a safe backup."
+"pc.backup_server_deve_essere_spento": "The Minecraft server must be COMPLETELY STOPPED for a safe backup.",
+"ui.correzione_v4_12_4_testi_non_tradotti": "Fix (v4.12.4): untranslated texts (old history, names, messages) are no longer changed by mistake in other languages.",
+"ui.v4_12_4_build_96_testi_non_tradotti": "• v4.12.4 (Build 96):\nUntranslated texts are no longer changed by mistake in other languages."
 }

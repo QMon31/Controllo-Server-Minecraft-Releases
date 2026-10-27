@@ -1689,6 +1689,7 @@ window.I18N_DICTS.it = {
   'msg.server_configurato_ed_associato_successo': "Server configurato ed associato con successo al pannello!",
   'msg.selezione_file_nativa_explorer_disponibile': "Selezione file nativa con Explorer disponibile solo sul computer host.",
   'msg.errore_selezione_windows': "Errore selezione Windows:",
+  'msg.selezione_file_non_disponibile': "Su questo PC non c'è una finestra per scegliere i file: scrivi il percorso nel campo.",
   'msg.cartella_server_impostata': "Cartella server impostata: {0}",
   'msg.file_avvio_impostato': "File di avvio impostato: {0}",
   'msg.cartella_installazione': "Cartella installazione: {0}",
@@ -2013,6 +2014,7 @@ window.I18N_DICTS.it = {
   'notes.nell_installazione_si_sceglie_lingua': ": nell'installazione si sceglie la lingua (parte da quella di Windows) e il programma si apre in quella lingua; tradotti finestre, messaggi e disinstallatore.",
   'notes.backup_piu_sicuro': "Backup più sicuro ({0})",
   'notes.copia_drive_avanzamento_avvio_bloccato': ": la copia su Google Drive mostra il suo avanzamento invece di restare ferma al 99% e sostituisce quella vecchia solo quando è completa; durante un backup o un ripristino il server non si avvia (anche dai riavvii automatici) e il telefono mostra il motivo.",
+  'notes.tempo_reale_porta_mc': ": il pannello si aggiorna in tempo reale anche sui PC senza Python installato (mancava una libreria, ora inclusa); l'app mostra la porta vera del server Minecraft invece di 32769.",
   'notes.errori_backup_drive': "Errori e backup su Drive ({0})",
   'notes.errori_veri_avviso_copia_drive': ": la scheda Errori conta solo gli errori veri (non più gli avvisi delle mod né il messaggio di Forge sui file delle mod); la finestra del backup avvisa se la copia su Google Drive manca, è più vecchia di quella sul Desktop o pesa diversamente.",
   'notes.correzioni_chiavi_testi': "Correzioni e chiavi dei testi ({0})",
@@ -2024,4 +2026,5 @@ window.I18N_DICTS.it = {
   'notes.pulsante_lingua_alto_it_en': ": pulsante della lingua in alto (IT, EN, ES, FR, DE, PT); il cambio lingua non riapre l'app e non chiede di nuovo l'impronta; tradotti anche errori di connessione e tipi di notifica.",
   'notes.ram_backup': "RAM e backup ({0})",
   'notes.ram_server_scelta_elenco_fino': ": RAM del server scelta da un elenco fino alla RAM del PC; la finestra del backup mostra quanto peserà; il PIN di sblocco viene controllato dal PC, quindi dopo un cambio di PIN vale subito quello nuovo.",
+  'notes.testi_non_tradotti_app_4124': ": i testi non tradotti (cronologia vecchia, nomi, messaggi) non vengono più modificati per sbaglio nelle altre lingue.",
 };

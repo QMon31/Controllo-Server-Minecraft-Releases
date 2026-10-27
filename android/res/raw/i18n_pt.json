@@ -560,5 +560,7 @@
 "pc.backup_avvio_bloccato_backup": "Backup em andamento: o servidor poderá ser iniciado quando terminar.",
 "pc.backup_avvio_bloccato_ripristino": "Restauração em andamento: o servidor poderá ser iniciado quando terminar.",
 "pc.console_avvio_server_bloccato": "[Painel] Início do servidor bloqueado. {0}",
-"pc.backup_server_deve_essere_spento": "O servidor Minecraft precisa estar TOTALMENTE PARADO para um backup seguro."
+"pc.backup_server_deve_essere_spento": "O servidor Minecraft precisa estar TOTALMENTE PARADO para um backup seguro.",
+"ui.correzione_v4_12_4_testi_non_tradotti": "Correção (v4.12.4): os textos não traduzidos (histórico antigo, nomes, mensagens) não são mais alterados por engano nos outros idiomas.",
+"ui.v4_12_4_build_96_testi_non_tradotti": "• v4.12.4 (Build 96):\nOs textos não traduzidos não são mais alterados por engano nos outros idiomas."
 }
