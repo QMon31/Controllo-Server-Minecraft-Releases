@@ -4,7 +4,8 @@
 control panel, without using the command line. You can manage it from the PC itself, from a browser and from your
 phone, both at home and away from home.
 
-This repository contains **only the installer and the updates** of the program: the source code is not public.
+Voxarium is **free and open source** (GNU GPL v3): this repository contains the source code of the Windows program
+([`pc/`](pc)) and of the Android app ([`android/`](android)), and the installers in the Releases.
 
 **[Download the latest version (Setup_Voxarium.exe)](https://github.com/QMon31/Voxarium/releases/latest/download/Setup_Voxarium.exe)**
 · [All versions and release notes](https://github.com/QMon31/Voxarium/releases)
@@ -87,6 +88,16 @@ checks its integrity (SHA-256), installs it and reopens by itself. Settings, ser
   fingerprint.
 - The panel's HTTP port is never opened on the router: from outside your home you can only get in through the HTTPS port.
 - Notifications sent to the phone are signed by the PC, so nobody else can send fake ones.
+
+## Source code
+- [`pc/`](pc): Python backend (FastAPI), web control panel, Windows launcher and installer (C#).
+- [`android/`](android): the Android app.
+- How to build both: [BUILDING.md](BUILDING.md).
+
+## License
+Voxarium is released under the [GNU General Public License v3.0](LICENSE): you can use, study, modify and share it;
+modified versions you distribute must be released under the same license, with their source code.
+See [NOTICE.md](NOTICE.md) for the copyright and the additional permission for the Microsoft WebView2 libraries.
 
 ---
 

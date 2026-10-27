@@ -1,0 +1,2506 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/rootLayout"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fitsSystemWindows="true"
+    android:background="#171719">
+
+    <!-- ================= TOP APP BAR WITH DRAWER TOGGLE ================= -->
+    <RelativeLayout
+        android:id="@+id/topBar"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:layout_alignParentTop="true"
+        android:background="#171719"
+        android:paddingStart="10dp"
+        android:paddingEnd="10dp">
+
+        <Button
+            android:id="@+id/btnToggleDrawer"
+            android:layout_width="40dp"
+            android:layout_height="38dp"
+            android:layout_centerVertical="true"
+            android:layout_alignParentStart="true"
+            android:text="☰"
+            android:textSize="18sp"
+            android:textColor="#9ccc65"
+            android:background="@drawable/btn_slate" />
+
+        <ImageView
+            android:id="@+id/topBarAppIcon"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:layout_centerVertical="true"
+            android:layout_toEndOf="@+id/btnToggleDrawer"
+            android:layout_marginStart="8dp"
+            android:src="@drawable/ic_launcher" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_centerVertical="true"
+            android:layout_toEndOf="@+id/topBarAppIcon"
+            android:layout_toStartOf="@+id/topBarActions"
+            android:layout_marginStart="8dp"
+            android:layout_marginEnd="4dp"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/txtHeaderTitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:text="Stato del server"
+                android:tag="t:ui.stato_server"
+                android:textColor="#f4f4f5"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/txtHeaderSubtitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:text="Server Minecraft Forge"
+                android:tag="notr"
+                android:textColor="#8a8c92"
+                android:textSize="10sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/topBarActions"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:layout_alignParentEnd="true"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/pillServerStatus"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:background="@drawable/pill_offline"
+                android:paddingStart="6dp"
+                android:paddingEnd="6dp"
+                android:paddingTop="2dp"
+                android:paddingBottom="2dp"
+                android:text="Offline"
+                android:tag="t:ui.offline"
+                android:textColor="#f0788c"
+                android:textSize="9sp"
+                android:textStyle="bold"
+                android:layout_marginEnd="6dp" />
+
+            <!-- Lingua dell'app: sempre visibile in alto; il codice (IT, EN...) lo scrive MainActivity -->
+            <Button
+                android:id="@+id/btnAppLanguage"
+                android:layout_width="40dp"
+                android:layout_height="38dp"
+                android:layout_marginEnd="6dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                android:text="IT"
+                android:tag="d:ui.lingua_dell_app_2 notr"
+                android:textAllCaps="false"
+                android:textColor="#9ccc65"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:contentDescription="Lingua dell'app"
+                android:background="@drawable/btn_slate" />
+
+            <Button
+                android:id="@+id/btnTopHome"
+                android:layout_width="38dp"
+                android:layout_height="38dp"
+                android:layout_marginEnd="6dp"
+                android:text=""
+                android:tag="d:ui.stato_server"
+                android:contentDescription="Stato del server"
+                android:foreground="@drawable/ic_home"
+                android:foregroundGravity="center"
+                android:background="@drawable/btn_slate" />
+
+            <Button
+                android:id="@+id/btnTopRefresh"
+                android:layout_width="38dp"
+                android:layout_height="38dp"
+                android:text=""
+                android:tag="d:ui.aggiorna"
+                android:contentDescription="Aggiorna"
+                android:foreground="@drawable/ic_refresh"
+                android:foregroundGravity="center"
+                android:background="@drawable/btn_slate" />
+
+            <Button
+                android:id="@+id/btnTopInfo"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:layout_marginStart="6dp"
+                android:text="i"
+                android:textColor="#9ccc65"
+                android:textSize="17sp"
+                android:textStyle="bold|italic"
+                android:background="@drawable/circle_info_btn" />
+        </LinearLayout>
+    </RelativeLayout>
+
+    <!-- ================= SECTION 0: DASHBOARD ================= -->
+    <ScrollView
+        android:id="@+id/viewDashboard"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_below="@+id/topBar"
+        android:padding="14dp"
+        android:visibility="visible">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <!-- SERVER STATUS CARD -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@drawable/card_bg"
+                android:orientation="vertical"
+                android:padding="16dp"
+                android:layout_marginBottom="12dp">
+
+                <RelativeLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Stato"
+                        android:tag="t:ui.stato"
+                        android:textColor="#9a9ca2"
+                        android:textSize="13sp"
+                        android:textStyle="bold" />
+                    <TextView
+                        android:id="@+id/pillServerStatus2"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_alignParentEnd="true"
+                        android:background="@drawable/pill_offline"
+                        android:paddingStart="8dp"
+                        android:paddingEnd="8dp"
+                        android:paddingTop="2dp"
+                        android:paddingBottom="2dp"
+                        android:text="Offline"
+                        android:tag="t:ui.offline"
+                        android:textColor="#f0788c"
+                        android:textSize="10sp"
+                        android:textStyle="bold" />
+                </RelativeLayout>
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <ImageView
+                        android:id="@+id/imgServerCardLogo"
+                        android:layout_width="48dp"
+                        android:layout_height="48dp"
+                        android:layout_marginEnd="12dp"
+                        android:src="@drawable/ic_launcher" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:id="@+id/txtMainStatus"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Server spento"
+                            android:tag="t:ui.server_spento"
+                            android:textColor="#f0788c"
+                            android:textSize="18sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/txtServerAddress"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="Porta MC: 32769 | ping: --"
+                            android:tag="notr"
+                            android:textColor="#9a9ca2"
+                            android:textSize="12sp" />
+
+                        <TextView
+                            android:id="@+id/txtUptime"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="Uptime: --"
+                            android:tag="notr"
+                            android:textColor="#c4c4c8"
+                            android:textSize="11sp" />
+                    </LinearLayout>
+                </LinearLayout>
+
+                <!-- ACTION BUTTONS -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="14dp"
+                    android:orientation="horizontal">
+
+                    <Button
+                        android:id="@+id/btnActionStart"
+                        android:layout_width="0dp"
+                        android:layout_height="40dp"
+                        android:layout_weight="1"
+                        android:layout_marginEnd="4dp"
+                        android:background="@drawable/btn_green"
+                        android:text="Avvia"
+                        android:tag="t:ui.avvia"
+                        android:textColor="#131217"
+                        android:textSize="12sp"
+                        android:textStyle="bold" />
+
+                    <Button
+                        android:id="@+id/btnActionRestart"
+                        android:layout_width="0dp"
+                        android:layout_height="40dp"
+                        android:layout_weight="1"
+                        android:layout_marginEnd="4dp"
+                        android:background="@drawable/btn_yellow"
+                        android:text="Riavvia"
+                        android:tag="t:ui.riavvia"
+                        android:textColor="#f4f4f5"
+                        android:textSize="12sp"
+                        android:textStyle="bold" />
+
+                    <Button
+                        android:id="@+id/btnActionStop"
+                        android:layout_width="0dp"
+                        android:layout_height="40dp"
+                        android:layout_weight="1"
+                        android:background="@drawable/btn_red"
+                        android:text="Arresta"
+                        android:tag="t:ui.arresta"
+                        android:textColor="#f4f4f5"
+                        android:textSize="12sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- GAUGES CARD -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@drawable/card_bg"
+                android:orientation="vertical"
+                android:padding="16dp"
+                android:layout_marginBottom="12dp">
+
+                <RelativeLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Risorse"
+                        android:tag="t:ui.risorse"
+                        android:textColor="#9a9ca2"
+                        android:textSize="13sp"
+                        android:textStyle="bold" />
+                    <TextView
+                        android:id="@+id/pillTps"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_alignParentEnd="true"
+                        android:background="@drawable/pill_online"
+                        android:paddingStart="8dp"
+                        android:paddingEnd="8dp"
+                        android:paddingTop="2dp"
+                        android:paddingBottom="2dp"
+                        android:text="20.0 TPS"
+                        android:tag="notr"
+                        android:textColor="#a5d36f"
+                        android:textSize="10sp"
+                        android:textStyle="bold" />
+                </RelativeLayout>
+
+                <!-- RAM -->
+                <RelativeLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Memoria RAM allocata"
+                        android:tag="t:ui.memoria_ram_allocata"
+                        android:textColor="#9a9ca2"
+                        android:textSize="11sp" />
+                    <TextView
+                        android:id="@+id/txtRamValue"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_alignParentEnd="true"
+                        android:text="0.0 / 16.0 GB (0%)"
+                        android:tag="notr"
+                        android:textColor="#f4f4f5"
+                        android:textSize="11sp"
+                        android:textStyle="bold" />
+                </RelativeLayout>
+                <ProgressBar
+                    android:id="@+id/progBarRam"
+                    style="?android:attr/progressBarStyleHorizontal"
+                    android:layout_width="match_parent"
+                    android:layout_height="6dp"
+                    android:layout_marginTop="4dp"
+                    android:max="100"
+                    android:progress="0"
+                    android:progressDrawable="@drawable/progress_ram" />
+
+                <!-- CPU -->
+                <RelativeLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Carico CPU host"
+                        android:tag="t:ui.carico_cpu_host"
+                        android:textColor="#9a9ca2"
+                        android:textSize="11sp" />
+                    <TextView
+                        android:id="@+id/txtCpuValue"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_alignParentEnd="true"
+                        android:text="0 %"
+                        android:textColor="#f4f4f5"
+                        android:textSize="11sp"
+                        android:textStyle="bold" />
+                </RelativeLayout>
+                <ProgressBar
+                    android:id="@+id/progBarCpu"
+                    style="?android:attr/progressBarStyleHorizontal"
+                    android:layout_width="match_parent"
+                    android:layout_height="6dp"
+                    android:layout_marginTop="4dp"
+                    android:max="100"
+                    android:progress="0"
+                    android:progressDrawable="@drawable/progress_cpu" />
+            </LinearLayout>
+
+            <!-- PLAYERS OVERVIEW CARD -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@drawable/card_bg"
+                android:orientation="vertical"
+                android:padding="16dp"
+                android:layout_marginBottom="12dp">
+
+                <RelativeLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content">
+                    <TextView
+                        android:id="@+id/txtPlayersOverview"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Giocatori connessi (0/20)"
+                        android:tag="t:ui.giocatori_connessi_0_20"
+                        android:textColor="#9a9ca2"
+                        android:textSize="13sp"
+                        android:textStyle="bold" />
+                    <Button
+                        android:id="@+id/btnQuickGoPlayers"
+                        android:layout_width="wrap_content"
+                        android:layout_height="26dp"
+                        android:layout_alignParentEnd="true"
+                        android:background="@drawable/btn_slate"
+                        android:text="Gestisci"
+                        android:tag="t:ui.gestisci"
+                        android:textColor="#9ccc65"
+                        android:textSize="10sp"
+                        android:paddingStart="8dp"
+                        android:paddingEnd="8dp" />
+                </RelativeLayout>
+
+                <TextView
+                    android:id="@+id/txtPlayerList"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="Nessun giocatore connesso al momento."
+                    android:tag="t:ui.nessun_giocatore_connesso_momento"
+                    android:textColor="#9a9ca2"
+                    android:textSize="12sp" />
+
+            </LinearLayout>
+
+            <!-- RAPID CHIPS -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@drawable/card_bg"
+                android:orientation="vertical"
+                android:padding="14dp"
+                android:layout_marginBottom="20dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Comandi rapidi"
+                    android:tag="t:ui.comandi_rapidi"
+                    android:textColor="#9a9ca2"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:orientation="horizontal">
+                    <Button
+                        android:id="@+id/chipTimeDay"
+                        android:layout_width="0dp"
+                        android:layout_height="36dp"
+                        android:layout_weight="1"
+                        android:layout_marginEnd="4dp"
+                        android:background="@drawable/chip_bg"
+                        android:text="Giorno"
+                        android:tag="t:ui.giorno"
+                        android:textColor="#f4f4f5"
+                        android:textSize="11sp" />
+                    <Button
+                        android:id="@+id/chipTimeNight"
+                        android:layout_width="0dp"
+                        android:layout_height="36dp"
+                        android:layout_weight="1"
+                        android:layout_marginEnd="4dp"
+                        android:background="@drawable/chip_bg"
+                        android:text="Notte"
+                        android:tag="t:ui.notte"
+                        android:textColor="#f4f4f5"
+                        android:textSize="11sp" />
+                    <Button
+                        android:id="@+id/chipWeatherClear"
+                        android:layout_width="0dp"
+                        android:layout_height="36dp"
+                        android:layout_weight="1"
+                        android:layout_marginEnd="4dp"
+                        android:background="@drawable/chip_bg"
+                        android:text="Sereno"
+                        android:tag="t:ui.sereno"
+                        android:textColor="#f4f4f5"
+                        android:textSize="11sp" />
+                    <Button
+                        android:id="@+id/chipWeatherRain"
+                        android:layout_width="0dp"
+                        android:layout_height="36dp"
+                        android:layout_weight="1"
+                        android:background="@drawable/chip_bg"
+                        android:text="Pioggia"
+                        android:tag="t:ui.pioggia"
+                        android:textColor="#f4f4f5"
+                        android:textSize="11sp" />
+                </LinearLayout>
+            </LinearLayout>
+        </LinearLayout>
+    </ScrollView>
+
+    <!-- ================= SECTION 1: GIOCATORI & WHITELIST ================= -->
+    <ScrollView
+        android:id="@+id/viewPlayers"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_below="@+id/topBar"
+        android:padding="14dp"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <!-- GIOCATORI CONNESSI CARD -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@drawable/card_bg"
+                android:orientation="vertical"
+                android:padding="16dp"
+                android:layout_marginBottom="12dp">
+
+                <TextView
+                    android:id="@+id/txtPlayersTitleCount"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Giocatori online (0/20)"
+                    android:tag="t:ui.giocatori_online_0_20"
+                    android:textColor="#9a9ca2"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/txtPlayersEmpty"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="Nessun giocatore attualmente connesso."
+                    android:tag="t:ui.nessun_giocatore_attualmente_connesso"
+                    android:textColor="#9a9ca2"
+                    android:textSize="12sp" />
+
+                <LinearLayout
+                    android:id="@+id/layoutPlayersList"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:orientation="vertical" />
+            </LinearLayout>
+
+            <!-- WHITELIST CARD -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@drawable/card_bg"
+                android:orientation="vertical"
+                android:padding="16dp"
+                android:layout_marginBottom="20dp">
+
+                <RelativeLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Gestione whitelist"
+                        android:tag="t:ui.gestione_whitelist"
+                        android:textColor="#9a9ca2"
+                        android:textSize="13sp"
+                        android:textStyle="bold" />
+                    <Button
+                        android:id="@+id/btnWhitelistToggle"
+                        android:layout_width="wrap_content"
+                        android:layout_height="28dp"
+                        android:layout_alignParentEnd="true"
+                        android:background="@drawable/btn_slate"
+                        android:text="Applica: Off"
+                        android:tag="t:ui.applica_off"
+                        android:textColor="#9a9ca2"
+                        android:textSize="10sp"
+                        android:paddingStart="8dp"
+                        android:paddingEnd="8dp" />
+                </RelativeLayout>
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:orientation="horizontal">
+
+                    <EditText
+                        android:id="@+id/edtWhitelistInput"
+                        android:layout_width="0dp"
+                        android:layout_height="40dp"
+                        android:layout_weight="1"
+                        android:background="@drawable/edit_text_bg"
+                        android:hint="Nome utente Minecraft..."
+                        android:tag="h:ui.nome_utente_minecraft"
+                        android:textColor="#f4f4f5"
+                        android:textColorHint="#8a8c92"
+                        android:textSize="12sp"
+                        android:paddingStart="12dp"
+                        android:paddingEnd="12dp"
+                        android:inputType="text" />
+
+                    <Button
+                        android:id="@+id/btnWhitelistAdd"
+                        android:layout_width="wrap_content"
+                        android:layout_height="40dp"
+                        android:layout_marginStart="6dp"
+                        android:background="@drawable/btn_blue"
+                        android:text="+ Aggiungi"
+                        android:tag="t:ui.aggiungi"
+                        android:textColor="#f4f4f5"
+                        android:textSize="11sp"
+                        android:paddingStart="12dp"
+                        android:paddingEnd="12dp" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/txtWhitelistCount"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="Giocatori abilitati nella whitelist:"
+                    android:tag="t:ui.giocatori_abilitati_nella_whitelist"
+                    android:textColor="#9a9ca2"
+                    android:textSize="11sp" />
+
+                <LinearLayout
+                    android:id="@+id/layoutWhitelistList"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:orientation="vertical" />
+            </LinearLayout>
+        </LinearLayout>
+    </ScrollView>
+
+    <!-- ================= SECTION 2: REGOLE DI GIOCO (GAMERULES) ================= -->
+    <ScrollView
+        android:id="@+id/viewGameRules"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_below="@+id/topBar"
+        android:padding="14dp"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@drawable/card_bg"
+                android:orientation="vertical"
+                android:padding="16dp"
+                android:layout_marginBottom="12dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Interruttori rapidi gamerules"
+                    android:tag="t:ui.interruttori_rapidi_gamerules"
+                    android:textColor="#9a9ca2"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="Tocca un pulsante per attivare o disattivare istantaneamente una regola di gioco in-game."
+                    android:tag="t:ui.tocca_pulsante_attivare_o_disattivare"
+                    android:textColor="#9a9ca2"
+                    android:textSize="11sp" />
+
+                <Button
+                    android:id="@+id/btnRuleKeepInventory"
+                    android:layout_width="match_parent"
+                    android:layout_height="44dp"
+                    android:layout_marginTop="12dp"
+                    android:background="@drawable/btn_slate"
+                    android:text="Mantieni inventario (keepInventory): Attiva"
+                    android:tag="t:ui.mantieni_inventario_keepinventory"
+                    android:textColor="#9ccc65"
+                    android:textSize="12sp"
+                    android:gravity="start|center_vertical"
+                    android:paddingStart="14dp" />
+
+                <Button
+                    android:id="@+id/btnRuleMobGriefing"
+                    android:layout_width="match_parent"
+                    android:layout_height="44dp"
+                    android:layout_marginTop="8dp"
+                    android:background="@drawable/btn_slate"
+                    android:text="Danni Creeper/Mob (mobGriefing): Disattiva"
+                    android:tag="t:ui.danni_creeper_mob_mobgriefing"
+                    android:textColor="#f4f4f5"
+                    android:textSize="12sp"
+                    android:gravity="start|center_vertical"
+                    android:paddingStart="14dp" />
+
+                <Button
+                    android:id="@+id/btnRulePvP"
+                    android:layout_width="match_parent"
+                    android:layout_height="44dp"
+                    android:layout_marginTop="8dp"
+                    android:background="@drawable/btn_slate"
+                    android:text="Combattimento PvP: Abilita/disabilita"
+                    android:tag="t:ui.combattimento_pvp_abilita_disabilita"
+                    android:textColor="#f4f4f5"
+                    android:textSize="12sp"
+                    android:gravity="start|center_vertical"
+                    android:paddingStart="14dp" />
+
+                <Button
+                    android:id="@+id/btnRuleDaylight"
+                    android:layout_width="match_parent"
+                    android:layout_height="44dp"
+                    android:layout_marginTop="8dp"
+                    android:background="@drawable/btn_slate"
+                    android:text="Ciclo Giorno/Notte (doDaylightCycle): Attivo"
+                    android:tag="t:ui.ciclo_giorno_notte_dodaylightcycle"
+                    android:textColor="#f4f4f5"
+                    android:textSize="12sp"
+                    android:gravity="start|center_vertical"
+                    android:paddingStart="14dp" />
+
+                <Button
+                    android:id="@+id/btnRuleFireTick"
+                    android:layout_width="match_parent"
+                    android:layout_height="44dp"
+                    android:layout_marginTop="8dp"
+                    android:background="@drawable/btn_slate"
+                    android:text="Propagazione fuoco (doFireTick): Disattiva"
+                    android:tag="t:ui.propagazione_fuoco_dofiretick"
+                    android:textColor="#f4f4f5"
+                    android:textSize="12sp"
+                    android:gravity="start|center_vertical"
+                    android:paddingStart="14dp" />
+
+                <Button
+                    android:id="@+id/btnRuleWeatherCycle"
+                    android:layout_width="match_parent"
+                    android:layout_height="44dp"
+                    android:layout_marginTop="8dp"
+                    android:background="@drawable/btn_slate"
+                    android:text="Ciclo meteo dinamico (doWeatherCycle): Attivo"
+                    android:tag="t:ui.ciclo_meteo_dinamico_doweathercycle"
+                    android:textColor="#f4f4f5"
+                    android:textSize="12sp"
+                    android:gravity="start|center_vertical"
+                    android:paddingStart="14dp" />
+
+                <Button
+                    android:id="@+id/btnRuleShowDeath"
+                    android:layout_width="match_parent"
+                    android:layout_height="44dp"
+                    android:layout_marginTop="8dp"
+                    android:background="@drawable/btn_slate"
+                    android:text="Mostra morti in chat (showDeathMessages): Attivo"
+                    android:tag="t:ui.mostra_morti_chat_showdeathmessages"
+                    android:textColor="#f4f4f5"
+                    android:textSize="12sp"
+                    android:gravity="start|center_vertical"
+                    android:paddingStart="14dp" />
+            </LinearLayout>
+        </LinearLayout>
+    </ScrollView>
+
+    <!-- ================= SECTION 3: PROPRIETÀ SERVER ================= -->
+    <ScrollView
+        android:id="@+id/viewProperties"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_below="@+id/topBar"
+        android:padding="14dp"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@drawable/card_bg"
+                android:orientation="vertical"
+                android:padding="16dp"
+                android:layout_marginBottom="12dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Configurazione server.properties"
+                    android:tag="t:ui.configurazione_server_properties"
+                    android:textColor="#9a9ca2"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+
+                <!-- DIFFICOLTÀ -->
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="Difficoltà di gioco:"
+                    android:tag="t:ui.difficolta_gioco"
+                    android:textColor="#9a9ca2"
+                    android:textSize="11sp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:orientation="horizontal">
+                    <Button
+                        android:id="@+id/chipDiffPeaceful"
+                        android:layout_width="0dp"
+                        android:layout_height="36dp"
+                        android:layout_weight="1"
+                        android:layout_marginEnd="4dp"
+                        android:background="@drawable/chip_bg"
+                        android:text="Pacifica"
+                        android:tag="t:ui.pacifica"
+                        android:textColor="#f4f4f5"
+                        android:textSize="10sp" />
+                    <Button
+                        android:id="@+id/chipDiffEasy"
+                        android:layout_width="0dp"
+                        android:layout_height="36dp"
+                        android:layout_weight="1"
+                        android:layout_marginEnd="4dp"
+                        android:background="@drawable/chip_bg"
+                        android:text="Facile"
+                        android:tag="t:ui.facile"
+                        android:textColor="#f4f4f5"
+                        android:textSize="10sp" />
+                    <Button
+                        android:id="@+id/chipDiffNormal"
+                        android:layout_width="0dp"
+                        android:layout_height="36dp"
+                        android:layout_weight="1"
+                        android:layout_marginEnd="4dp"
+                        android:background="@drawable/chip_bg"
+                        android:text="Normale"
+                        android:tag="t:ui.normale"
+                        android:textColor="#9ccc65"
+                        android:textStyle="bold"
+                        android:textSize="10sp" />
+                    <Button
+                        android:id="@+id/chipDiffHard"
+                        android:layout_width="0dp"
+                        android:layout_height="36dp"
+                        android:layout_weight="1"
+                        android:background="@drawable/chip_bg"
+                        android:text="Difficile"
+                        android:tag="t:ui.difficile"
+                        android:textColor="#f4f4f5"
+                        android:textSize="10sp" />
+                </LinearLayout>
+
+                <!-- VIEW DISTANCE -->
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="14dp"
+                    android:text="Distanza di rendering (view distance in chunk):"
+                    android:tag="t:ui.distanza_rendering_view_distance_chunk"
+                    android:textColor="#9a9ca2"
+                    android:textSize="11sp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:orientation="horizontal">
+                    <Button
+                        android:id="@+id/chipView8"
+                        android:layout_width="0dp"
+                        android:layout_height="36dp"
+                        android:layout_weight="1"
+                        android:layout_marginEnd="4dp"
+                        android:background="@drawable/chip_bg"
+                        android:text="8 chunk"
+                        android:tag="notr"
+                        android:textColor="#9ccc65"
+                        android:textStyle="bold"
+                        android:textSize="10sp" />
+                    <Button
+                        android:id="@+id/chipView10"
+                        android:layout_width="0dp"
+                        android:layout_height="36dp"
+                        android:layout_weight="1"
+                        android:layout_marginEnd="4dp"
+                        android:background="@drawable/chip_bg"
+                        android:text="10 chunk"
+                        android:tag="notr"
+                        android:textColor="#f4f4f5"
+                        android:textSize="10sp" />
+                    <Button
+                        android:id="@+id/chipView12"
+                        android:layout_width="0dp"
+                        android:layout_height="36dp"
+                        android:layout_weight="1"
+                        android:layout_marginEnd="4dp"
+                        android:background="@drawable/chip_bg"
+                        android:text="12 chunk"
+                        android:tag="notr"
+                        android:textColor="#f4f4f5"
+                        android:textSize="10sp" />
+                    <Button
+                        android:id="@+id/chipView14"
+                        android:layout_width="0dp"
+                        android:layout_height="36dp"
+                        android:layout_weight="1"
+                        android:background="@drawable/chip_bg"
+                        android:text="14 chunk"
+                        android:tag="notr"
+                        android:textColor="#f4f4f5"
+                        android:textSize="10sp" />
+                </LinearLayout>
+
+                <!-- MOTD -->
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="14dp"
+                    android:text="Messaggio del server (MOTD):"
+                    android:tag="t:ui.messaggio_server_motd"
+                    android:textColor="#9a9ca2"
+                    android:textSize="11sp" />
+
+                <EditText
+                    android:id="@+id/edtPropertiesMotd"
+                    android:layout_width="match_parent"
+                    android:layout_height="40dp"
+                    android:layout_marginTop="4dp"
+                    android:background="@drawable/edit_text_bg"
+                    android:text="Server Minecraft moddato Forge"
+                    android:tag="t:ui.server_minecraft_moddato_forge"
+                    android:textColor="#f4f4f5"
+                    android:textSize="12sp"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="12dp" />
+
+                <!-- MAX PLAYERS -->
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="14dp"
+                    android:text="Numero massimo giocatori:"
+                    android:tag="t:ui.numero_massimo_giocatori"
+                    android:textColor="#9a9ca2"
+                    android:textSize="11sp" />
+
+                <EditText
+                    android:id="@+id/edtPropertiesMaxPlayers"
+                    android:layout_width="match_parent"
+                    android:layout_height="40dp"
+                    android:layout_marginTop="4dp"
+                    android:background="@drawable/edit_text_bg"
+                    android:text="20"
+                    android:inputType="number"
+                    android:textColor="#f4f4f5"
+                    android:textSize="12sp"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="12dp" />
+
+                <Button
+                    android:id="@+id/btnSaveProperties"
+                    android:layout_width="match_parent"
+                    android:layout_height="44dp"
+                    android:layout_marginTop="16dp"
+                    android:background="@drawable/btn_blue"
+                    android:text="Salva impostazioni nel server"
+                    android:tag="t:ui.salva_impostazioni_nel_server"
+                    android:textColor="#f4f4f5"
+                    android:textSize="12sp"
+                    android:textStyle="bold" />
+
+                <Button
+                    android:id="@+id/btnRestorePropertiesBak"
+                    android:layout_width="match_parent"
+                    android:layout_height="38dp"
+                    android:layout_marginTop="8dp"
+                    android:background="@drawable/btn_slate"
+                    android:text="Ripristina da backup (.bak)"
+                    android:tag="t:ui.ripristina_backup_bak"
+                    android:textColor="#c4c4c8"
+                    android:textSize="11sp"
+                    android:visibility="gone" />
+            </LinearLayout>
+        </LinearLayout>
+    </ScrollView>
+
+    <!-- ================= SECTION 4: CONSOLE CLI ================= -->
+    <LinearLayout
+        android:id="@+id/viewConsole"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_below="@+id/topBar"
+        android:orientation="vertical"
+        android:padding="12dp"
+        android:visibility="gone">
+
+        <RelativeLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="6dp">
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Console"
+                android:tag="t:ui.console"
+                android:textColor="#9a9ca2"
+                android:textSize="13sp"
+                android:textStyle="bold" />
+            <Button
+                android:id="@+id/btnClearConsole"
+                android:layout_width="wrap_content"
+                android:layout_height="26dp"
+                android:layout_alignParentEnd="true"
+                android:background="@drawable/btn_slate"
+                android:text="Svuota"
+                android:tag="t:ui.svuota"
+                android:textColor="#c4c4c8"
+                android:textSize="10sp"
+                android:paddingStart="10dp"
+                android:paddingEnd="10dp" />
+        </RelativeLayout>
+
+        <!-- LOG SEARCH & FILTER BAR -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginBottom="6dp">
+            <EditText
+                android:id="@+id/edtSearchLog"
+                android:layout_width="0dp"
+                android:layout_height="32dp"
+                android:layout_weight="1"
+                android:background="@drawable/edit_text_bg"
+                android:hint="Cerca nei log..."
+                android:tag="h:ui.cerca_nei_log"
+                android:textColor="#f4f4f5"
+                android:textColorHint="#8a8c92"
+                android:textSize="11sp"
+                android:paddingStart="8dp"
+                android:paddingEnd="8dp"
+                android:inputType="text"
+                android:singleLine="true" />
+            <Button
+                android:id="@+id/btnLogFilterAll"
+                android:layout_width="wrap_content"
+                android:layout_height="32dp"
+                android:layout_marginStart="4dp"
+                android:background="@drawable/btn_blue"
+                android:text="Tutti"
+                android:tag="t:ui.tutti"
+                android:textColor="#f4f4f5"
+                android:textSize="10sp"
+                android:paddingStart="8dp"
+                android:paddingEnd="8dp" />
+            <Button
+                android:id="@+id/btnLogFilterError"
+                android:layout_width="wrap_content"
+                android:layout_height="32dp"
+                android:layout_marginStart="4dp"
+                android:background="@drawable/btn_slate"
+                android:text="Errori"
+                android:tag="t:ui.errori"
+                android:textColor="#c4c4c8"
+                android:textSize="10sp"
+                android:paddingStart="8dp"
+                android:paddingEnd="8dp" />
+            <Button
+                android:id="@+id/btnLogFilterChat"
+                android:layout_width="wrap_content"
+                android:layout_height="32dp"
+                android:layout_marginStart="4dp"
+                android:background="@drawable/btn_slate"
+                android:text="Chat"
+                android:tag="notr"
+                android:textColor="#c4c4c8"
+                android:textSize="10sp"
+                android:paddingStart="8dp"
+                android:paddingEnd="8dp" />
+        </LinearLayout>
+
+        <ScrollView
+            android:id="@+id/scrollConsole"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:background="@drawable/terminal_bg"
+            android:padding="10dp">
+            <TextView
+                android:id="@+id/txtConsoleLogs"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="[Inizializzazione terminale...]"
+                android:tag="t:ui.inizializzazione_terminale"
+                android:textColor="#9ccc65"
+                android:textSize="10sp"
+                android:fontFamily="monospace" />
+        </ScrollView>
+
+        <!-- COMMAND CHIPS -->
+        <HorizontalScrollView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:scrollbars="none">
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+                <Button android:id="@+id/chipList" android:layout_width="wrap_content" android:layout_height="32dp" android:text="list" android:tag="notr" android:textColor="#c4c4c8" android:textSize="10sp" android:background="@drawable/chip_bg" android:layout_marginEnd="4dp" />
+                <Button android:id="@+id/chipSaveAll" android:layout_width="wrap_content" android:layout_height="32dp" android:text="save-all" android:tag="notr" android:textColor="#c4c4c8" android:textSize="10sp" android:background="@drawable/chip_bg" android:layout_marginEnd="4dp" />
+                <Button android:id="@+id/chipTps" android:layout_width="wrap_content" android:layout_height="32dp" android:text="tps" android:tag="notr" android:textColor="#c4c4c8" android:textSize="10sp" android:background="@drawable/chip_bg" android:layout_marginEnd="4dp" />
+                <Button android:id="@+id/chipHelp" android:layout_width="wrap_content" android:layout_height="32dp" android:text="help" android:tag="notr" android:textColor="#c4c4c8" android:textSize="10sp" android:background="@drawable/chip_bg" android:layout_marginEnd="4dp" />
+                <Button android:id="@+id/chipStop" android:layout_width="wrap_content" android:layout_height="32dp" android:text="stop" android:tag="notr" android:textColor="#f0788c" android:textSize="10sp" android:background="@drawable/chip_bg" />
+            </LinearLayout>
+        </HorizontalScrollView>
+
+        <!-- COMMAND INPUT -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:orientation="horizontal">
+            <EditText
+                android:id="@+id/edtCommand"
+                android:layout_width="0dp"
+                android:layout_height="42dp"
+                android:layout_weight="1"
+                android:background="@drawable/edit_text_bg"
+                android:hint="Digita comando (es. /whitelist, /time)..."
+                android:tag="h:ui.digita_comando_es_whitelist_time"
+                android:textColor="#f4f4f5"
+                android:textColorHint="#8a8c92"
+                android:textSize="12sp"
+                android:fontFamily="monospace"
+                android:paddingStart="10dp"
+                android:paddingEnd="10dp"
+                android:imeOptions="actionSend"
+                android:inputType="text" />
+            <Button
+                android:id="@+id/btnSendCommand"
+                android:layout_width="60dp"
+                android:layout_height="42dp"
+                android:layout_marginStart="4dp"
+                android:background="@drawable/btn_blue"
+                android:text="Invia"
+                android:tag="t:ui.invia"
+                android:textColor="#f4f4f5"
+                android:textSize="11sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- ================= SECTION 5: RIAVVIO PROGRAMMATO 4H ================= -->
+    <ScrollView
+        android:id="@+id/viewAutoRestart"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_below="@+id/topBar"
+        android:padding="14dp"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@drawable/card_bg"
+                android:orientation="vertical"
+                android:padding="20dp"
+                android:layout_marginBottom="12dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Riavvio programmato (ogni 4 ore)"
+                    android:tag="t:ui.riavvio_programmato_ogni_4_ore"
+                    android:textColor="#9a9ca2"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="Mantiene la memoria RAM pulita ed evita rallentamenti del server."
+                    android:tag="t:ui.mantiene_memoria_ram_pulita_ed_evita"
+                    android:textColor="#9a9ca2"
+                    android:textSize="11sp" />
+
+                <TextView
+                    android:id="@+id/txtRestartCountdown"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="16dp"
+                    android:text="03h 45m 20s"
+                    android:textColor="#9ccc65"
+                    android:textSize="32sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="al prossimo riavvio programmato"
+                    android:tag="t:ui.prossimo_riavvio_programmato"
+                    android:textColor="#c4c4c8"
+                    android:textSize="12sp" />
+
+                <ProgressBar
+                    android:id="@+id/progBarRestart"
+                    style="?android:attr/progressBarStyleHorizontal"
+                    android:layout_width="match_parent"
+                    android:layout_height="8dp"
+                    android:layout_marginTop="14dp"
+                    android:layout_marginBottom="14dp"
+                    android:progressTint="#9ccc65"
+                    android:progressBackgroundTint="#3a3a3e"
+                    android:max="100"
+                    android:progress="25" />
+
+                <Button
+                    android:id="@+id/btnPostponeRestart"
+                    android:layout_width="match_parent"
+                    android:layout_height="44dp"
+                    android:background="@drawable/btn_slate"
+                    android:text="Posticipa di 1 ora (+60 min)"
+                    android:tag="t:ui.posticipa_1_ora_60_min"
+                    android:textColor="#9ccc65"
+                    android:textSize="12sp"
+                    android:textStyle="bold"
+                    android:layout_marginBottom="8dp" />
+
+                <Button
+                    android:id="@+id/btnResetRestartTimer"
+                    android:layout_width="match_parent"
+                    android:layout_height="44dp"
+                    android:background="@drawable/btn_slate"
+                    android:text="Reimposta timer a 4 ore"
+                    android:tag="t:ui.reimposta_timer_4_ore"
+                    android:textColor="#c4c4c8"
+                    android:textSize="12sp"
+                    android:layout_marginBottom="8dp" />
+
+                <Button
+                    android:id="@+id/btnRestartServerNow"
+                    android:layout_width="match_parent"
+                    android:layout_height="44dp"
+                    android:background="@drawable/btn_yellow"
+                    android:text="Riavvia il server adesso"
+                    android:tag="t:ui.riavvia_server_adesso"
+                    android:textColor="#f4f4f5"
+                    android:textSize="12sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+        </LinearLayout>
+    </ScrollView>
+
+    <!-- ================= SECTION 6: ERRORI & DIAGNOSTICA ================= -->
+    <ScrollView
+        android:id="@+id/viewErrors"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_below="@+id/topBar"
+        android:padding="14dp"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@drawable/card_bg"
+                android:orientation="vertical"
+                android:padding="16dp"
+                android:layout_marginBottom="12dp">
+
+                <RelativeLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content">
+                    <TextView
+                        android:id="@+id/txtErrorHealthBadge"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Nessun errore critico"
+                        android:tag="t:ui.nessun_errore_critico"
+                        android:textColor="#a5d36f"
+                        android:textSize="12sp"
+                        android:textStyle="bold" />
+                    <Button
+                        android:id="@+id/btnClearErrors"
+                        android:layout_width="wrap_content"
+                        android:layout_height="26dp"
+                        android:layout_alignParentEnd="true"
+                        android:background="@drawable/btn_slate"
+                        android:text="Svuota"
+                        android:tag="t:ui.svuota"
+                        android:textColor="#c4c4c8"
+                        android:textSize="10sp"
+                        android:paddingStart="8dp"
+                        android:paddingEnd="8dp" />
+                </RelativeLayout>
+
+                <TextView
+                    android:id="@+id/txtErrorStats"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="0 errori registrati | 0 crash reports"
+                    android:tag="t:ui.0_errori_registrati_0_crash_reports"
+                    android:textColor="#9a9ca2"
+                    android:textSize="11sp" />
+
+                <Button
+                    android:id="@+id/btnViewLatestCrash"
+                    android:layout_width="match_parent"
+                    android:layout_height="38dp"
+                    android:layout_marginTop="10dp"
+                    android:background="@drawable/btn_slate"
+                    android:text="Visualizza ultimo crash report"
+                    android:tag="t:ui.visualizza_ultimo_crash_report"
+                    android:textColor="#f0788c"
+                    android:textSize="11sp"
+                    android:visibility="gone" />
+
+                <TextView
+                    android:id="@+id/txtErrorsLogList"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:text="Nessun errore registrato nella sessione."
+                    android:tag="t:ui.nessun_errore_registrato_nella"
+                    android:textColor="#c4c4c8"
+                    android:textSize="11sp"
+                    android:fontFamily="monospace" />
+            </LinearLayout>
+        </LinearLayout>
+    </ScrollView>
+
+    <!-- ================= SECTION 7: CHAT IN-GAME ================= -->
+    <LinearLayout
+        android:id="@+id/viewChat"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_below="@+id/topBar"
+        android:orientation="vertical"
+        android:padding="12dp"
+        android:visibility="gone">
+
+        <RelativeLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="6dp">
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_centerVertical="true"
+                android:text="Chat"
+                android:tag="notr"
+                android:textColor="#9a9ca2"
+                android:textSize="13sp"
+                android:textStyle="bold" />
+            <Button
+                android:id="@+id/btnClearChat"
+                android:layout_width="wrap_content"
+                android:layout_height="26dp"
+                android:layout_alignParentEnd="true"
+                android:background="@drawable/btn_slate"
+                android:text="Svuota"
+                android:tag="t:ui.svuota"
+                android:textColor="#c4c4c8"
+                android:textSize="10sp"
+                android:paddingStart="10dp"
+                android:paddingEnd="10dp" />
+        </RelativeLayout>
+
+        <ScrollView
+            android:id="@+id/scrollChat"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:background="@drawable/terminal_bg"
+            android:padding="10dp">
+            <TextView
+                android:id="@+id/txtChatMessages"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Nessun messaggio in chat."
+                android:tag="t:ui.nessun_messaggio_chat"
+                android:textColor="#c4c4c8"
+                android:textSize="11sp" />
+        </ScrollView>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:orientation="horizontal">
+            <EditText
+                android:id="@+id/edtChatText"
+                android:layout_width="0dp"
+                android:layout_height="42dp"
+                android:layout_weight="1"
+                android:background="@drawable/edit_text_bg"
+                android:hint="Scrivi un annuncio sul server..."
+                android:tag="h:ui.scrivi_annuncio_sul_server"
+                android:textColor="#f4f4f5"
+                android:textColorHint="#8a8c92"
+                android:textSize="12sp"
+                android:paddingStart="10dp"
+                android:paddingEnd="10dp"
+                android:imeOptions="actionSend"
+                android:inputType="text" />
+            <Button
+                android:id="@+id/btnSendChat"
+                android:layout_width="60dp"
+                android:layout_height="42dp"
+                android:layout_marginStart="4dp"
+                android:background="@drawable/btn_blue"
+                android:text="Invia"
+                android:tag="t:ui.invia"
+                android:textColor="#f4f4f5"
+                android:textSize="11sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- ================= SECTION 8: BACKUP & CONNESSIONE ================= -->
+    <ScrollView
+        android:id="@+id/viewSettings"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_below="@+id/topBar"
+        android:padding="14dp"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <!-- BACKUP CARD -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@drawable/card_bg"
+                android:orientation="vertical"
+                android:padding="16dp"
+                android:layout_marginBottom="12dp">
+
+                <RelativeLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Backup del mondo"
+                        android:tag="t:ui.backup_mondo"
+                        android:textColor="#9a9ca2"
+                        android:textSize="13sp"
+                        android:textStyle="bold" />
+                    <TextView
+                        android:id="@+id/txtBackupStatusBadge"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_alignParentEnd="true"
+                        android:text="In attesa"
+                        android:tag="t:ui.attesa"
+                        android:textColor="#9a9ca2"
+                        android:textSize="11sp"
+                        android:textStyle="bold" />
+                </RelativeLayout>
+
+                <TextView
+                    android:id="@+id/txtBackupInfo"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:text="Crea un archivio compresso ZIP completo del mondo sul PC locale."
+                    android:tag="t:ui.crea_archivio_compresso_zip_completo"
+                    android:textColor="#f4f4f5"
+                    android:textSize="12sp"
+                    android:lineSpacingExtra="3dp" />
+
+                <ProgressBar
+                    android:id="@+id/progBarBackup"
+                    style="?android:attr/progressBarStyleHorizontal"
+                    android:layout_width="match_parent"
+                    android:layout_height="10dp"
+                    android:layout_marginTop="8dp"
+                    android:layout_marginBottom="8dp"
+                    android:max="100"
+                    android:progress="0"
+                    android:indeterminate="false"
+                    android:progressTint="#9ccc65"
+                    android:progressBackgroundTint="#3a3a3e"
+                    android:visibility="gone" />
+
+                <Button
+                    android:id="@+id/btnTriggerBackup"
+                    android:layout_width="match_parent"
+                    android:layout_height="42dp"
+                    android:layout_marginTop="6dp"
+                    android:text="Crea nuovo backup ora"
+                    android:tag="t:ui.crea_nuovo_backup_ora"
+                    android:textSize="12sp"
+                    android:textColor="#f4f4f5"
+                    android:background="@drawable/btn_blue" />
+
+                <Button
+                    android:id="@+id/btnRestoreBackup"
+                    android:layout_width="match_parent"
+                    android:layout_height="42dp"
+                    android:layout_marginTop="8dp"
+                    android:text="Ripristina backup mondo"
+                    android:tag="t:ui.ripristina_backup_mondo"
+                    android:textSize="12sp"
+                    android:textColor="#f4f4f5"
+                    android:background="@drawable/btn_purple" />
+
+                <Button
+                    android:id="@+id/btnCleanLogs"
+                    android:layout_width="match_parent"
+                    android:layout_height="42dp"
+                    android:layout_marginTop="8dp"
+                    android:text="Pulisci log vecchi (.log.gz)"
+                    android:tag="t:ui.pulisci_log_vecchi_log_gz"
+                    android:textSize="12sp"
+                    android:textColor="#c4c4c8"
+                    android:background="@drawable/btn_slate" />
+
+                <TextView
+                    android:id="@+id/txtStorageBreakdown"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="Spazio server: Caricamento..."
+                    android:tag="t:ui.spazio_server_caricamento"
+                    android:textColor="#9a9ca2"
+                    android:textSize="11sp" />
+            </LinearLayout>
+
+            <!-- DUAL CONNECTION CARD -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@drawable/card_bg"
+                android:orientation="vertical"
+                android:padding="16dp"
+                android:layout_marginBottom="12dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Connessione"
+                    android:tag="t:ui.connessione"
+                    android:textColor="#9a9ca2"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:text="Indirizzo in casa (Wi-Fi):"
+                    android:tag="t:ui.indirizzo_casa_wi_fi"
+                    android:textColor="#9a9ca2"
+                    android:textSize="11sp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:orientation="horizontal">
+                    <EditText
+                        android:id="@+id/edtLocalUrl"
+                        android:layout_width="0dp"
+                        android:layout_height="40dp"
+                        android:layout_weight="1"
+                        android:background="@drawable/edit_text_bg"
+                        android:hint="http://192.168.x.x:8080"
+                        android:tag="notr"
+                        android:textColor="#f4f4f5"
+                        android:textColorHint="#8a8c92"
+                        android:textSize="12sp"
+                        android:paddingStart="10dp"
+                        android:paddingEnd="10dp" />
+                    <Button
+                        android:id="@+id/btnTestLocal"
+                        android:layout_width="60dp"
+                        android:layout_height="40dp"
+                        android:layout_marginStart="4dp"
+                        android:background="@drawable/btn_slate"
+                        android:text="Test"
+                        android:tag="t:ui.test"
+                        android:textColor="#c4c4c8"
+                        android:textSize="11sp" />
+                </LinearLayout>
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="Indirizzo da internet:"
+                    android:tag="t:ui.indirizzo_internet"
+                    android:textColor="#9a9ca2"
+                    android:textSize="11sp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:orientation="horizontal">
+                    <EditText
+                        android:id="@+id/edtRemoteUrl"
+                        android:layout_width="0dp"
+                        android:layout_height="40dp"
+                        android:layout_weight="1"
+                        android:background="@drawable/edit_text_bg"
+                        android:hint="https://IP-pubblico:8443"
+                        android:tag="h:ui.esempio_indirizzo_internet"
+                        android:textColor="#f4f4f5"
+                        android:textColorHint="#8a8c92"
+                        android:textSize="12sp"
+                        android:paddingStart="10dp"
+                        android:paddingEnd="10dp" />
+                    <Button
+                        android:id="@+id/btnTestRemote"
+                        android:layout_width="60dp"
+                        android:layout_height="40dp"
+                        android:layout_marginStart="4dp"
+                        android:background="@drawable/btn_slate"
+                        android:text="Test"
+                        android:tag="t:ui.test"
+                        android:textColor="#c4c4c8"
+                        android:textSize="11sp" />
+                </LinearLayout>
+
+                <!-- MODALITA ROUTING -->
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="Modalità connessione:"
+                    android:tag="t:ui.modalita_connessione"
+                    android:textColor="#9a9ca2"
+                    android:textSize="11sp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:orientation="horizontal">
+                    <Button android:id="@+id/btnModeAuto" android:layout_width="0dp" android:layout_height="36dp" android:layout_weight="1" android:layout_marginEnd="4dp" android:background="@drawable/btn_blue" android:text="Auto" android:tag="notr" android:textColor="#f4f4f5" android:textSize="11sp" />
+                    <Button android:id="@+id/btnModeLocalOnly" android:layout_width="0dp" android:layout_height="36dp" android:layout_weight="1" android:layout_marginEnd="4dp" android:background="@drawable/btn_slate" android:text="Wi-Fi" android:tag="notr" android:textColor="#c4c4c8" android:textSize="11sp" />
+                    <Button android:id="@+id/btnModeRemoteOnly" android:layout_width="0dp" android:layout_height="36dp" android:layout_weight="1" android:background="@drawable/btn_slate" android:text="Internet" android:tag="t:ui.internet" android:textColor="#c4c4c8" android:textSize="11sp" />
+                </LinearLayout>
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="PIN del PC:"
+                    android:tag="t:ui.pin_pc"
+                    android:textColor="#9a9ca2"
+                    android:textSize="11sp" />
+
+                <EditText
+                    android:id="@+id/edtAdminPin"
+                    android:layout_width="match_parent"
+                    android:layout_height="40dp"
+                    android:layout_marginTop="4dp"
+                    android:background="@drawable/edit_text_bg"
+                    android:hint="PIN impostato sul PC"
+                    android:tag="h:ui.pin_impostato_sul_pc"
+                    android:inputType="numberPassword"
+                    android:paddingStart="10dp"
+                    android:paddingEnd="10dp"
+                    android:textColor="#f4f4f5"
+                    android:textColorHint="#8a8c92"
+                    android:textSize="12sp" />
+
+                <Button
+                    android:id="@+id/btnSaveConnection"
+                    android:layout_width="match_parent"
+                    android:layout_height="44dp"
+                    android:layout_marginTop="14dp"
+                    android:background="@drawable/btn_blue"
+                    android:text="Salva impostazioni connessione"
+                    android:tag="t:ui.salva_impostazioni_connessione"
+                    android:textColor="#f4f4f5"
+                    android:textSize="12sp"
+                    android:textStyle="bold" />
+
+                <Button
+                    android:id="@+id/btnTestPushNotification"
+                    android:layout_width="match_parent"
+                    android:layout_height="42dp"
+                    android:layout_marginTop="8dp"
+                    android:background="@drawable/btn_slate"
+                    android:text="Invia una notifica di prova"
+                    android:tag="t:ui.invia_notifica_prova"
+                    android:textColor="#9ccc65"
+                    android:textSize="12sp"
+                    android:textStyle="bold" />
+
+                <Button
+                    android:id="@+id/btnSyncNtfyConnection"
+                    android:layout_width="match_parent"
+                    android:layout_height="42dp"
+                    android:layout_marginTop="8dp"
+                    android:background="@drawable/btn_purple"
+                    android:text="Aggiorna indirizzi dalle notifiche"
+                    android:tag="t:ui.aggiorna_indirizzi_dalle_notifiche"
+                    android:textColor="#f4f4f5"
+                    android:textSize="12sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+            <!-- JVM RAM & PERFORMANCE TUNING CARD -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@drawable/card_bg"
+                android:orientation="vertical"
+                android:padding="16dp"
+                android:layout_marginBottom="12dp">
+
+                <RelativeLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Allocazione RAM &amp; JVM flags"
+                        android:tag="t:ui.allocazione_ram_jvm_flags"
+                        android:textColor="#9a9ca2"
+                        android:textSize="13sp"
+                        android:textStyle="bold" />
+                    <TextView
+                        android:id="@+id/txtJvmRamBadge"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_alignParentEnd="true"
+                        android:text="16 GB"
+                        android:tag="notr"
+                        android:textColor="#a5d36f"
+                        android:textSize="11sp"
+                        android:textStyle="bold" />
+                </RelativeLayout>
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="Regola la memoria RAM dedicata al server in user_jvm_args.txt:"
+                    android:tag="t:ui.regola_memoria_ram_dedicata_server"
+                    android:textColor="#9a9ca2"
+                    android:textSize="11sp" />
+
+                <!-- RAM DEL SERVER: elenco da 2 GB fino alla RAM del PC (prima solo 6/8/12/16 GB) -->
+                <Button
+                    android:id="@+id/btnJvmRamPick"
+                    android:layout_width="match_parent"
+                    android:layout_height="40dp"
+                    android:layout_marginTop="8dp"
+                    android:background="@drawable/btn_blue"
+                    android:text="RAM del server: --"
+                    android:tag="t:ui.ram_server"
+                    android:textAllCaps="false"
+                    android:textColor="#f4f4f5"
+                    android:textSize="13sp" />
+
+                <CheckBox
+                    android:id="@+id/chkJvmAikar"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:text="Aikar's flags (G1GC anti-lag ottimizzato)"
+                    android:tag="t:ui.aikar_s_flags_g1gc_anti_lag"
+                    android:textColor="#f4f4f5"
+                    android:textSize="12sp"
+                    android:checked="true" />
+
+                <Button
+                    android:id="@+id/btnSaveJvmTuning"
+                    android:layout_width="match_parent"
+                    android:layout_height="42dp"
+                    android:layout_marginTop="10dp"
+                    android:background="@drawable/btn_blue"
+                    android:text="Applica modifiche RAM &amp; JVM"
+                    android:tag="t:ui.applica_modifiche_ram_jvm"
+                    android:textColor="#f4f4f5"
+                    android:textSize="12sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+            <!-- ECO MODE CARD -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@drawable/card_bg"
+                android:orientation="vertical"
+                android:padding="16dp"
+                android:layout_marginBottom="12dp">
+
+                <RelativeLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Modalità eco / standby"
+                        android:tag="t:ui.modalita_eco_standby"
+                        android:textColor="#9a9ca2"
+                        android:textSize="13sp"
+                        android:textStyle="bold" />
+                    <TextView
+                        android:id="@+id/txtEcoModeStatusBadge"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_alignParentEnd="true"
+                        android:text="Disattiva"
+                        android:tag="t:ui.disattiva"
+                        android:textColor="#9a9ca2"
+                        android:textSize="11sp"
+                        android:textStyle="bold" />
+                </RelativeLayout>
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="Arresta automaticamente Minecraft per liberare RAM e riposare il PC quando non c'è nessuno online:"
+                    android:tag="t:ui.arresta_automaticamente_minecraft"
+                    android:textColor="#9a9ca2"
+                    android:textSize="11sp" />
+
+                <CheckBox
+                    android:id="@+id/chkEcoMode"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="Attiva Auto-Spegnimento quando vuoto"
+                    android:tag="t:ui.attiva_auto_spegnimento_quando_vuoto"
+                    android:textColor="#f4f4f5"
+                    android:textSize="12sp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:orientation="horizontal">
+                    <Button android:id="@+id/chipEco30" android:layout_width="0dp" android:layout_height="36dp" android:layout_weight="1" android:layout_marginEnd="4dp" android:background="@drawable/btn_slate" android:text="30 min" android:tag="notr" android:textColor="#c4c4c8" android:textSize="11sp" />
+                    <Button android:id="@+id/chipEco45" android:layout_width="0dp" android:layout_height="36dp" android:layout_weight="1" android:layout_marginEnd="4dp" android:background="@drawable/btn_blue" android:text="45 min" android:tag="notr" android:textColor="#f4f4f5" android:textSize="11sp" />
+                    <Button android:id="@+id/chipEco60" android:layout_width="0dp" android:layout_height="36dp" android:layout_weight="1" android:background="@drawable/btn_slate" android:text="60 min" android:tag="notr" android:textColor="#c4c4c8" android:textSize="11sp" />
+                </LinearLayout>
+
+                <Button
+                    android:id="@+id/btnSaveEcoMode"
+                    android:layout_width="match_parent"
+                    android:layout_height="40dp"
+                    android:layout_marginTop="10dp"
+                    android:background="@drawable/btn_blue"
+                    android:text="Salva impostazioni eco mode"
+                    android:tag="t:ui.salva_impostazioni_eco_mode"
+                    android:textColor="#f4f4f5"
+                    android:textSize="12sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+            <!-- ANTI-LAG WATCHDOG CARD -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@drawable/card_bg"
+                android:orientation="vertical"
+                android:padding="16dp"
+                android:layout_marginBottom="12dp">
+
+                <RelativeLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Anti-lag watchdog"
+                        android:tag="t:ui.anti_lag_watchdog"
+                        android:textColor="#9a9ca2"
+                        android:textSize="13sp"
+                        android:textStyle="bold" />
+                    <TextView
+                        android:id="@+id/txtAntiLagStatusBadge"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_alignParentEnd="true"
+                        android:text="Attivo"
+                        android:tag="t:ui.attivo"
+                        android:textColor="#a5d36f"
+                        android:textSize="11sp"
+                        android:textStyle="bold" />
+                </RelativeLayout>
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="Monitora i cali di TPS e ripristina la fluidità pulendo automaticamente gli oggetti caduti a terra:"
+                    android:tag="t:ui.monitora_cali_tps_ripristina_fluidita"
+                    android:textColor="#9a9ca2"
+                    android:textSize="11sp" />
+
+                <CheckBox
+                    android:id="@+id/chkAntiLagEnabled"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="Attiva protezione Anti-Lag continua"
+                    android:tag="t:ui.attiva_protezione_anti_lag_continua"
+                    android:textColor="#f4f4f5"
+                    android:textSize="12sp"
+                    android:checked="true" />
+
+                <CheckBox
+                    android:id="@+id/chkAntiLagAutoClean"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="Auto-Pulizia drop entità (/kill @e[type=item])"
+                    android:textColor="#c4c4c8"
+                    android:textSize="11sp"
+                    android:checked="true" />
+
+                <Button
+                    android:id="@+id/btnSaveAntiLag"
+                    android:layout_width="match_parent"
+                    android:layout_height="40dp"
+                    android:layout_marginTop="10dp"
+                    android:background="@drawable/btn_blue"
+                    android:text="Applica impostazioni Anti-Lag"
+                    android:tag="t:ui.applica_impostazioni_anti_lag"
+                    android:textColor="#f4f4f5"
+                    android:textSize="12sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+            <!-- REMOTE CONFIG FILES EDITOR CARD -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@drawable/card_bg"
+                android:orientation="vertical"
+                android:padding="16dp"
+                android:layout_marginBottom="12dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="File configurazione &amp; mods"
+                    android:tag="t:ui.file_configurazione_mods"
+                    android:textColor="#9a9ca2"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="Visualizza e modifica server.properties e le config delle mod (.toml, .json, .cfg):"
+                    android:tag="t:ui.visualizza_modifica_server_properties"
+                    android:textColor="#9a9ca2"
+                    android:textSize="11sp" />
+
+                <Button
+                    android:id="@+id/btnOpenConfigEditor"
+                    android:layout_width="match_parent"
+                    android:layout_height="42dp"
+                    android:layout_marginTop="10dp"
+                    android:background="@drawable/btn_slate"
+                    android:text="Esplora &amp; modifica file config"
+                    android:tag="t:ui.esplora_modifica_file_config"
+                    android:textColor="#9ccc65"
+                    android:textSize="12sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+            <!-- SECURITY & OTA UPDATES CARD -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@drawable/card_bg"
+                android:orientation="vertical"
+                android:padding="16dp"
+                android:layout_marginBottom="12dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Sicurezza &amp; aggiornamenti OTA"
+                    android:tag="t:ui.sicurezza_aggiornamenti_ota"
+                    android:textColor="#9a9ca2"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+
+<CheckBox
+                    android:id="@+id/chkBiometric"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="Blocco impronta / PIN all'apertura"
+                    android:tag="t:ui.blocco_impronta_pin_all_apertura"
+                    android:textColor="#c4c4c8"
+                    android:textSize="12sp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:layout_marginTop="12dp">
+
+                    <TextView
+                        android:id="@+id/txtAppVersionStatus"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Versione installata: v4.9.2 (build 65)"
+                        android:tag="notr"
+                        android:textColor="#9a9ca2"
+                        android:textSize="11sp" />
+                </LinearLayout>
+
+                <Button
+                    android:id="@+id/btnCheckUpdates"
+                    android:layout_width="match_parent"
+                    android:layout_height="42dp"
+                    android:layout_marginTop="8dp"
+                    android:background="@drawable/btn_slate"
+                    android:text="Controlla aggiornamenti ora"
+                    android:tag="t:ui.controlla_aggiornamenti_ora"
+                    android:textColor="#9ccc65"
+                    android:textSize="12sp" />
+            </LinearLayout>
+        </LinearLayout>
+    </ScrollView>
+
+    <!-- ================= NAVIGATION DRAWER SCRIM ================= -->
+    <View
+        android:id="@+id/drawerScrim"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#cc000000"
+        android:visibility="gone"
+        android:clickable="true" />
+
+    <!-- ================= NAVIGATION DRAWER PANEL (LEFT) ================= -->
+    <LinearLayout
+        android:id="@+id/drawerPanel"
+        android:layout_width="290dp"
+        android:layout_height="match_parent"
+        android:layout_alignParentStart="true"
+        android:background="#171719"
+        android:orientation="vertical"
+        android:visibility="gone"
+        android:elevation="24dp"
+        android:clickable="true">
+
+        <!-- DRAWER HEADER -->
+        <RelativeLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:padding="16dp"
+            android:background="#0f0f11">
+
+            <ImageView
+                android:id="@+id/drawerIcon"
+                android:layout_width="38dp"
+                android:layout_height="38dp"
+                android:layout_alignParentStart="true"
+                android:layout_centerVertical="true"
+                android:src="@drawable/ic_launcher" />
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_toEndOf="@+id/drawerIcon"
+                android:layout_centerVertical="true"
+                android:layout_marginStart="10dp"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Voxarium"
+                    android:tag="notr"
+                    android:textColor="#f4f4f5"
+                    android:textSize="15sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Server Principale"
+                    android:tag="t:ui.server_principale"
+                    android:textColor="#9ccc65"
+                    android:textSize="10sp" />
+            </LinearLayout>
+
+            <Button
+                android:id="@+id/btnDrawerClose"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:layout_alignParentEnd="true"
+                android:layout_centerVertical="true"
+                android:text="✕"
+                android:textSize="14sp"
+                android:textColor="#9a9ca2"
+                android:background="@drawable/btn_slate" />
+        </RelativeLayout>
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="#242327" />
+
+        <!-- DRAWER MENU ITEMS (SCROLLABLE) -->
+        <ScrollView
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:padding="8dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <Button
+                    android:id="@+id/drawerItemDashboard"
+                    android:layout_width="match_parent"
+                    android:layout_height="48dp"
+                    android:text="Stato del server"
+                    android:tag="t:ui.stato_server"
+                    android:textSize="15sp"
+                    android:textColor="#c4c4c8"
+                    android:textStyle="bold"
+                    android:gravity="start|center_vertical"
+                    android:paddingStart="20dp"
+                    android:background="@drawable/drawer_item" />
+
+                <Button
+                    android:id="@+id/drawerItemPlayers"
+                    android:layout_width="match_parent"
+                    android:layout_height="48dp"
+                    android:text="Giocatori e whitelist"
+                    android:tag="t:ui.giocatori_whitelist"
+                    android:textSize="15sp"
+                    android:textColor="#c4c4c8"
+                    android:gravity="start|center_vertical"
+                    android:paddingStart="20dp"
+                    android:background="@drawable/drawer_item" />
+
+                <Button
+                    android:id="@+id/drawerItemGameRules"
+                    android:layout_width="match_parent"
+                    android:layout_height="48dp"
+                    android:text="Regole di gioco"
+                    android:tag="t:ui.regole_gioco"
+                    android:textSize="15sp"
+                    android:textColor="#c4c4c8"
+                    android:gravity="start|center_vertical"
+                    android:paddingStart="20dp"
+                    android:background="@drawable/drawer_item" />
+
+                <Button
+                    android:id="@+id/drawerItemProperties"
+                    android:layout_width="match_parent"
+                    android:layout_height="48dp"
+                    android:text="Impostazioni del server"
+                    android:tag="t:ui.impostazioni_server"
+                    android:textSize="15sp"
+                    android:textColor="#c4c4c8"
+                    android:gravity="start|center_vertical"
+                    android:paddingStart="20dp"
+                    android:background="@drawable/drawer_item" />
+
+                <Button
+                    android:id="@+id/drawerItemConsole"
+                    android:layout_width="match_parent"
+                    android:layout_height="48dp"
+                    android:text="Console"
+                    android:tag="t:ui.console"
+                    android:textSize="15sp"
+                    android:textColor="#c4c4c8"
+                    android:gravity="start|center_vertical"
+                    android:paddingStart="20dp"
+                    android:background="@drawable/drawer_item" />
+
+                <Button
+                    android:id="@+id/drawerItemAutoRestart"
+                    android:layout_width="match_parent"
+                    android:layout_height="48dp"
+                    android:text="Riavvio programmato"
+                    android:tag="t:ui.riavvio_programmato"
+                    android:textSize="15sp"
+                    android:textColor="#c4c4c8"
+                    android:gravity="start|center_vertical"
+                    android:paddingStart="20dp"
+                    android:background="@drawable/drawer_item" />
+
+                <Button
+                    android:id="@+id/drawerItemErrors"
+                    android:layout_width="match_parent"
+                    android:layout_height="48dp"
+                    android:text="Errori"
+                    android:tag="t:ui.errori"
+                    android:textSize="15sp"
+                    android:textColor="#c4c4c8"
+                    android:gravity="start|center_vertical"
+                    android:paddingStart="20dp"
+                    android:background="@drawable/drawer_item" />
+
+                <Button
+                    android:id="@+id/drawerItemChat"
+                    android:layout_width="match_parent"
+                    android:layout_height="48dp"
+                    android:text="Chat"
+                    android:tag="notr"
+                    android:textSize="15sp"
+                    android:textColor="#c4c4c8"
+                    android:gravity="start|center_vertical"
+                    android:paddingStart="20dp"
+                    android:background="@drawable/drawer_item" />
+
+                <Button
+                    android:id="@+id/drawerItemSettings"
+                    android:layout_width="match_parent"
+                    android:layout_height="48dp"
+                    android:text="Backup e connessione"
+                    android:tag="t:ui.backup_connessione"
+                    android:textSize="15sp"
+                    android:textColor="#c4c4c8"
+                    android:gravity="start|center_vertical"
+                    android:paddingStart="20dp"
+                    android:background="@drawable/drawer_item" />
+            </LinearLayout>
+        </ScrollView>
+
+        <!-- DRAWER FOOTER -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="#242327" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:padding="12dp"
+            android:background="#0f0f11"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <TextView
+                android:id="@+id/txtDrawerVersion"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="v4.9.2 (Build 65)"
+                android:tag="notr"
+                android:textColor="#8a8c92"
+                android:textSize="11sp" />
+
+            <TextView
+                android:id="@+id/pillRouteStatus"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:background="@drawable/pill_route_local"
+                android:paddingStart="6dp"
+                android:paddingEnd="6dp"
+                android:paddingTop="2dp"
+                android:paddingBottom="2dp"
+                android:text="In casa"
+                android:tag="t:ui.casa"
+                android:textColor="#9ccc65"
+                android:textSize="9sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- ================= AUTH OVERLAY (BIOMETRIC / PIN) ================= -->
+    <RelativeLayout
+        android:id="@+id/authLayout"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#171719"
+        android:visibility="gone"
+        android:clickable="true">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_centerInParent="true"
+            android:padding="28dp"
+            android:gravity="center_horizontal"
+            android:orientation="vertical">
+
+            <ImageView
+                android:layout_width="64dp"
+                android:layout_height="64dp"
+                android:src="@drawable/ic_launcher"
+                android:layout_marginBottom="14dp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Accesso amministratore"
+                android:tag="t:ui.accesso_amministratore"
+                android:textColor="#f4f4f5"
+                android:textSize="18sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="Tocca per autenticarti con impronta o PIN."
+                android:tag="t:ui.tocca_autenticarti_impronta_o_pin"
+                android:textColor="#9a9ca2"
+                android:textSize="12sp" />
+
+            <Button
+                android:id="@+id/btnAuthenticate"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:layout_marginTop="20dp"
+                android:background="@drawable/btn_blue"
+                android:text="Sblocca"
+                android:tag="t:ui.sblocca"
+                android:textColor="#f4f4f5"
+                android:textSize="13sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+    </RelativeLayout>
+
+    <!-- WIZARD SETUP OVERLAY (FIRST RUN) -->
+    <RelativeLayout
+        android:id="@+id/wizardLayout"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#171719"
+        android:visibility="gone"
+        android:clickable="true">
+
+        <ScrollView
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:padding="20dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Benvenuto in Voxarium"
+                    android:tag="t:ui.benvenuto_voxarium"
+                    android:textColor="#f4f4f5"
+                    android:textSize="20sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:text="Configura gli indirizzi di collegamento per iniziare."
+                    android:tag="t:ui.configura_indirizzi_collegamento"
+                    android:textColor="#9a9ca2"
+                    android:textSize="12sp" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="16dp"
+                    android:text="Indirizzo in casa (Wi-Fi):"
+                    android:tag="t:ui.indirizzo_casa_wi_fi"
+                    android:textColor="#c4c4c8"
+                    android:textSize="12sp" />
+
+                <EditText
+                    android:id="@+id/wizardEdtLocalUrl"
+                    android:layout_width="match_parent"
+                    android:layout_height="44dp"
+                    android:layout_marginTop="4dp"
+                    android:background="@drawable/edit_text_bg"
+                    android:hint="http://192.168.x.x:8080"
+                    android:tag="notr"
+                    android:textColor="#f4f4f5"
+                    android:textColorHint="#8a8c92"
+                    android:textSize="12sp"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="12dp" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="Indirizzo da internet:"
+                    android:tag="t:ui.indirizzo_internet"
+                    android:textColor="#c4c4c8"
+                    android:textSize="12sp" />
+
+                <EditText
+                    android:id="@+id/wizardEdtRemoteUrl"
+                    android:layout_width="match_parent"
+                    android:layout_height="44dp"
+                    android:layout_marginTop="4dp"
+                    android:background="@drawable/edit_text_bg"
+                    android:hint="https://IP-pubblico:8443"
+                    android:tag="h:ui.esempio_indirizzo_internet"
+                    android:textColor="#f4f4f5"
+                    android:textColorHint="#8a8c92"
+                    android:textSize="12sp"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="12dp" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="PIN del PC:"
+                    android:tag="t:ui.pin_pc"
+                    android:textColor="#c4c4c8"
+                    android:textSize="12sp" />
+
+                <EditText
+                    android:id="@+id/wizardEdtPin"
+                    android:layout_width="match_parent"
+                    android:layout_height="44dp"
+                    android:layout_marginTop="4dp"
+                    android:background="@drawable/edit_text_bg"
+                    android:hint="PIN impostato sul PC"
+                    android:tag="h:ui.pin_impostato_sul_pc"
+                    android:textColor="#f4f4f5"
+                    android:textColorHint="#8a8c92"
+                    android:textSize="12sp"
+                    android:inputType="numberPassword"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="12dp" />
+
+                <Button
+                    android:id="@+id/wizardBtnSaveAndConnect"
+                    android:layout_width="match_parent"
+                    android:layout_height="48dp"
+                    android:layout_marginTop="20dp"
+                    android:background="@drawable/btn_blue"
+                    android:text="Salva e collegati"
+                    android:tag="t:ui.salva_collegati"
+                    android:textColor="#f4f4f5"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+        </ScrollView>
+    </RelativeLayout>
+
+</RelativeLayout>

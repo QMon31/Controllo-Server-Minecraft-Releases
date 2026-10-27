@@ -1,0 +1,8 @@
+{
+  "version_code": 95,
+  "version_name": "4.12.3",
+  "download_url": "/static/Controllo_Server_Minecraft.apk",
+  "release_notes": "Tradotti i messaggi di errore di connessione e i tipi di notifica nelle Impostazioni di Android; al cambio lingua si aggiornano subito.",
+  "min_sdk": 26,
+  "target_sdk": 35
+}

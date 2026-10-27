@@ -1,0 +1,7 @@
+fastapi
+uvicorn
+psutil
+pydantic
+qrcode
+pillow
+cryptography

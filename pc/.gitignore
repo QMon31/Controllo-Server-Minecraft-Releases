@@ -1,0 +1,64 @@
+# Configurazione personale e segreti (PIN, push_secret, percorsi di questo PC): MAI nel repository
+config.json
+instances.json
+launcher_config.json
+.env
+*.token
+.controllo_mc_github_token
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+env/
+
+# Runtime Python incluso nell'installer (generato da build_runtime.py)
+runtime/
+
+# Log e file temporanei
+*.log
+crash_log.txt
+*.tmp
+temp_test.dll
+
+# File compilati e archivi (si rigenerano con build_deploy.py; gli installer vanno nel repository pubblico delle release)
+bin/
+*.exe
+*.zip
+*.tar.gz
+*.rar
+*.apk
+*.idsig
+*.keystore
+
+# Impostazioni locali di Claude Code
+.claude/
+
+# File di sistema / editor
+.vscode/
+.idea/
+Thumbs.db
+Desktop.ini
+desktop.ini
+
+# Servizio indirizzi fissi (Cloudflare Worker): dipendenze e file locali di wrangler
+provisioning_worker/node_modules/
+provisioning_worker/.wrangler/
+provisioning_worker/.dev.vars
+
+
+# File di lavoro della skill di design
+.taste-skill/
+
+# Grafo del progetto (graphify): file di lavoro locali
+graphify-out/
+
+# Certificato HTTPS e chiave privata dell accesso da internet (generati su ogni PC, mai su GitHub)
+certs/
+
+# Percorsi di questo PC (build_deploy.py)
+local_extra_dirs.txt
+
+# Dati personali da cercare prima di pubblicare (tests, publish_source.py)
+personal_strings.txt

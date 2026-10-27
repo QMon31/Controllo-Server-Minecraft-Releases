@@ -1,0 +1,32 @@
+# Chiavi di firma: MAI nel repository
+*.keystore
+*.jks
+*.p12
+*.pk8
+*.pem
+keystore.properties
+signing.properties
+
+# APK e firme
+*.apk
+*.aab
+*.idsig
+
+# File compilati (si rigenerano con build_apk.py)
+bin/
+gen/
+obj/
+*.class
+*.dex
+
+# File di sistema / editor
+.idea/
+.vscode/
+Thumbs.db
+Desktop.ini
+desktop.ini
+
+__pycache__/
+
+# Percorsi di questo PC (build_apk.py)
+local_extra_dirs.txt
