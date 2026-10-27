@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Icona di Voxarium ("cubo aperto": i due lati di un cubo senza la faccia di sopra formano una V), parte davanti
+     dell'icona adattiva. Stessa forma di voxarium_icon.py (repository del programma PC), dentro la zona sicura di 66dp. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#9ccc65"
+        android:pathData="M29.7,33.75 L53.1,47.25 L53.1,74.25 L29.7,60.75 Z" />
+    <path
+        android:fillColor="#558b2f"
+        android:pathData="M78.3,33.75 L54.9,47.25 L54.9,74.25 L78.3,60.75 Z" />
+</vector>

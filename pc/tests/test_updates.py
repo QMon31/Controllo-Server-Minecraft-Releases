@@ -40,7 +40,7 @@ class RemoteLauncherUpdateTest(unittest.TestCase):
         langs = re.findall(r'\{ "([a-z]{2})", new Dictionary<string, string>', block)
         self.assertEqual(sorted(langs), ["de", "en", "es", "fr", "it", "pt"])
         parts = re.split(r'\{ "[a-z]{2}", new Dictionary<string, string>', block)[1:]
-        keys = [sorted(re.findall(r'\{ "(upd\.[a-z_]+)", "', p)) for p in parts]
+        keys = [sorted(re.findall(r'\{ "([a-z]+\.[a-z_]+)", "', p)) for p in parts]
         for k, lang in zip(keys, langs):
             self.assertEqual(k, keys[0], lang)
         for p in parts:  # stessi segnaposto in ogni lingua
@@ -67,6 +67,52 @@ class InstallerUpdateKeepsChoicesTest(unittest.TestCase):
 
     def test_no_admin_prompt_when_firewall_rules_exist(self):
         self.assertIn("!(Program.IsUpdateMode && FirewallRules.AlreadyPresent())", self.body)
+
+
+class LauncherTextsTest(unittest.TestCase):
+    """Menu dell'icona, avvisi e finestra di caricamento del Launcher erano solo in italiano."""
+
+    def test_every_key_used_exists_and_no_italian_tray_items(self):
+        src = _read("Launcher.cs")
+        block = src[src.index("static class LauncherText"):src.index("static class Program")]
+        it = block[:block.index('{ "en", new Dictionary')]
+        defined = set(re.findall(r'\{ "([a-z]+\.[a-z_]+)", "', it))
+        used = set(re.findall(r'LauncherText\.T\("([a-z]+\.[a-z_]+)"', src))
+        self.assertFalse(used - defined, "chiavi usate ma non definite")
+        self.assertNotRegex(src, r'MenuItems\.Add\("[A-Z]')
+        self.assertNotRegex(src, r'ShowBalloonTip\(\d+, "[^"]+", "')
+
+
+class LicensesTest(unittest.TestCase):
+    """Chi ridistribuisce WebView2 (licenza BSD) e Python deve allegarne il testo; la GPL va data con ogni copia."""
+
+    def test_license_files_present(self):
+        names = set(os.listdir(os.path.join(ROOT, "licenses")))
+        for f in ("Voxarium-LICENSE-GPL-3.0.txt", "WebView2-SDK-LICENSE.txt", "WebView2-SDK-NOTICE.txt",
+                  "Python-LICENSE.txt", "THIRD-PARTY-NOTICES.txt"):
+            self.assertIn(f, names)
+        self.assertIn("Redistribution and use in source and binary forms", _read("licenses/WebView2-SDK-LICENSE.txt"))
+        self.assertIn("GNU GENERAL PUBLIC LICENSE", _read("licenses/Voxarium-LICENSE-GPL-3.0.txt"))
+
+    def test_packages_and_remote_install_include_licenses(self):
+        self.assertIn('"licenses/" + f', _read("create_package.py"))
+        self.assertIn('"Voxarium-LICENSE-GPL-3.0.txt"), "LICENSE.txt"', _read("create_linux_package.py"))
+        self.assertIn('entry.FullName.StartsWith("licenses/"', _read("Installer.cs"))
+
+
+class IconTest(unittest.TestCase):
+    """L'icona era il blocco d'erba preso da Minecraft (grafica di Mojang): ora è disegnata da voxarium_icon.py."""
+
+    def test_icon_files_come_from_the_script(self):
+        sys.path.insert(0, ROOT)
+        import voxarium_icon
+        from PIL import Image
+        with Image.open(os.path.join(ROOT, "static", "minecraft_block.png")) as im:
+            self.assertEqual(im.size, (256, 256))
+            self.assertEqual(list(im.convert("RGBA").getdata()), list(voxarium_icon.icon(256).getdata()))
+        with Image.open(os.path.join(ROOT, "minecraft.ico")) as ico:
+            self.assertIn((16, 16), ico.ico.sizes())
+            self.assertIn((256, 256), ico.ico.sizes())
 
 
 class AppVersionFallbackTest(unittest.TestCase):

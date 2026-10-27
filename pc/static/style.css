@@ -537,7 +537,9 @@ body {
   padding: 18px 20px;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
+  /* Contenuto in alto: le due schede hanno la stessa altezza e con space-between, mostrando o nascondendo il
+     Grafico Live, i blocchi della scheda più corta si allargavano lasciando buchi tra l'intestazione e le barre */
+  justify-content: flex-start;
   gap: 14px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
   position: relative;
@@ -555,6 +557,13 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 10px;
+}
+
+/* "Grafico Live" su una riga: va a capo il sottotitolo accanto, non il pulsante */
+#btn-toggle-chart {
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .overview-title-group {
@@ -3081,10 +3090,14 @@ body.modal-open {
   .console-tools {
     flex-direction: column !important;
     align-items: stretch !important;
+    /* Senza nowrap la colonna "va a capo" e prende la larghezza di tutti i comandi: la striscia non scorreva
+       e i comandi dopo i primi restavano fuori dallo schermo, irraggiungibili */
+    flex-wrap: nowrap !important;
     gap: 8px !important;
   }
 
   .quick-commands {
+    max-width: 100% !important;
     overflow-x: auto !important;
     flex-wrap: nowrap !important;
     -webkit-overflow-scrolling: touch !important;
@@ -4786,11 +4799,21 @@ body.drawer-open {
 }
 .snav-label {
   flex: 1;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  min-width: 0;
+  /* Le voci lunghe (tedesco, francese, "Crea Nuovo Server" con l'elenco dei tipi) vanno a capo invece di
+     essere tagliate con i puntini a metà parola */
+  white-space: normal;
+  line-height: 1.3;
+}
+/* Elenco dei tipi di server accanto a "Crea Nuovo Server": un blocco unico, sulla riga sotto se non ci sta */
+.snav-label .badge-accent {
+  display: inline-block;
+  margin-left: 0 !important;
+  margin-top: 3px;
 }
 .snav-badge {
+  flex-shrink: 0;
+  white-space: nowrap;
   font-size: 0.72rem;
   font-weight: 800;
   padding: 2px 7px;
@@ -5304,11 +5327,45 @@ body.drawer-open {
 .fm-search-box input:focus {
   border-color: #4a8ad6;
 }
+/* Nomi di file e cartelle: erano link con il blu e la sottolineatura del browser, illeggibili sul fondo scuro */
+.fm-item-link {
+  color: var(--text, #f4f4f5);
+  text-decoration: none;
+  font-weight: 500;
+}
+.fm-item-link.is-dir {
+  color: var(--accent-ink, #9ccc65);
+}
+.fm-item-link:hover {
+  text-decoration: underline;
+}
+
+/* Pulsante senza sfondo (es. "Copia" negli errori) */
+.btn-ghost {
+  background: transparent;
+  border: 1px solid transparent;
+  box-shadow: none;
+}
+.btn-ghost:hover:not(:disabled) {
+  border-color: var(--border-color);
+}
+
+/* Pulsanti della colonna Azioni: in fila, a destra, senza andare a capo */
+.fm-row-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+
 .fm-table-container {
   background: rgba(19, 18, 23, 0.4);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 12px;
-  overflow: hidden;
+  /* Finestra stretta: la tabella scorre di lato invece di nascondere le colonne Dimensione, Data e Azioni */
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 .fm-table {
   width: 100%;
@@ -5368,9 +5425,16 @@ body.drawer-open {
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s ease;
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  /* Testo normale, non flex: con flex "(", il numero e ")" diventavano pezzi separati e distanziati ("( 69 )"),
+     che nelle lingue con scritte lunghe andavano a capo ognuno per conto suo */
+  display: inline-block;
+  text-align: center;
+}
+/* Telefono: i due selettori uno sotto l'altro a tutta larghezza, ognuno su una riga */
+@media (max-width: 600px) {
+  .store-view-nav {
+    flex-direction: column;
+  }
 }
 .store-nav-tab:hover {
   background: rgba(51, 65, 85, 0.7);
@@ -5619,6 +5683,7 @@ body.drawer-open {
 
 .store-card-tags-row {
   display: flex;
+  flex-wrap: wrap;   /* le etichette che non ci stanno passano alla riga nascosta, invece di restare tagliate a metà */
   align-items: center;
   gap: 4px;
   height: 22px;

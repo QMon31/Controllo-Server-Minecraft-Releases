@@ -58,8 +58,8 @@ import java.util.regex.Pattern;
 
 public class MainActivity extends Activity implements View.OnClickListener {
 
-    public static final int CURRENT_VERSION_CODE = 97;
-    public static final String CURRENT_VERSION_NAME = "4.12.5-beta.1";
+    public static final int CURRENT_VERSION_CODE = 102;
+    public static final String CURRENT_VERSION_NAME = "4.12.5";
 
     private int dpToPx(int dp) {
         return Math.round(dp * getResources().getDisplayMetrics().density);
@@ -2190,7 +2190,7 @@ public class MainActivity extends Activity implements View.OnClickListener {
         input.setHint(I18n.t("app.scrivi_messaggio_privato"));
         new I18n.Builder(this)
             .setTitle(I18n.t("app.messaggio", playerName))
-            .setView(input)
+            .setView(withDialogMargins(input))
             .setPositiveButton(I18n.t("ui.invia"), new DialogInterface.OnClickListener() {
                 @Override
                 public void onClick(DialogInterface dialog, int which) {
@@ -3675,7 +3675,7 @@ public class MainActivity extends Activity implements View.OnClickListener {
                 builder.setPriority(Notification.PRIORITY_HIGH);
             }
 
-            builder.setSmallIcon(R.drawable.ic_launcher)
+            builder.setSmallIcon(R.drawable.ic_stat_voxarium)
                    .setContentTitle(I18n.t("app.backup_server_completato"))
                    .setContentText(I18n.t("app.archivio_mb_pronto", filename, sizeMb))
                    .setStyle(new Notification.BigTextStyle().bigText(I18n.t("app.backup_mondo_minecraft_stato", sizeMb, filename)))
@@ -4533,14 +4533,25 @@ public class MainActivity extends Activity implements View.OnClickListener {
         }
     }
 
+    /** Campo di una finestra con i margini del titolo (senza, il campo toccava i bordi della finestra). */
+    private View withDialogMargins(View field) {
+        android.widget.FrameLayout box = new android.widget.FrameLayout(this);
+        int side = (int) (22 * getResources().getDisplayMetrics().density);
+        box.setPadding(side, side / 3, side, 0);
+        box.addView(field);
+        return box;
+    }
+
     private void showPinFallbackDialog() {
         final EditText pinInput = new EditText(this);
         pinInput.setInputType(android.text.InputType.TYPE_CLASS_NUMBER | android.text.InputType.TYPE_NUMBER_VARIATION_PASSWORD);
         pinInput.setHint(I18n.t("app.inserisci_pin_pc"));
+        // Un campo password usa il carattere a larghezza fissa: quello normale dell'app, come nel resto delle finestre
+        pinInput.setTypeface(android.graphics.Typeface.DEFAULT);
 
         new I18n.Builder(this)
             .setTitle(I18n.t("app.autenticazione_pin"))
-            .setView(pinInput)
+            .setView(withDialogMargins(pinInput))
             .setCancelable(false)
             .setPositiveButton(I18n.t("ui.sblocca"), new DialogInterface.OnClickListener() {
                 @Override
@@ -4826,7 +4837,7 @@ public class MainActivity extends Activity implements View.OnClickListener {
             }
 
             final String vClean = (versionName != null && versionName.startsWith("v")) ? versionName : ("v" + versionName);
-            builder.setSmallIcon(R.drawable.ic_launcher)
+            builder.setSmallIcon(R.drawable.ic_stat_voxarium)
                    .setContentTitle(I18n.t("app.aggiornamento_disponibile", vClean))
                    .setContentText(I18n.t("app.nuova_versione_pronta_installazione"))
                    .setStyle(new Notification.BigTextStyle().bigText(I18n.t("app.disponibile_versione_compilata_sul_pc", vClean, releaseNotes)))

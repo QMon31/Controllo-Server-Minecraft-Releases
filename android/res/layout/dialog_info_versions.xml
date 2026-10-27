@@ -83,10 +83,10 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Novità per telefono (v4.12.4)"
-                android:tag="t:ui.novita_telefono|v4.12.4"
+                android:text="Novità per telefono (v4.12.5)"
+                android:tag="t:ui.novita_telefono|v4.12.5"
                 android:textColor="#f4f4f5"
-                android:textSize="12sp"
+                android:textSize="14sp"
                 android:textStyle="bold"
                 android:layout_marginBottom="8dp" />
 
@@ -94,10 +94,19 @@
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
+                    android:text="Novità (v4.12.5): nuova icona di Voxarium, anche nelle notifiche (prima nella barra compariva un quadrato bianco); titolo intero nell'intestazione di ogni sezione; finestre del PIN e Info più leggibili; l'aggiornamento scaricato non resta più in tre copie sul telefono."
+                    android:tag="t:ui.novita_v4_12_5_icona"
+                    android:textColor="#c4c4c8"
+                    android:textSize="12sp"
+                    android:layout_marginBottom="6dp" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
                     android:text="Correzione (v4.12.4): i testi non tradotti (cronologia vecchia, nomi, messaggi) non vengono più modificati per sbaglio nelle altre lingue."
                     android:tag="t:ui.correzione_v4_12_4_testi_non_tradotti"
                     android:textColor="#c4c4c8"
-                    android:textSize="10sp"
+                    android:textSize="12sp"
                     android:layout_marginBottom="6dp" />
 
                 <TextView
@@ -106,7 +115,7 @@
                     android:text="App in 6 lingue (v4.12.0 – v4.12.3): pulsante della lingua nella barra in alto (IT, EN, ES, FR, DE, PT); il cambio lingua non riapre l'app e non chiede di nuovo l'impronta; tradotti anche errori di connessione e tipi di notifica."
                     android:tag="t:ui.app_6_lingue_v4_12_0_v4_12_3_pulsante"
                     android:textColor="#c4c4c8"
-                    android:textSize="10sp"
+                    android:textSize="12sp"
                     android:layout_marginBottom="6dp" />
 
                 <TextView
@@ -115,7 +124,7 @@
                     android:text="RAM e backup (v4.11.0): RAM del server scelta da un elenco fino alla RAM del PC; la finestra del backup mostra quanto peserà; il PIN di sblocco viene controllato dal PC, quindi dopo un cambio di PIN vale subito quello nuovo; codice dell'app protetto."
                     android:tag="t:ui.ram_backup_v4_11_0_ram_server_scelta"
                     android:textColor="#c4c4c8"
-                    android:textSize="10sp"
+                    android:textSize="12sp"
                     android:layout_marginBottom="6dp" />
 
                 <TextView
@@ -124,7 +133,7 @@
                     android:text="Avvisi verificati (v4.10.4): l'app mostra solo gli avvisi firmati dal proprio PC, quindi nessuno può mandarne di falsi; tolti due canali di notifica vecchi. Notifiche più puntuali (v4.10.3): quando la rete torna dopo un periodo senza segnale l'app riprende subito a ricevere gli avvisi del PC (prima poteva aspettare fino a 5 minuti). Correzioni (v4.10.2): dopo la prima configurazione la schermata Connessione mostra gli indirizzi salvati (prima, salvando da lì, si perdevano); ping mostrato solo a server acceso; titolo della testata non più sovrapposto allo stato."
                     android:tag="t:ui.avvisi_verificati_v4_10_4_app_mostra"
                     android:textColor="#c4c4c8"
-                    android:textSize="10sp"
+                    android:textSize="12sp"
                     android:layout_marginBottom="6dp" />
 
 
@@ -134,7 +143,7 @@
                     android:text="Nome Voxarium (v4.10.1) e accesso da fuori casa senza tunnel (v4.10.0): collegamento in HTTPS all'IP pubblico del PC, riconosciuto dall'impronta del suo certificato; nuovo aspetto come il pannello PC."
                     android:tag="t:ui.nome_voxarium_v4_10_1_accesso_fuori"
                     android:textColor="#c4c4c8"
-                    android:textSize="10sp"
+                    android:textSize="12sp"
                     android:layout_marginBottom="6dp" />
 
 
@@ -152,7 +161,7 @@
                     android:text="Novità smartphone (app Android APK):"
                     android:tag="t:ui.novita_smartphone_app_android_apk"
                     android:textColor="#9a9ca2"
-                    android:textSize="13sp"
+                    android:textSize="14sp"
                     android:textStyle="bold"
                     android:layout_marginBottom="6dp" />
 
@@ -162,7 +171,7 @@
                     android:text="• Modalità Auto, Wi-Fi e Internet:\nIn Auto l'app usa l'indirizzo di casa sul Wi-Fi e quello da internet con i dati mobili, e passa dall'uno all'altro da sola.\n\n• Indirizzi sempre aggiornati:\nQuando cambia l'indirizzo del PC, il PC lo manda all'app con un messaggio firmato (ntfy): l'app accetta solo quelli del proprio PC.\n\n• Widget Schermata Home (2x2 / 4x1):\nStato del server, TPS, RAM e giocatori con comandi rapidi a un tocco.\n\n• Sblocco con PIN del PC e notifiche anche ad app chiusa."
                     android:tag="t:ui.modalita_auto_wi_fi_internet_auto_app"
                     android:textColor="#f4f4f5"
-                    android:textSize="11sp"
+                    android:textSize="12sp"
                     android:lineSpacingExtra="3dp" />
             </LinearLayout>
 
@@ -173,7 +182,7 @@
                 android:text="Cronologia versioni telefono"
                 android:tag="t:ui.cronologia_versioni_telefono"
                 android:textColor="#f4f4f5"
-                android:textSize="12sp"
+                android:textSize="14sp"
                 android:textStyle="bold"
                 android:layout_marginBottom="8dp" />
 
@@ -188,10 +197,19 @@
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
+                    android:text="• v4.12.5 (Build 102):\nNuova icona; titoli interi nell'intestazione; finestre del PIN e Info più leggibili; aggiornamento scaricato in una sola copia."
+                    android:tag="t:ui.v4_12_5_build_102_icona"
+                    android:textColor="#c4c4c8"
+                    android:textSize="12sp"
+                    android:layout_marginBottom="4dp" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
                     android:text="• v4.12.4 (Build 96):\nI testi non tradotti non vengono più modificati per sbaglio nelle altre lingue."
                     android:tag="t:ui.v4_12_4_build_96_testi_non_tradotti"
                     android:textColor="#c4c4c8"
-                    android:textSize="10sp"
+                    android:textSize="12sp"
                     android:layout_marginBottom="4dp" />
 
                 <TextView
@@ -200,7 +218,7 @@
                     android:text="• v4.12.3 (Build 95):\nTradotti errori di connessione e tipi di notifica.\n• v4.12.2 (Build 94):\nIl cambio lingua non riapre l'app e non chiede di nuovo l'impronta.\n• v4.12.1 (Build 93):\nPulsante della lingua nella barra in alto.\n• v4.12.0 (Build 92):\nApp in 6 lingue: italiano, inglese, spagnolo, francese, tedesco e portoghese.\n• v4.11.0 (Build 91):\nRAM del server fino alla RAM del PC; peso del backup; PIN controllato dal PC; codice protetto."
                     android:tag="t:ui.v4_12_3_build_95_tradotti_errori"
                     android:textColor="#c4c4c8"
-                    android:textSize="10sp"
+                    android:textSize="12sp"
                     android:layout_marginBottom="8dp" />
 
                 <TextView
@@ -227,7 +245,7 @@ Login con PIN, header X-Admin-Token, download APK atomico anti-troncamento e tim
 Sincronizzazione automatica bidirezionale diretta da /api/network e fallback ntfy.
 • v4.9.5 (Build 69):\nSchermata Info esclusiva per smartphone e visualizzazione pulita.\n\n• v4.9.4 (Build 68):\nTasti modalità dinamici con vibrazione aptica e auto-switch Wi-Fi ↔ 4G/5G.\n\n• v4.9.1 (Build 64):\nNuovo popup info (ⓘ) con card compatta e controlli veloci.\n\n• v4.8.6 (Build 62):\nSbloccato tasto 'Verifica Aggiornamenti' nelle Impostazioni e WakeLock anti-Doze.\n\n• v4.8.5 (Build 61):\nFinestra diagnostica completa per Crash Report con traceback Java.\n\n• v4.8.0 (Build 60):\nRipristino automatico backup mondo ZIP da cloud/locale e pulizia log obsoleti.\n\n• v4.7.0 (Build 59):\nConfigurazione notifiche push prioritarie tramite canale ntfy dedicato."
                     android:textColor="#9a9ca2"
-                    android:textSize="11sp"
+                    android:textSize="12sp"
                     android:lineSpacingExtra="3dp" />
             </LinearLayout>
         </LinearLayout>

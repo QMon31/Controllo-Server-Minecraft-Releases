@@ -19,7 +19,7 @@
   <aside id="sidebar-drawer" class="sidebar-drawer" aria-hidden="true">
     <div class="sidebar-header">
       <div class="sidebar-brand">
-        <img src="minecraft_block.png" alt="Minecraft Logo" class="sidebar-brand-icon" width="34" height="34">
+        <img src="minecraft_block.png" alt="Voxarium" class="sidebar-brand-icon" width="34" height="34">
         <div>
           <div class="sidebar-brand-title">Voxarium</div>
           <div class="sidebar-brand-sub" data-i18n="menu.pannello_server_minecraft">Pannello Server Minecraft</div>
@@ -128,7 +128,7 @@
 
       <button class="sidebar-nav-item" id="snav-changelog" onclick="toggleSidebarDrawer(false); openChangelogModal();">
         <span class="snav-icon info-circle-nav-icon">i</span>
-        <span class="snav-label">Info &amp; Versioni (v4.20.0)</span>
+        <span class="snav-label">Info &amp; Versioni (v4.20.1)</span>
       </button>
 
       <button class="sidebar-nav-item" id="snav-settings" onclick="toggleSidebarDrawer(false); openSettingsModal();">
@@ -155,7 +155,7 @@
         </div>
         <div class="brand">
           <div class="logo-box">
-            <img src="minecraft_block.png" alt="Minecraft" class="logo-mc-block" width="34" height="34">
+            <img src="minecraft_block.png" alt="Voxarium" class="logo-mc-block" width="34" height="34">
           </div>
           <div>
             <div class="title-row">
@@ -614,8 +614,8 @@
               <button class="btn btn-xs btn-secondary" onclick="fetchErrors(true)" title="Ricarica diagnostica errori e crash reports" data-i18n-title="ui.ricarica_diagnostica_errori_crash_reports" data-i18n="ui.ricarica">Ricarica</button>
               <button class="btn btn-xs btn-secondary host-only-item" onclick="openCrashFolder()" title="Apre la cartella crash-reports in Esplora Risorse" data-i18n-title="ui.apre_cartella_crash_reports_esplora" data-i18n="ui.cartella_crash">Cartella Crash</button>
               <button class="btn btn-xs btn-secondary" onclick="copyAllErrorsText()" title="Copia negli appunti tutti gli errori recenti mostrati" data-i18n-title="ui.copia_negli_appunti_tutti_errori" data-i18n="ui.copia_errori">Copia Errori</button>
-              <button class="btn btn-xs btn-rose-outline" onclick="clearServerErrors()" title="Azzera la lista degli errori diagnostici recenti" data-i18n-title="ui.azzera_lista_degli_errori_diagnostici" data-i18n="ui.pulisci_errori">Pulisci Errori</button>
-              <button class="btn btn-xs btn-rose-outline" onclick="deleteAllCrashReports()" title="Elimina tutti i file di crash report (.txt) salvati sul server" data-i18n-title="ui.elimina_tutti_file_crash_report" data-i18n="ui.elimina_tutti_report">Elimina Tutti i Report</button>
+              <button class="btn btn-xs btn-ruby-outline" onclick="clearServerErrors()" title="Azzera la lista degli errori diagnostici recenti" data-i18n-title="ui.azzera_lista_degli_errori_diagnostici" data-i18n="ui.pulisci_errori">Pulisci Errori</button>
+              <button class="btn btn-xs btn-ruby-outline" onclick="deleteAllCrashReports()" title="Elimina tutti i file di crash report (.txt) salvati sul server" data-i18n-title="ui.elimina_tutti_file_crash_report" data-i18n="ui.elimina_tutti_report">Elimina Tutti i Report</button>
             </div>
           </div>
 
@@ -668,7 +668,7 @@
             </label>
             <button class="btn btn-xs btn-secondary" onclick="copyConsoleLogs()" title="Copia negli appunti tutte le linee del terminale" data-i18n-title="ui.copia_negli_appunti_tutte_linee" data-i18n="header.copia">Copia</button>
             <button class="btn btn-xs btn-secondary" onclick="downloadConsoleLogs()" title="Scarica il log completo della console in un file .txt" data-i18n-title="ui.scarica_log_completo_console_file" data-i18n="ui.scarica">Scarica</button>
-            <button class="btn btn-xs btn-rose-outline" onclick="clearConsole()" title="Ripulisce la schermata del terminale e azzera il buffer" data-i18n-title="ui.ripulisce_schermata_terminale_azzera_buffer" data-i18n="ui.pulisci">Pulisci</button>
+            <button class="btn btn-xs btn-ruby-outline" onclick="clearConsole()" title="Ripulisce la schermata del terminale e azzera il buffer" data-i18n-title="ui.ripulisce_schermata_terminale_azzera_buffer" data-i18n="ui.pulisci">Pulisci</button>
           </div>
         </div>
 
@@ -754,7 +754,7 @@
             </div>
             <div style="display: flex; gap: 8px; margin-bottom: 12px;">
               <input type="text" id="ban-add-input" placeholder="Nome giocatore..." onkeydown="if(event.key==='Enter') addBanPlayer()" style="flex: 1; padding: 6px 10px; background: #0b1120; border: 1px solid #3a3a3e; border-radius: 6px; color: #fff; font-size: 12px;" data-i18n-placeholder="ui.nome_giocatore">
-              <button class="btn btn-xs btn-rose" onclick="addBanPlayer()" data-i18n="ui.banna">Banna</button>
+              <button class="btn btn-xs btn-ruby" onclick="addBanPlayer()" data-i18n="ui.banna">Banna</button>
             </div>
             <div id="bans-list" style="max-height: 220px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; font-size: 12px;">
               <div style="color: #8a8c92; text-align: center; padding: 12px;" data-i18n="ui.nessun_giocatore_bannato">Nessun giocatore bannato</div>
@@ -1819,7 +1819,7 @@
           <div style="display: flex; gap: 8px;">
             <button id="btn-copy-crash-report" class="btn btn-xs btn-secondary" onclick="copyCrashReportContent(this)" title="Copia negli appunti l'intero contenuto del file" data-i18n-title="ui.copia_negli_appunti_l_intero" data-i18n="ui.copia_tutto">Copia Tutto</button>
             <button id="btn-download-crash-report" class="btn btn-xs btn-secondary" onclick="downloadCrashReportFile()" title="Scarica il file .txt sul tuo computer" data-i18n-title="ui.scarica_file_txt_sul_tuo" data-i18n="ui.scarica_file">Scarica File</button>
-            <button id="btn-delete-crash-report" class="btn btn-xs btn-rose" onclick="deleteCurrentCrashReport()" title="Elimina definitivamente questo crash report" data-i18n-title="ui.elimina_definitivamente_questo_crash_report" data-i18n="ui.elimina_report">Elimina Report</button>
+            <button id="btn-delete-crash-report" class="btn btn-xs btn-ruby" onclick="deleteCurrentCrashReport()" title="Elimina definitivamente questo crash report" data-i18n-title="ui.elimina_definitivamente_questo_crash_report" data-i18n="ui.elimina_report">Elimina Report</button>
           </div>
         </div>
         <pre id="crash-report-full-text" class="crash-text-box"></pre>
@@ -2563,7 +2563,7 @@
             <button class="btn btn-xs btn-secondary" onclick="submitPlayerQuickAction('op')" data-i18n="ui.rendi_op">Rendi OP</button>
             <button class="btn btn-xs btn-secondary" onclick="submitPlayerQuickAction('deop')" data-i18n="ui.rimuovi_op">Rimuovi OP</button>
             <button class="btn btn-xs btn-amber" onclick="promptPlayerKick()" data-i18n="ui.espelli">Espelli</button>
-            <button class="btn btn-xs btn-rose" onclick="promptPlayerBan()" data-i18n="ui.banna">Banna</button>
+            <button class="btn btn-xs btn-ruby" onclick="promptPlayerBan()" data-i18n="ui.banna">Banna</button>
           </div>
         </div>
 
@@ -2687,7 +2687,7 @@
           <div class="modal-info-circle-badge">i</div>
           <div>
             <h3 style="margin: 0; font-size: 1.15rem; color: #f4f4f5;" data-i18n="ui.informazioni_novita_cronologia_versioni">Informazioni, Novità &amp; Cronologia Versioni</h3>
-            <span id="changelog-header-badge" style="font-size: 0.75rem; color: #8db6e8; font-weight: 600;">Release Ufficiale v4.20.0 (Build 98) &bull; Attiva</span>
+            <span id="changelog-header-badge" style="font-size: 0.75rem; color: #8db6e8; font-weight: 600;">Release Ufficiale v4.20.1 (Build 99) &bull; Attiva</span>
           </div>
         </div>
         <div style="display: flex; gap: 8px; align-items: center;">
@@ -2703,7 +2703,7 @@
             <div class="row-center">
               <span style="font-size: 1.1rem;"></span>
               <span style="font-size: 0.92rem; font-weight: 700; color: #f4f4f5;" data-i18n="ui.diagnostica_specifiche_sistema">Diagnostica &amp; Specifiche di Sistema</span>
-              <span id="sys-release-badge" class="badge badge-emerald" style="font-size: 0.7rem;">v4.20.0 (Build 98)</span>
+              <span id="sys-release-badge" class="badge badge-emerald" style="font-size: 0.7rem;">v4.20.1 (Build 99)</span>
               <button class="btn btn-xs btn-secondary" onclick="checkPcUpdate(true)" title="Verifica la disponibilità di una nuova versione del programma PC" data-i18n-title="ui.verifica_disponibilita_nuova_versione_programma" data-i18n="ui.controlla_aggiornamenti_programma">Controlla aggiornamenti programma</button>
             </div>
             <div style="display: flex; gap: 6px;">
@@ -2756,7 +2756,7 @@
         <!-- SEZIONE 1: ULTIME NOVITÀ -->
         <h4 style="margin: 0 0 10px; color: #f4f4f5; font-size: 1rem; display: flex; align-items: center; gap: 8px;">
           <span></span>
-          <span>Novità Ultimo Aggiornamento (PC v4.20.0 - Build 98 &bull; App v4.12.4 - Build 96):</span>
+          <span>Novità Ultimo Aggiornamento (PC v4.20.1 - Build 99 &bull; App v4.12.5 - Build 102):</span>
         </h4>
 
         <!-- SOTTOSEZIONE: PC (Visibile solo su PC o in modalità Tutti) -->
@@ -2766,6 +2766,7 @@
             <span data-i18n="ui.novita_pc_server_pannello_desktop">NOVITÀ PER PC (Server &amp; Pannello Desktop):</span>
           </h5>
           <ul style="margin: 0; padding-left: 20px; font-size: 0.85rem; color: #e7e7e9; display: flex; flex-direction: column; gap: 8px;">
+            <li><b>Nuova icona e correzioni (v4.20.1)</b><span data-i18n="notes.icona_lingue_licenze_pannello">: nuova icona di Voxarium, disegnata da zero (prima era il blocco d'erba di Minecraft); menu dell'icona vicino all'orologio, avvisi e finestra di caricamento nelle 6 lingue; l'installazione contiene i testi delle licenze; nel pannello i pulsanti dei File e degli Errori hanno le scritte, Console e File si usano anche dal telefono, menu laterale e Store non tagliano più le scritte lunghe.</span></li>
             <li><b>PC Remoti aggiornati da soli (v4.20.0)</b><span data-i18n="notes.pc_remoti_aggiornamento_impostazioni">: i PC con Controllo Remoto controllano da soli le nuove versioni e chiedono se aggiornarsi (anche dalla voce &quot;Controlla aggiornamenti&quot; nel menu dell'icona); gli aggiornamenti non riaccendono più l'avvio automatico spento, non ricreano i collegamenti cancellati e non chiedono ogni volta il permesso di amministratore; i PC Linux trovano la loro versione anche dopo molte release per Windows.</span></li>
             <li><b>Versione per Linux (v4.19.2)</b><span data-i18n="notes.versione_linux_servizio_browser">: Voxarium funziona anche su Ubuntu e Debian, con una release separata da quella per Windows: si installa con install.sh, gira come servizio all'accensione del PC, il pannello si apre nel browser e l'app si collega come con Windows.</span></li>
             <li><b>Correzioni (v4.19.2)</b><span data-i18n="notes.tempo_reale_porta_mc">: il pannello si aggiorna in tempo reale anche sui PC senza Python installato (mancava una libreria, ora inclusa); l'app mostra la porta vera del server Minecraft invece di 32769.</span></li>
@@ -2808,6 +2809,7 @@
             <span data-i18n="ui.novita_telefono_app_android_apk">NOVITÀ PER TELEFONO (App Android APK):</span>
           </h5>
           <ul style="margin: 0; padding-left: 20px; font-size: 0.85rem; color: #e7e7e9; display: flex; flex-direction: column; gap: 8px;">
+            <li><b>Nuova icona (v4.12.5)</b><span data-i18n="notes.icona_notifiche_intestazione_app_4125">: nuova icona, anche nelle notifiche (prima nella barra compariva un quadrato bianco); titolo intero nell'intestazione di ogni sezione; finestre del PIN e Info più leggibili.</span></li>
             <li><b>Correzioni (v4.12.4)</b><span data-i18n="notes.testi_non_tradotti_app_4124">: i testi non tradotti (cronologia vecchia, nomi, messaggi) non vengono più modificati per sbaglio nelle altre lingue.</span></li>
             <li><b>App in 6 lingue (v4.12.0 – v4.12.3)</b><span data-i18n="notes.pulsante_lingua_alto_it_en">: pulsante della lingua in alto (IT, EN, ES, FR, DE, PT); il cambio lingua non riapre l'app e non chiede di nuovo l'impronta; tradotti anche errori di connessione e tipi di notifica.</span></li>
             <li><b>RAM e backup (v4.11.0)</b><span data-i18n="notes.ram_server_scelta_elenco_fino">: RAM del server scelta da un elenco fino alla RAM del PC; la finestra del backup mostra quanto peserà; il PIN di sblocco viene controllato dal PC, quindi dopo un cambio di PIN vale subito quello nuovo.</span></li>

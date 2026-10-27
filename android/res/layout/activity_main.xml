@@ -27,22 +27,15 @@
             android:textColor="#9ccc65"
             android:background="@drawable/btn_slate" />
 
-        <ImageView
-            android:id="@+id/topBarAppIcon"
-            android:layout_width="32dp"
-            android:layout_height="32dp"
-            android:layout_centerVertical="true"
-            android:layout_toEndOf="@+id/btnToggleDrawer"
-            android:layout_marginStart="8dp"
-            android:src="@drawable/ic_launcher" />
-
+        <!-- Titolo, poi stato e sottotitolo sulla seconda riga: con il logo e lo stato accanto ai pulsanti il titolo
+             restava tagliato in ogni sezione ("Server stat…") -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_centerVertical="true"
-            android:layout_toEndOf="@+id/topBarAppIcon"
+            android:layout_toEndOf="@+id/btnToggleDrawer"
             android:layout_toStartOf="@+id/topBarActions"
-            android:layout_marginStart="8dp"
+            android:layout_marginStart="10dp"
             android:layout_marginEnd="4dp"
             android:orientation="vertical">
 
@@ -58,16 +51,40 @@
                 android:textSize="14sp"
                 android:textStyle="bold" />
 
-            <TextView
-                android:id="@+id/txtHeaderSubtitle"
-                android:layout_width="wrap_content"
+            <LinearLayout
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:maxLines="1"
-                android:ellipsize="end"
-                android:text="Server Minecraft Forge"
-                android:tag="notr"
-                android:textColor="#8a8c92"
-                android:textSize="10sp" />
+                android:layout_marginTop="2dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/pillServerStatus"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/pill_offline"
+                    android:paddingStart="5dp"
+                    android:paddingEnd="5dp"
+                    android:paddingTop="1dp"
+                    android:paddingBottom="1dp"
+                    android:text="Offline"
+                    android:tag="t:ui.offline"
+                    android:textColor="#f0788c"
+                    android:textSize="9sp"
+                    android:textStyle="bold"
+                    android:layout_marginEnd="6dp" />
+
+                <TextView
+                    android:id="@+id/txtHeaderSubtitle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:text="Server Minecraft Forge"
+                    android:tag="notr"
+                    android:textColor="#8a8c92"
+                    android:textSize="10sp" />
+            </LinearLayout>
         </LinearLayout>
 
         <LinearLayout
@@ -77,22 +94,6 @@
             android:layout_alignParentEnd="true"
             android:gravity="center_vertical"
             android:orientation="horizontal">
-
-            <TextView
-                android:id="@+id/pillServerStatus"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:background="@drawable/pill_offline"
-                android:paddingStart="6dp"
-                android:paddingEnd="6dp"
-                android:paddingTop="2dp"
-                android:paddingBottom="2dp"
-                android:text="Offline"
-                android:tag="t:ui.offline"
-                android:textColor="#f0788c"
-                android:textSize="9sp"
-                android:textStyle="bold"
-                android:layout_marginEnd="6dp" />
 
             <!-- Lingua dell'app: sempre visibile in alto; il codice (IT, EN...) lo scrive MainActivity -->
             <Button

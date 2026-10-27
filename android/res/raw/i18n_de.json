@@ -562,5 +562,7 @@
 "pc.console_avvio_server_bloccato": "[Panel] Serverstart blockiert. {0}",
 "pc.backup_server_deve_essere_spento": "Der Minecraft-Server muss für ein sicheres Backup VOLLSTÄNDIG GESTOPPT sein.",
 "ui.correzione_v4_12_4_testi_non_tradotti": "Korrektur (v4.12.4): Nicht übersetzte Texte (alter Verlauf, Namen, Nachrichten) werden in anderen Sprachen nicht mehr versehentlich verändert.",
-"ui.v4_12_4_build_96_testi_non_tradotti": "• v4.12.4 (Build 96):\nNicht übersetzte Texte werden in anderen Sprachen nicht mehr versehentlich verändert."
+"ui.v4_12_4_build_96_testi_non_tradotti": "• v4.12.4 (Build 96):\nNicht übersetzte Texte werden in anderen Sprachen nicht mehr versehentlich verändert.",
+"ui.novita_v4_12_5_icona": "Neu (v4.12.5): neues Voxarium-Symbol, auch in den Benachrichtigungen (vorher erschien in der Leiste ein weißes Quadrat); vollständiger Titel in der Kopfzeile jedes Bereichs; besser lesbare PIN- und Info-Fenster; das heruntergeladene Update bleibt nicht mehr in drei Kopien auf dem Handy.",
+"ui.v4_12_5_build_102_icona": "• v4.12.5 (Build 102):\nNeues Symbol; vollständige Titel in der Kopfzeile; besser lesbare PIN- und Info-Fenster; heruntergeladenes Update nur noch in einer Kopie."
 }

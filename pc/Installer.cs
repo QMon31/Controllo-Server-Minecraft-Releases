@@ -200,7 +200,6 @@ namespace MinecraftControlCenterInstaller
         private CheckBox chkDesktop;
         private CheckBox chkStartMenu;
         private CheckBox chkAutoStart;
-        private CheckBox chkCleanShortcuts;
         private CheckBox chkRegisterUninstall;
 
         // Step 4: Progress
@@ -511,18 +510,25 @@ namespace MinecraftControlCenterInstaller
             lblSecurityStatus.Text = "[✓] Protezione Host e Rete: Sanitizzazione comandi, protezione directory di Windows e blocco accessi esterni attivi.";
             lblSecurityStatus.ForeColor = Color.FromArgb(22, 101, 52);
             lblSecurityStatus.Location = new Point(16, 26);
-            lblSecurityStatus.Size = new Size(505, 36);
             gbReq.Controls.Add(lblSecurityStatus);
 
             lblPyStatus = new Label();
-            lblPyStatus.Location = new Point(16, 70);
-            lblPyStatus.Size = new Size(505, 36);
             gbReq.Controls.Add(lblPyStatus);
 
             lblReqStatus = new Label();
-            lblReqStatus.Location = new Point(16, 115);
-            lblReqStatus.Size = new Size(505, 55);
             gbReq.Controls.Add(lblReqStatus);
+
+            // Ogni riga alta quanto il suo testo (che cambia con la lingua e con l'esito dei controlli), la successiva subito sotto
+            Label[] reqLines = { lblSecurityStatus, lblPyStatus, lblReqStatus };
+            foreach (Label l in reqLines)
+            {
+                l.Left = 16;
+                l.AutoSize = true;
+                l.MaximumSize = new Size(505, 0);
+                l.SizeChanged += delegate(object s, EventArgs e) {
+                    for (int i = 1; i < reqLines.Length; i++) reqLines[i].Top = reqLines[i - 1].Bottom + 10;
+                };
+            }
 
             pnlStep0.Controls.Add(gbReq);
 
@@ -576,6 +582,8 @@ namespace MinecraftControlCenterInstaller
             lblCardHostBadge.AutoSize = true;
             lblCardHostBadge.Cursor = Cursors.Hand;
             cardHost.Controls.Add(lblCardHostBadge);
+            lblCardHostTitle.SizeChanged += delegate(object s, EventArgs e) { lblCardHostBadge.Left = lblCardHostTitle.Right + 10; };
+            lblCardHostBadge.Left = lblCardHostTitle.Right + 10;
 
             lblCardHostDesc = new Label();
             lblCardHostDesc.Text = "I file del server Minecraft e Java sono su questo computer.\r\n" +
@@ -630,6 +638,8 @@ namespace MinecraftControlCenterInstaller
             lblCardRemoteBadge.AutoSize = true;
             lblCardRemoteBadge.Cursor = Cursors.Hand;
             cardRemote.Controls.Add(lblCardRemoteBadge);
+            lblCardRemoteTitle.SizeChanged += delegate(object s, EventArgs e) { lblCardRemoteBadge.Left = lblCardRemoteTitle.Right + 10; };
+            lblCardRemoteBadge.Left = lblCardRemoteTitle.Right + 10;
 
             lblCardRemoteDesc = new Label();
             lblCardRemoteDesc.Text = "Il server Minecraft gira su un ALTRO computer (PC secondario o mini-PC).\r\n" +
@@ -1011,24 +1021,17 @@ namespace MinecraftControlCenterInstaller
             chkAutoStart.Size = new Size(520, 24);
             pnlStep3.Controls.Add(chkAutoStart);
 
-            chkCleanShortcuts = new CheckBox();
-            chkCleanShortcuts.Text = "Rigenera e forza il collegamento sul Desktop (risolve se eliminato o mancante)";
-            chkCleanShortcuts.Checked = true;
-            chkCleanShortcuts.Location = new Point(16, 122);
-            chkCleanShortcuts.Size = new Size(520, 24);
-            pnlStep3.Controls.Add(chkCleanShortcuts);
-
             chkRegisterUninstall = new CheckBox();
             chkRegisterUninstall.Text = "Registra nell'elenco 'Installazione Applicazioni' di Windows (Disinstallatore pulito)";
             chkRegisterUninstall.Checked = true;
-            chkRegisterUninstall.Location = new Point(16, 150);
+            chkRegisterUninstall.Location = new Point(16, 122);
             chkRegisterUninstall.Size = new Size(520, 24);
             pnlStep3.Controls.Add(chkRegisterUninstall);
 
             Label lblSecNote = new Label();
             lblSecNote.Text = "Nota: L'avvio automatico garantisce che il server Minecraft e il pannello siano subito attivi all'accensione del PC, pronti per giocare o per il controllo da cellulare anche se il monitor o la finestra non sono ancora stati aperti.";
             lblSecNote.ForeColor = Color.FromArgb(71, 85, 105);
-            lblSecNote.Location = new Point(16, 180);
+            lblSecNote.Location = new Point(16, 152);
             lblSecNote.Size = new Size(520, 50);
             pnlStep3.Controls.Add(lblSecNote);
 
@@ -1373,10 +1376,11 @@ namespace MinecraftControlCenterInstaller
                                     continue;
                                 }
 
-                                // In Remote Mode, we need Controllo Server Minecraft.exe, WebView2 DLLs, and icons
+                                // In Remote Mode, we need Controllo Server Minecraft.exe, WebView2 DLLs, icons and the license texts
                                 if (isRemote)
                                 {
-                                    if (!entry.Name.Equals("Controllo Server Minecraft.exe", StringComparison.OrdinalIgnoreCase) &&
+                                    if (!entry.FullName.StartsWith("licenses/", StringComparison.OrdinalIgnoreCase) &&
+                                        !entry.Name.Equals("Controllo Server Minecraft.exe", StringComparison.OrdinalIgnoreCase) &&
                                         !entry.Name.Equals("Microsoft.Web.WebView2.Core.dll", StringComparison.OrdinalIgnoreCase) &&
                                         !entry.Name.Equals("Microsoft.Web.WebView2.WinForms.dll", StringComparison.OrdinalIgnoreCase) &&
                                         !entry.Name.Equals("WebView2Loader.dll", StringComparison.OrdinalIgnoreCase) &&

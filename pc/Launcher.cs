@@ -48,7 +48,7 @@ namespace MinecraftControlCenter
             if (appIcon != null) this.Icon = appIcon;
 
             lblLoading = new Label();
-            lblLoading.Text = "Caricamento interfaccia di controllo in corso...";
+            lblLoading.Text = LauncherText.T("win.loading");
             lblLoading.ForeColor = Color.FromArgb(148, 163, 184);
             lblLoading.Font = new Font("Segoe UI", 11.5F, FontStyle.Regular);
             lblLoading.Dock = DockStyle.Fill;
@@ -56,7 +56,7 @@ namespace MinecraftControlCenter
             this.Controls.Add(lblLoading);
 
             btnRetry = new Button();
-            btnRetry.Text = "Riprova ad avviare il pannello";
+            btnRetry.Text = LauncherText.T("win.retry_button");
             btnRetry.Font = new Font("Segoe UI", 10.5F, FontStyle.Bold);
             btnRetry.Height = 46;
             btnRetry.Dock = DockStyle.Bottom;
@@ -81,8 +81,7 @@ namespace MinecraftControlCenter
                     if (!firstCloseTipShown && trayRef != null)
                     {
                         firstCloseTipShown = true;
-                        trayRef.ShowBalloonTip(3500, "Voxarium",
-                            "L'applicazione continua a funzionare in background.\nFai doppio clic sull'icona accanto all'orologio per riaprirla.", ToolTipIcon.Info);
+                        trayRef.ShowBalloonTip(3500, "Voxarium", LauncherText.T("win.background_tip"), ToolTipIcon.Info);
                     }
                 }
             };
@@ -106,7 +105,7 @@ namespace MinecraftControlCenter
 
         public void ShowBackendError(string message)
         {
-            pendingError = string.IsNullOrEmpty(message) ? "Errore sconosciuto." : message;
+            pendingError = string.IsNullOrEmpty(message) ? LauncherText.T("err.unknown") : message;
             if (this.IsHandleCreated) ApplyBackendError();
         }
 
@@ -118,8 +117,8 @@ namespace MinecraftControlCenter
                 return;
             }
             if (webView != null) webView.Visible = false;
-            lblLoading.Text = "Impossibile avviare il pannello del server.\r\n\r\n" + pendingError +
-                              "\r\n\r\nRegistro completo: %LOCALAPPDATA%\\Controllo Server Minecraft\\backend.log";
+            lblLoading.Text = LauncherText.T("err.cannot_start") + "\r\n\r\n" + pendingError +
+                              "\r\n\r\n" + LauncherText.T("err.full_log", "%LOCALAPPDATA%\\Controllo Server Minecraft\\backend.log");
             lblLoading.Visible = true;
             btnRetry.Visible = true;
             lblLoading.BringToFront(); // l'etichetta (Dock Fill) occupa lo spazio sopra il pulsante
@@ -128,7 +127,7 @@ namespace MinecraftControlCenter
         private void RetryBackend()
         {
             btnRetry.Enabled = false;
-            lblLoading.Text = "Nuovo tentativo di avvio del pannello in corso...";
+            lblLoading.Text = LauncherText.T("win.retrying");
             Task.Factory.StartNew(() => Program.StartPythonBackend()).ContinueWith(t => {
                 btnRetry.Enabled = true;
                 if (t.Result)
@@ -267,7 +266,7 @@ namespace MinecraftControlCenter
                     }
                     else if (Program.IsRemote())
                     {
-                        UpdateLoadingText("Connessione non riuscita.\r\nRicerca automatica server host in corso (LAN & Cloud)...");
+                        UpdateLoadingText(LauncherText.T("win.remote_failed"));
                         if (webView != null) webView.Visible = false;
                         Program.TriggerAutoReconnectAsync(false);
                     }
@@ -278,7 +277,7 @@ namespace MinecraftControlCenter
                         if (pendingError == null && hostNavRetries < 30)
                         {
                             hostNavRetries++;
-                            UpdateLoadingText("Avvio del pannello in corso... (tentativo " + hostNavRetries + "/30)");
+                            UpdateLoadingText(LauncherText.T("win.host_try", hostNavRetries));
                             System.Windows.Forms.Timer rt = new System.Windows.Forms.Timer();
                             rt.Interval = 2000;
                             rt.Tick += (s2, e2) => {
@@ -291,7 +290,7 @@ namespace MinecraftControlCenter
                         else
                         {
                             if (pendingError == null)
-                                pendingError = "Il pannello non risponde su " + targetUrl + ".\r\n\r\n" + Program.GetBackendLogTail(12);
+                                pendingError = LauncherText.T("err.not_responding", targetUrl) + "\r\n\r\n" + Program.GetBackendLogTail(12);
                             ApplyBackendError();
                         }
                     }
@@ -299,7 +298,7 @@ namespace MinecraftControlCenter
 
                 if (IsAutoUrl(targetUrl))
                 {
-                    UpdateLoadingText("Ricerca automatica del server Minecraft in corso...\r\nVerifica rete locale LAN e sincronizzazione Cloud.");
+                    UpdateLoadingText(LauncherText.T("disc.searching"));
                     Program.TriggerAutoReconnectAsync(false);
                 }
                 else
@@ -478,13 +477,13 @@ namespace MinecraftControlCenter
                 {
                     if (target == "run_bat")
                     {
-                        ofd.Title = "Seleziona File di Avvio Server (run.bat)";
-                        ofd.Filter = "File di avvio (*.bat;*.jar)|*.bat;*.jar|File Batch (*.bat)|*.bat|File Jar (*.jar)|*.jar|Tutti i file (*.*)|*.*";
+                        ofd.Title = LauncherText.T("pick.run_bat_title");
+                        ofd.Filter = LauncherText.T("pick.start_files") + " (*.bat;*.jar)|*.bat;*.jar|" + LauncherText.T("pick.batch_files") + " (*.bat)|*.bat|" + LauncherText.T("pick.jar_files") + " (*.jar)|*.jar|" + LauncherText.T("pick.all_files") + " (*.*)|*.*";
                     }
                     else
                     {
-                        ofd.Title = "Seleziona Cartella Server Minecraft (entra nella cartella e seleziona run.bat o qualsiasi file)";
-                        ofd.Filter = "File del Server (*.bat;*.jar;server.properties;*.*)|*.bat;*.jar;server.properties;*.*|Tutti i file (*.*)|*.*";
+                        ofd.Title = LauncherText.T("pick.folder_title");
+                        ofd.Filter = LauncherText.T("pick.server_files") + " (*.bat;*.jar;server.properties;*.*)|*.bat;*.jar;server.properties;*.*|" + LauncherText.T("pick.all_files") + " (*.*)|*.*";
                     }
 
                     ofd.CheckFileExists = false;
@@ -777,6 +776,63 @@ namespace MinecraftControlCenter
                 { "upd.failed", "Aggiornamento non riuscito: {0}" },
                 { "upd.check_failed", "Controllo aggiornamenti non riuscito: {0}" },
                 { "upd.up_to_date", "Il programma è aggiornato (v{0}, Build {1})." },
+                { "win.loading", "Caricamento interfaccia di controllo in corso..." },
+                { "win.retry_button", "Riprova ad avviare il pannello" },
+                { "win.background_tip", "L'applicazione continua a funzionare in background.\nFai doppio clic sull'icona accanto all'orologio per riaprirla." },
+                { "win.retrying", "Nuovo tentativo di avvio del pannello in corso..." },
+                { "win.remote_failed", "Connessione non riuscita.\r\nRicerca automatica del PC Host in corso (rete di casa e internet)..." },
+                { "win.host_try", "Avvio del pannello in corso... (tentativo {0}/30)" },
+                { "win.host_starting", "Avvio del pannello del server in corso..." },
+                { "err.unknown", "Errore sconosciuto." },
+                { "err.cannot_start", "Impossibile avviare il pannello del server." },
+                { "err.full_log", "Registro completo: {0}" },
+                { "err.not_responding", "Il pannello non risponde su {0}." },
+                { "err.save_config", "Impossibile salvare la configurazione del launcher:\n{0}" },
+                { "err.title", "Errore" },
+                { "err.no_app", "File app.pyc non trovato in:\r\n{0}" },
+                { "err.no_runtime", "Runtime Python non trovato.\r\nReinstalla il programma: la cartella 'python' dell'installazione è mancante." },
+                { "err.python_start", "Errore nell'avvio di Python:\r\n{0}" },
+                { "err.closed", "Il pannello si è chiuso all'avvio (codice {0})." },
+                { "err.timeout", "Il pannello non ha risposto sulla porta {0} entro 45 secondi." },
+                { "pick.run_bat_title", "Seleziona il file di avvio del server (run.bat)" },
+                { "pick.folder_title", "Seleziona la cartella del server Minecraft (entra nella cartella e scegli run.bat o un file qualsiasi)" },
+                { "pick.start_files", "File di avvio" },
+                { "pick.batch_files", "File batch" },
+                { "pick.jar_files", "File jar" },
+                { "pick.server_files", "File del server" },
+                { "pick.all_files", "Tutti i file" },
+                { "tray.client_autostarted", "Client avviato automaticamente con Windows." },
+                { "tray.host_autostarted", "Pannello e server avviati automaticamente con Windows." },
+                { "tray.remote_tooltip", "Voxarium (Remoto)" },
+                { "tray.host_tooltip", "Voxarium (PC Host)" },
+                { "tray.open_remote", "Apri il pannello" },
+                { "tray.open_main", "Apri la finestra principale" },
+                { "tray.reconnect", "Cerca il PC Host e ricollegati" },
+                { "tray.change_address", "Cambia indirizzo del PC Host..." },
+                { "prompt.address", "Indirizzo del PC Host (es. http://192.168.1.50:8080), oppure 'auto' per cercarlo da solo:" },
+                { "prompt.address_title", "Indirizzo del PC Host" },
+                { "prompt.save", "Salva" },
+                { "prompt.cancel", "Annulla" },
+                { "tray.address_saved_title", "Indirizzo aggiornato" },
+                { "tray.address_saved", "Nuovo indirizzo salvato: {0}" },
+                { "tray.autostart", "Avvia automaticamente con Windows" },
+                { "tray.autostart_title", "Avvio automatico" },
+                { "tray.autostart_on", "L'applicazione si avvierà all'accensione del PC." },
+                { "tray.autostart_off", "Avvio automatico con Windows disattivato." },
+                { "tray.exit", "Esci" },
+                { "tray.exit_all", "Esci (chiude pannello e server)" },
+                { "disc.channels", "Controllo dei canali di notifica e dell'indirizzo da internet..." },
+                { "disc.test_lan", "Prova della rete di casa ({0})..." },
+                { "disc.scan_wifi", "Ricerca veloce nella rete Wi-Fi di casa (porta 8080)..." },
+                { "disc.test_remote", "Prova dell'indirizzo da internet ({0})..." },
+                { "disc.search_title", "Ricerca del PC Host" },
+                { "disc.search_balloon", "Ricerca veloce in rete e su internet in corso..." },
+                { "disc.searching", "Ricerca automatica del PC Host in corso...\r\nRete di casa e indirizzo da internet." },
+                { "disc.connected_title", "Collegato" },
+                { "disc.connected", "Collegato al PC Host:\n{0}" },
+                { "disc.not_found_window", "PC Host non trovato.\r\nControlla che sia acceso, oppure scegli 'Cambia indirizzo del PC Host' dal menu dell'icona accanto all'orologio." },
+                { "disc.not_found_title", "PC Host non trovato" },
+                { "disc.not_found", "Nessun PC Host trovato in rete o su internet.\nControlla che sia acceso e che il programma sia avviato." },
                 { "upd.menu", "Controlla aggiornamenti" } } },
             { "en", new Dictionary<string, string> {
                 { "upd.title", "Update available" },
@@ -785,6 +841,63 @@ namespace MinecraftControlCenter
                 { "upd.failed", "Update failed: {0}" },
                 { "upd.check_failed", "Update check failed: {0}" },
                 { "upd.up_to_date", "The program is up to date (v{0}, Build {1})." },
+                { "win.loading", "Loading the control panel..." },
+                { "win.retry_button", "Try starting the panel again" },
+                { "win.background_tip", "The application keeps running in the background.\nDouble-click the icon next to the clock to open it again." },
+                { "win.retrying", "Trying to start the panel again..." },
+                { "win.remote_failed", "Connection failed.\r\nSearching for the Host PC (home network and internet)..." },
+                { "win.host_try", "Starting the panel... (attempt {0}/30)" },
+                { "win.host_starting", "Starting the server panel..." },
+                { "err.unknown", "Unknown error." },
+                { "err.cannot_start", "The server panel could not be started." },
+                { "err.full_log", "Full log: {0}" },
+                { "err.not_responding", "The panel is not responding at {0}." },
+                { "err.save_config", "Could not save the launcher settings:\n{0}" },
+                { "err.title", "Error" },
+                { "err.no_app", "File app.pyc not found in:\r\n{0}" },
+                { "err.no_runtime", "Python runtime not found.\r\nReinstall the program: the 'python' folder of the installation is missing." },
+                { "err.python_start", "Error starting Python:\r\n{0}" },
+                { "err.closed", "The panel closed while starting (code {0})." },
+                { "err.timeout", "The panel did not respond on port {0} within 45 seconds." },
+                { "pick.run_bat_title", "Select the server start file (run.bat)" },
+                { "pick.folder_title", "Select the Minecraft server folder (open the folder and pick run.bat or any file)" },
+                { "pick.start_files", "Start files" },
+                { "pick.batch_files", "Batch files" },
+                { "pick.jar_files", "Jar files" },
+                { "pick.server_files", "Server files" },
+                { "pick.all_files", "All files" },
+                { "tray.client_autostarted", "Client started automatically with Windows." },
+                { "tray.host_autostarted", "Panel and server started automatically with Windows." },
+                { "tray.remote_tooltip", "Voxarium (Remote)" },
+                { "tray.host_tooltip", "Voxarium (Host PC)" },
+                { "tray.open_remote", "Open the panel" },
+                { "tray.open_main", "Open the main window" },
+                { "tray.reconnect", "Find the Host PC and reconnect" },
+                { "tray.change_address", "Change Host PC address..." },
+                { "prompt.address", "Host PC address (e.g. http://192.168.1.50:8080), or 'auto' to find it automatically:" },
+                { "prompt.address_title", "Host PC address" },
+                { "prompt.save", "Save" },
+                { "prompt.cancel", "Cancel" },
+                { "tray.address_saved_title", "Address updated" },
+                { "tray.address_saved", "New address saved: {0}" },
+                { "tray.autostart", "Start automatically with Windows" },
+                { "tray.autostart_title", "Automatic startup" },
+                { "tray.autostart_on", "The application will start when the PC is turned on." },
+                { "tray.autostart_off", "Automatic startup with Windows turned off." },
+                { "tray.exit", "Exit" },
+                { "tray.exit_all", "Exit (closes panel and server)" },
+                { "disc.channels", "Checking notification channels and internet address..." },
+                { "disc.test_lan", "Testing the home network ({0})..." },
+                { "disc.scan_wifi", "Quick search on the home Wi-Fi network (port 8080)..." },
+                { "disc.test_remote", "Testing the internet address ({0})..." },
+                { "disc.search_title", "Searching for the Host PC" },
+                { "disc.search_balloon", "Quick search on the network and internet..." },
+                { "disc.searching", "Searching for the Host PC...\r\nHome network and internet address." },
+                { "disc.connected_title", "Connected" },
+                { "disc.connected", "Connected to the Host PC:\n{0}" },
+                { "disc.not_found_window", "Host PC not found.\r\nCheck that it is turned on, or choose 'Change Host PC address' from the menu of the icon next to the clock." },
+                { "disc.not_found_title", "Host PC not found" },
+                { "disc.not_found", "No Host PC found on the network or the internet.\nCheck that it is on and the program is running." },
                 { "upd.menu", "Check for updates" } } },
             { "es", new Dictionary<string, string> {
                 { "upd.title", "Actualización disponible" },
@@ -793,6 +906,63 @@ namespace MinecraftControlCenter
                 { "upd.failed", "La actualización no se pudo completar: {0}" },
                 { "upd.check_failed", "No se pudo buscar actualizaciones: {0}" },
                 { "upd.up_to_date", "El programa está actualizado (v{0}, Build {1})." },
+                { "win.loading", "Cargando el panel de control..." },
+                { "win.retry_button", "Reintentar iniciar el panel" },
+                { "win.background_tip", "La aplicación sigue funcionando en segundo plano.\nHaz doble clic en el icono junto al reloj para volver a abrirla." },
+                { "win.retrying", "Reintentando iniciar el panel..." },
+                { "win.remote_failed", "No se pudo conectar.\r\nBuscando el PC Host (red de casa e internet)..." },
+                { "win.host_try", "Iniciando el panel... (intento {0}/30)" },
+                { "win.host_starting", "Iniciando el panel del servidor..." },
+                { "err.unknown", "Error desconocido." },
+                { "err.cannot_start", "No se pudo iniciar el panel del servidor." },
+                { "err.full_log", "Registro completo: {0}" },
+                { "err.not_responding", "El panel no responde en {0}." },
+                { "err.save_config", "No se pudo guardar la configuración del launcher:\n{0}" },
+                { "err.title", "Error" },
+                { "err.no_app", "No se encontró el archivo app.pyc en:\r\n{0}" },
+                { "err.no_runtime", "No se encontró el entorno de Python.\r\nReinstala el programa: falta la carpeta 'python' de la instalación." },
+                { "err.python_start", "Error al iniciar Python:\r\n{0}" },
+                { "err.closed", "El panel se cerró al iniciarse (código {0})." },
+                { "err.timeout", "El panel no respondió en el puerto {0} en 45 segundos." },
+                { "pick.run_bat_title", "Selecciona el archivo de inicio del servidor (run.bat)" },
+                { "pick.folder_title", "Selecciona la carpeta del servidor de Minecraft (entra en la carpeta y elige run.bat o cualquier archivo)" },
+                { "pick.start_files", "Archivos de inicio" },
+                { "pick.batch_files", "Archivos batch" },
+                { "pick.jar_files", "Archivos jar" },
+                { "pick.server_files", "Archivos del servidor" },
+                { "pick.all_files", "Todos los archivos" },
+                { "tray.client_autostarted", "Cliente iniciado automáticamente con Windows." },
+                { "tray.host_autostarted", "Panel y servidor iniciados automáticamente con Windows." },
+                { "tray.remote_tooltip", "Voxarium (Remoto)" },
+                { "tray.host_tooltip", "Voxarium (PC Host)" },
+                { "tray.open_remote", "Abrir el panel" },
+                { "tray.open_main", "Abrir la ventana principal" },
+                { "tray.reconnect", "Buscar el PC Host y reconectar" },
+                { "tray.change_address", "Cambiar dirección del PC Host..." },
+                { "prompt.address", "Dirección del PC Host (p. ej. http://192.168.1.50:8080), o 'auto' para buscarlo automáticamente:" },
+                { "prompt.address_title", "Dirección del PC Host" },
+                { "prompt.save", "Guardar" },
+                { "prompt.cancel", "Cancelar" },
+                { "tray.address_saved_title", "Dirección actualizada" },
+                { "tray.address_saved", "Nueva dirección guardada: {0}" },
+                { "tray.autostart", "Iniciar automáticamente con Windows" },
+                { "tray.autostart_title", "Inicio automático" },
+                { "tray.autostart_on", "La aplicación se iniciará al encender el PC." },
+                { "tray.autostart_off", "Inicio automático con Windows desactivado." },
+                { "tray.exit", "Salir" },
+                { "tray.exit_all", "Salir (cierra panel y servidor)" },
+                { "disc.channels", "Comprobando los canales de notificación y la dirección de internet..." },
+                { "disc.test_lan", "Probando la red de casa ({0})..." },
+                { "disc.scan_wifi", "Búsqueda rápida en la red Wi-Fi de casa (puerto 8080)..." },
+                { "disc.test_remote", "Probando la dirección de internet ({0})..." },
+                { "disc.search_title", "Buscando el PC Host" },
+                { "disc.search_balloon", "Búsqueda rápida en la red e internet..." },
+                { "disc.searching", "Buscando el PC Host...\r\nRed de casa y dirección de internet." },
+                { "disc.connected_title", "Conectado" },
+                { "disc.connected", "Conectado al PC Host:\n{0}" },
+                { "disc.not_found_window", "No se encontró el PC Host.\r\nComprueba que esté encendido o elige 'Cambiar dirección del PC Host' en el menú del icono junto al reloj." },
+                { "disc.not_found_title", "PC Host no encontrado" },
+                { "disc.not_found", "No se encontró ningún PC Host en la red ni en internet.\nComprueba que esté encendido y que el programa esté abierto." },
                 { "upd.menu", "Buscar actualizaciones" } } },
             { "fr", new Dictionary<string, string> {
                 { "upd.title", "Mise à jour disponible" },
@@ -801,6 +971,63 @@ namespace MinecraftControlCenter
                 { "upd.failed", "Échec de la mise à jour : {0}" },
                 { "upd.check_failed", "Échec de la recherche de mises à jour : {0}" },
                 { "upd.up_to_date", "Le programme est à jour (v{0}, Build {1})." },
+                { "win.loading", "Chargement du panneau de contrôle..." },
+                { "win.retry_button", "Réessayer de démarrer le panneau" },
+                { "win.background_tip", "L'application continue de fonctionner en arrière-plan.\nDouble-cliquez sur l'icône près de l'horloge pour la rouvrir." },
+                { "win.retrying", "Nouvelle tentative de démarrage du panneau..." },
+                { "win.remote_failed", "Échec de la connexion.\r\nRecherche du PC Hôte (réseau domestique et internet)..." },
+                { "win.host_try", "Démarrage du panneau... (tentative {0}/30)" },
+                { "win.host_starting", "Démarrage du panneau du serveur..." },
+                { "err.unknown", "Erreur inconnue." },
+                { "err.cannot_start", "Impossible de démarrer le panneau du serveur." },
+                { "err.full_log", "Journal complet : {0}" },
+                { "err.not_responding", "Le panneau ne répond pas sur {0}." },
+                { "err.save_config", "Impossible d'enregistrer la configuration du lanceur :\n{0}" },
+                { "err.title", "Erreur" },
+                { "err.no_app", "Fichier app.pyc introuvable dans :\r\n{0}" },
+                { "err.no_runtime", "Environnement Python introuvable.\r\nRéinstallez le programme : le dossier 'python' de l'installation est manquant." },
+                { "err.python_start", "Erreur au démarrage de Python :\r\n{0}" },
+                { "err.closed", "Le panneau s'est fermé au démarrage (code {0})." },
+                { "err.timeout", "Le panneau n'a pas répondu sur le port {0} en 45 secondes." },
+                { "pick.run_bat_title", "Sélectionnez le fichier de démarrage du serveur (run.bat)" },
+                { "pick.folder_title", "Sélectionnez le dossier du serveur Minecraft (ouvrez-le et choisissez run.bat ou n'importe quel fichier)" },
+                { "pick.start_files", "Fichiers de démarrage" },
+                { "pick.batch_files", "Fichiers batch" },
+                { "pick.jar_files", "Fichiers jar" },
+                { "pick.server_files", "Fichiers du serveur" },
+                { "pick.all_files", "Tous les fichiers" },
+                { "tray.client_autostarted", "Client démarré automatiquement avec Windows." },
+                { "tray.host_autostarted", "Panneau et serveur démarrés automatiquement avec Windows." },
+                { "tray.remote_tooltip", "Voxarium (Distant)" },
+                { "tray.host_tooltip", "Voxarium (PC Hôte)" },
+                { "tray.open_remote", "Ouvrir le panneau" },
+                { "tray.open_main", "Ouvrir la fenêtre principale" },
+                { "tray.reconnect", "Rechercher le PC Hôte et se reconnecter" },
+                { "tray.change_address", "Modifier l'adresse du PC Hôte..." },
+                { "prompt.address", "Adresse du PC Hôte (ex. http://192.168.1.50:8080), ou 'auto' pour le rechercher automatiquement :" },
+                { "prompt.address_title", "Adresse du PC Hôte" },
+                { "prompt.save", "Enregistrer" },
+                { "prompt.cancel", "Annuler" },
+                { "tray.address_saved_title", "Adresse mise à jour" },
+                { "tray.address_saved", "Nouvelle adresse enregistrée : {0}" },
+                { "tray.autostart", "Démarrer automatiquement avec Windows" },
+                { "tray.autostart_title", "Démarrage automatique" },
+                { "tray.autostart_on", "L'application démarrera à l'allumage du PC." },
+                { "tray.autostart_off", "Démarrage automatique avec Windows désactivé." },
+                { "tray.exit", "Quitter" },
+                { "tray.exit_all", "Quitter (ferme le panneau et le serveur)" },
+                { "disc.channels", "Vérification des canaux de notification et de l'adresse internet..." },
+                { "disc.test_lan", "Test du réseau domestique ({0})..." },
+                { "disc.scan_wifi", "Recherche rapide sur le réseau Wi-Fi domestique (port 8080)..." },
+                { "disc.test_remote", "Test de l'adresse internet ({0})..." },
+                { "disc.search_title", "Recherche du PC Hôte" },
+                { "disc.search_balloon", "Recherche rapide sur le réseau et internet..." },
+                { "disc.searching", "Recherche du PC Hôte...\r\nRéseau domestique et adresse internet." },
+                { "disc.connected_title", "Connecté" },
+                { "disc.connected", "Connecté au PC Hôte :\n{0}" },
+                { "disc.not_found_window", "PC Hôte introuvable.\r\nVérifiez qu'il est allumé ou choisissez « Modifier l'adresse du PC Hôte » dans le menu de l'icône près de l'horloge." },
+                { "disc.not_found_title", "PC Hôte introuvable" },
+                { "disc.not_found", "Aucun PC Hôte trouvé sur le réseau ou sur internet.\nVérifiez qu'il est allumé et que le programme est lancé." },
                 { "upd.menu", "Rechercher des mises à jour" } } },
             { "de", new Dictionary<string, string> {
                 { "upd.title", "Update verfügbar" },
@@ -809,6 +1036,63 @@ namespace MinecraftControlCenter
                 { "upd.failed", "Update fehlgeschlagen: {0}" },
                 { "upd.check_failed", "Suche nach Updates fehlgeschlagen: {0}" },
                 { "upd.up_to_date", "Das Programm ist aktuell (v{0}, Build {1})." },
+                { "win.loading", "Steuerungsoberfläche wird geladen..." },
+                { "win.retry_button", "Panel erneut starten" },
+                { "win.background_tip", "Die Anwendung läuft im Hintergrund weiter.\nDoppelklicke auf das Symbol neben der Uhr, um sie wieder zu öffnen." },
+                { "win.retrying", "Neuer Versuch, das Panel zu starten..." },
+                { "win.remote_failed", "Verbindung fehlgeschlagen.\r\nHost-PC wird gesucht (Heimnetz und Internet)..." },
+                { "win.host_try", "Panel wird gestartet... (Versuch {0}/30)" },
+                { "win.host_starting", "Server-Panel wird gestartet..." },
+                { "err.unknown", "Unbekannter Fehler." },
+                { "err.cannot_start", "Das Server-Panel konnte nicht gestartet werden." },
+                { "err.full_log", "Vollständiges Protokoll: {0}" },
+                { "err.not_responding", "Das Panel antwortet nicht unter {0}." },
+                { "err.save_config", "Die Launcher-Einstellungen konnten nicht gespeichert werden:\n{0}" },
+                { "err.title", "Fehler" },
+                { "err.no_app", "Datei app.pyc nicht gefunden in:\r\n{0}" },
+                { "err.no_runtime", "Python-Laufzeit nicht gefunden.\r\nInstalliere das Programm neu: der Ordner 'python' der Installation fehlt." },
+                { "err.python_start", "Fehler beim Starten von Python:\r\n{0}" },
+                { "err.closed", "Das Panel wurde beim Start beendet (Code {0})." },
+                { "err.timeout", "Das Panel hat auf Port {0} nicht innerhalb von 45 Sekunden geantwortet." },
+                { "pick.run_bat_title", "Startdatei des Servers auswählen (run.bat)" },
+                { "pick.folder_title", "Ordner des Minecraft-Servers auswählen (Ordner öffnen und run.bat oder eine beliebige Datei wählen)" },
+                { "pick.start_files", "Startdateien" },
+                { "pick.batch_files", "Batch-Dateien" },
+                { "pick.jar_files", "Jar-Dateien" },
+                { "pick.server_files", "Serverdateien" },
+                { "pick.all_files", "Alle Dateien" },
+                { "tray.client_autostarted", "Client automatisch mit Windows gestartet." },
+                { "tray.host_autostarted", "Panel und Server automatisch mit Windows gestartet." },
+                { "tray.remote_tooltip", "Voxarium (Remote)" },
+                { "tray.host_tooltip", "Voxarium (Host-PC)" },
+                { "tray.open_remote", "Panel öffnen" },
+                { "tray.open_main", "Hauptfenster öffnen" },
+                { "tray.reconnect", "Host-PC suchen und neu verbinden" },
+                { "tray.change_address", "Adresse des Host-PCs ändern..." },
+                { "prompt.address", "Adresse des Host-PCs (z. B. http://192.168.1.50:8080) oder 'auto', um ihn automatisch zu suchen:" },
+                { "prompt.address_title", "Adresse des Host-PCs" },
+                { "prompt.save", "Speichern" },
+                { "prompt.cancel", "Abbrechen" },
+                { "tray.address_saved_title", "Adresse aktualisiert" },
+                { "tray.address_saved", "Neue Adresse gespeichert: {0}" },
+                { "tray.autostart", "Automatisch mit Windows starten" },
+                { "tray.autostart_title", "Autostart" },
+                { "tray.autostart_on", "Die Anwendung startet beim Einschalten des PCs." },
+                { "tray.autostart_off", "Autostart mit Windows ausgeschaltet." },
+                { "tray.exit", "Beenden" },
+                { "tray.exit_all", "Beenden (schließt Panel und Server)" },
+                { "disc.channels", "Benachrichtigungskanäle und Internetadresse werden geprüft..." },
+                { "disc.test_lan", "Heimnetz wird getestet ({0})..." },
+                { "disc.scan_wifi", "Schnellsuche im Heim-WLAN (Port 8080)..." },
+                { "disc.test_remote", "Internetadresse wird getestet ({0})..." },
+                { "disc.search_title", "Host-PC wird gesucht" },
+                { "disc.search_balloon", "Schnellsuche im Netzwerk und Internet..." },
+                { "disc.searching", "Host-PC wird gesucht...\r\nHeimnetz und Internetadresse." },
+                { "disc.connected_title", "Verbunden" },
+                { "disc.connected", "Mit dem Host-PC verbunden:\n{0}" },
+                { "disc.not_found_window", "Host-PC nicht gefunden.\r\nPrüfe, ob er eingeschaltet ist, oder wähle „Adresse des Host-PCs ändern“ im Menü des Symbols neben der Uhr." },
+                { "disc.not_found_title", "Host-PC nicht gefunden" },
+                { "disc.not_found", "Kein Host-PC im Netzwerk oder im Internet gefunden.\nPrüfe, ob er eingeschaltet ist und das Programm läuft." },
                 { "upd.menu", "Nach Updates suchen" } } },
             { "pt", new Dictionary<string, string> {
                 { "upd.title", "Atualização disponível" },
@@ -817,6 +1101,63 @@ namespace MinecraftControlCenter
                 { "upd.failed", "Falha na atualização: {0}" },
                 { "upd.check_failed", "Falha ao procurar atualizações: {0}" },
                 { "upd.up_to_date", "O programa está atualizado (v{0}, Build {1})." },
+                { "win.loading", "Carregando o painel de controle..." },
+                { "win.retry_button", "Tentar iniciar o painel novamente" },
+                { "win.background_tip", "O aplicativo continua funcionando em segundo plano.\nClique duas vezes no ícone ao lado do relógio para reabri-lo." },
+                { "win.retrying", "Tentando iniciar o painel novamente..." },
+                { "win.remote_failed", "Falha na conexão.\r\nProcurando o PC Host (rede de casa e internet)..." },
+                { "win.host_try", "Iniciando o painel... (tentativa {0}/30)" },
+                { "win.host_starting", "Iniciando o painel do servidor..." },
+                { "err.unknown", "Erro desconhecido." },
+                { "err.cannot_start", "Não foi possível iniciar o painel do servidor." },
+                { "err.full_log", "Registro completo: {0}" },
+                { "err.not_responding", "O painel não responde em {0}." },
+                { "err.save_config", "Não foi possível salvar a configuração do launcher:\n{0}" },
+                { "err.title", "Erro" },
+                { "err.no_app", "Arquivo app.pyc não encontrado em:\r\n{0}" },
+                { "err.no_runtime", "Ambiente Python não encontrado.\r\nReinstale o programa: a pasta 'python' da instalação está faltando." },
+                { "err.python_start", "Erro ao iniciar o Python:\r\n{0}" },
+                { "err.closed", "O painel fechou ao iniciar (código {0})." },
+                { "err.timeout", "O painel não respondeu na porta {0} em 45 segundos." },
+                { "pick.run_bat_title", "Selecione o arquivo de início do servidor (run.bat)" },
+                { "pick.folder_title", "Selecione a pasta do servidor Minecraft (abra a pasta e escolha run.bat ou qualquer arquivo)" },
+                { "pick.start_files", "Arquivos de início" },
+                { "pick.batch_files", "Arquivos batch" },
+                { "pick.jar_files", "Arquivos jar" },
+                { "pick.server_files", "Arquivos do servidor" },
+                { "pick.all_files", "Todos os arquivos" },
+                { "tray.client_autostarted", "Cliente iniciado automaticamente com o Windows." },
+                { "tray.host_autostarted", "Painel e servidor iniciados automaticamente com o Windows." },
+                { "tray.remote_tooltip", "Voxarium (Remoto)" },
+                { "tray.host_tooltip", "Voxarium (PC Host)" },
+                { "tray.open_remote", "Abrir o painel" },
+                { "tray.open_main", "Abrir a janela principal" },
+                { "tray.reconnect", "Procurar o PC Host e reconectar" },
+                { "tray.change_address", "Alterar endereço do PC Host..." },
+                { "prompt.address", "Endereço do PC Host (ex.: http://192.168.1.50:8080), ou 'auto' para procurá-lo automaticamente:" },
+                { "prompt.address_title", "Endereço do PC Host" },
+                { "prompt.save", "Salvar" },
+                { "prompt.cancel", "Cancelar" },
+                { "tray.address_saved_title", "Endereço atualizado" },
+                { "tray.address_saved", "Novo endereço salvo: {0}" },
+                { "tray.autostart", "Iniciar automaticamente com o Windows" },
+                { "tray.autostart_title", "Inicialização automática" },
+                { "tray.autostart_on", "O aplicativo será iniciado ao ligar o PC." },
+                { "tray.autostart_off", "Inicialização automática com o Windows desativada." },
+                { "tray.exit", "Sair" },
+                { "tray.exit_all", "Sair (fecha painel e servidor)" },
+                { "disc.channels", "Verificando os canais de notificação e o endereço da internet..." },
+                { "disc.test_lan", "Testando a rede de casa ({0})..." },
+                { "disc.scan_wifi", "Busca rápida na rede Wi-Fi de casa (porta 8080)..." },
+                { "disc.test_remote", "Testando o endereço da internet ({0})..." },
+                { "disc.search_title", "Procurando o PC Host" },
+                { "disc.search_balloon", "Busca rápida na rede e na internet..." },
+                { "disc.searching", "Procurando o PC Host...\r\nRede de casa e endereço da internet." },
+                { "disc.connected_title", "Conectado" },
+                { "disc.connected", "Conectado ao PC Host:\n{0}" },
+                { "disc.not_found_window", "PC Host não encontrado.\r\nVerifique se está ligado ou escolha 'Alterar endereço do PC Host' no menu do ícone ao lado do relógio." },
+                { "disc.not_found_title", "PC Host não encontrado" },
+                { "disc.not_found", "Nenhum PC Host encontrado na rede ou na internet.\nVerifique se está ligado e se o programa está aberto." },
                 { "upd.menu", "Procurar atualizações" } } }
         };
 
@@ -828,7 +1169,10 @@ namespace MinecraftControlCenter
         {
             Dictionary<string, string> d;
             string s;
-            if (!Texts.TryGetValue(Program.AppLanguage ?? "", out d) || !d.TryGetValue(key, out s))
+            // Installazioni precedenti alla scelta della lingua: quella di Windows, se è una delle sei
+            string lang = string.IsNullOrEmpty(Program.AppLanguage)
+                ? System.Globalization.CultureInfo.CurrentUICulture.TwoLetterISOLanguageName : Program.AppLanguage;
+            if (!Texts.TryGetValue(lang, out d) || !d.TryGetValue(key, out s))
                 s = Texts["it"].TryGetValue(key, out s) ? s : key;
             return args.Length > 0 ? string.Format(s, args) : s;
         }
@@ -971,7 +1315,7 @@ namespace MinecraftControlCenter
                     if (isAutostart)
                     {
                         if (trayIcon != null)
-                            trayIcon.ShowBalloonTip(3500, "Voxarium", "Client avviato automaticamente con Windows.", ToolTipIcon.Info);
+                            trayIcon.ShowBalloonTip(3500, "Voxarium", LauncherText.T("tray.client_autostarted"), ToolTipIcon.Info);
                     }
                     else
                     {
@@ -983,12 +1327,12 @@ namespace MinecraftControlCenter
                     // Modalità Host Locale: crea subito la finestra visibile e avvia backend Python in background
                     SetupLocalTray();
                     mainWindow = new MainWindow(localUrl, appIcon, trayIcon);
-                    mainWindow.UpdateLoadingText("Avvio del pannello del server in corso...");
+                    mainWindow.UpdateLoadingText(LauncherText.T("win.host_starting"));
 
                     if (isAutostart)
                     {
                         if (trayIcon != null)
-                            trayIcon.ShowBalloonTip(3500, "Voxarium", "Pannello e server avviati automaticamente con Windows.", ToolTipIcon.Info);
+                            trayIcon.ShowBalloonTip(3500, "Voxarium", LauncherText.T("tray.host_autostarted"), ToolTipIcon.Info);
                     }
                     else
                     {
@@ -1108,26 +1452,26 @@ namespace MinecraftControlCenter
             }
             catch (Exception ex)
             {
-                MessageBox.Show("Impossibile salvare la configurazione del launcher:\n" + ex.Message, "Errore", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show(LauncherText.T("err.save_config", ex.Message), LauncherText.T("err.title"), MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
         }
 
         static void SetupRemoteTray()
         {
             trayIcon = new NotifyIcon();
-            trayIcon.Text = "Voxarium (Remoto)";
+            trayIcon.Text = LauncherText.T("tray.remote_tooltip");
             trayIcon.Icon = appIcon != null ? appIcon : SystemIcons.Application;
             trayIcon.Visible = true;
 
             ContextMenu menu = new ContextMenu();
-            menu.MenuItems.Add("Apri Pannello Remoto", (s, e) => {
+            menu.MenuItems.Add(LauncherText.T("tray.open_remote"), (s, e) => {
                 if (mainWindow != null) mainWindow.ShowAndActivate();
             });
-            menu.MenuItems.Add("Rileva e Riconnetti Subito", (s, e) => {
+            menu.MenuItems.Add(LauncherText.T("tray.reconnect"), (s, e) => {
                 TriggerAutoReconnectAsync(true);
             });
-            menu.MenuItems.Add("Cambia Indirizzo Server Remoto...", (s, e) => {
-                string newUrl = PromptInput("Inserisci l'indirizzo IP del PC secondario o 'auto' per rilevamento automatico:", "Indirizzo Server Remoto", remoteUrl);
+            menu.MenuItems.Add(LauncherText.T("tray.change_address"), (s, e) => {
+                string newUrl = PromptInput(LauncherText.T("prompt.address"), LauncherText.T("prompt.address_title"), remoteUrl);
                 if (!string.IsNullOrEmpty(newUrl))
                 {
                     remoteUrl = newUrl;
@@ -1143,27 +1487,27 @@ namespace MinecraftControlCenter
                     }
                     else
                     {
-                        trayIcon.ShowBalloonTip(3000, "Indirizzo Aggiornato", "Nuovo indirizzo salvato: " + remoteUrl, ToolTipIcon.Info);
+                        trayIcon.ShowBalloonTip(3000, LauncherText.T("tray.address_saved_title"), LauncherText.T("tray.address_saved", remoteUrl), ToolTipIcon.Info);
                         if (mainWindow != null) mainWindow.NavigateTo(remoteUrl);
                     }
                 }
             });
             menu.MenuItems.Add("-");
-            MenuItem itemAutoRemote = new MenuItem("Avvia automaticamente con Windows");
+            MenuItem itemAutoRemote = new MenuItem(LauncherText.T("tray.autostart"));
             itemAutoRemote.Checked = IsAutoStartEnabled();
             itemAutoRemote.Click += (s, e) => {
                 bool newState = !itemAutoRemote.Checked;
                 SetAutoStart(newState);
                 itemAutoRemote.Checked = IsAutoStartEnabled();
                 if (itemAutoRemote.Checked)
-                    trayIcon.ShowBalloonTip(3000, "Avvio Automatico", "L'applicazione si avvierà all'accensione del PC.", ToolTipIcon.Info);
+                    trayIcon.ShowBalloonTip(3000, LauncherText.T("tray.autostart_title"), LauncherText.T("tray.autostart_on"), ToolTipIcon.Info);
                 else
-                    trayIcon.ShowBalloonTip(3000, "Avvio Automatico", "Avvio automatico con Windows disattivato.", ToolTipIcon.Info);
+                    trayIcon.ShowBalloonTip(3000, LauncherText.T("tray.autostart_title"), LauncherText.T("tray.autostart_off"), ToolTipIcon.Info);
             };
             menu.MenuItems.Add(itemAutoRemote);
             menu.MenuItems.Add(LauncherText.T("upd.menu"), (s, e) => RemoteUpdater.CheckFromMenu());
             menu.MenuItems.Add("-");
-            menu.MenuItems.Add("Esci", (s, e) => {
+            menu.MenuItems.Add(LauncherText.T("tray.exit"), (s, e) => {
                 trayIcon.Visible = false;
                 if (mainWindow != null) mainWindow.AllowExitAndClose();
                 Application.Exit();
@@ -1178,29 +1522,29 @@ namespace MinecraftControlCenter
         static void SetupLocalTray()
         {
             trayIcon = new NotifyIcon();
-            trayIcon.Text = "Pannello Server Minecraft (Host Locale)";
+            trayIcon.Text = LauncherText.T("tray.host_tooltip");
             trayIcon.Icon = appIcon != null ? appIcon : SystemIcons.Application;
             trayIcon.Visible = true;
 
             ContextMenu menu = new ContextMenu();
-            menu.MenuItems.Add("Apri Finestra Principale", (s, e) => {
+            menu.MenuItems.Add(LauncherText.T("tray.open_main"), (s, e) => {
                 if (mainWindow != null) mainWindow.ShowAndActivate();
             });
             menu.MenuItems.Add("-");
-            MenuItem itemAutoLocal = new MenuItem("Avvia automaticamente con Windows");
+            MenuItem itemAutoLocal = new MenuItem(LauncherText.T("tray.autostart"));
             itemAutoLocal.Checked = IsAutoStartEnabled();
             itemAutoLocal.Click += (s, e) => {
                 bool newState = !itemAutoLocal.Checked;
                 SetAutoStart(newState);
                 itemAutoLocal.Checked = IsAutoStartEnabled();
                 if (itemAutoLocal.Checked)
-                    trayIcon.ShowBalloonTip(3000, "Avvio Automatico", "L'applicazione si avvierà all'accensione del PC.", ToolTipIcon.Info);
+                    trayIcon.ShowBalloonTip(3000, LauncherText.T("tray.autostart_title"), LauncherText.T("tray.autostart_on"), ToolTipIcon.Info);
                 else
-                    trayIcon.ShowBalloonTip(3000, "Avvio Automatico", "Avvio automatico con Windows disattivato.", ToolTipIcon.Info);
+                    trayIcon.ShowBalloonTip(3000, LauncherText.T("tray.autostart_title"), LauncherText.T("tray.autostart_off"), ToolTipIcon.Info);
             };
             menu.MenuItems.Add(itemAutoLocal);
             menu.MenuItems.Add("-");
-            menu.MenuItems.Add("Esci da Tutto", (s, e) => {
+            menu.MenuItems.Add(LauncherText.T("tray.exit_all"), (s, e) => {
                 trayIcon.Visible = false;
                 if (mainWindow != null) mainWindow.AllowExitAndClose();
                 KillPythonBackend();
@@ -1285,14 +1629,14 @@ namespace MinecraftControlCenter
             if (!File.Exists(appPyPath)) appPyPath = Path.Combine(appDir, "app.pyc");
             if (!File.Exists(appPyPath))
             {
-                BackendError = "File app.pyc non trovato in:\r\n" + appDir;
+                BackendError = LauncherText.T("err.no_app", appDir);
                 return false;
             }
 
             string pyExe = FindPythonExe();
             if (pyExe == null)
             {
-                BackendError = "Runtime Python non trovato.\r\nReinstalla il programma: la cartella 'python' dell'installazione è mancante.";
+                BackendError = LauncherText.T("err.no_runtime");
                 return false;
             }
 
@@ -1336,7 +1680,7 @@ namespace MinecraftControlCenter
             }
             catch (Exception ex)
             {
-                BackendError = "Errore nell'avvio di Python:\r\n" + ex.Message;
+                BackendError = LauncherText.T("err.python_start", ex.Message);
                 return false;
             }
 
@@ -1348,12 +1692,12 @@ namespace MinecraftControlCenter
                 if (pythonProcess.HasExited)
                 {
                     Thread.Sleep(300); // lascia arrivare le ultime righe nel log
-                    BackendError = "Il pannello si è chiuso all'avvio (codice " + pythonProcess.ExitCode + ").\r\n\r\n" + GetBackendLogTail(12);
+                    BackendError = LauncherText.T("err.closed", pythonProcess.ExitCode) + "\r\n\r\n" + GetBackendLogTail(12);
                     return false;
                 }
                 Thread.Sleep(200);
             }
-            BackendError = "Il pannello non ha risposto sulla porta " + webPort + " entro 45 secondi.\r\n\r\n" + GetBackendLogTail(12);
+            BackendError = LauncherText.T("err.timeout", webPort) + "\r\n\r\n" + GetBackendLogTail(12);
             return false;
         }
 
@@ -1383,17 +1727,17 @@ namespace MinecraftControlCenter
                 label.Text = prompt;
                 textBox.Text = defaultValue;
 
-                buttonOk.Text = "Salva";
-                buttonCancel.Text = "Annulla";
+                buttonOk.Text = LauncherText.T("prompt.save");
+                buttonCancel.Text = LauncherText.T("prompt.cancel");
                 buttonOk.DialogResult = DialogResult.OK;
                 buttonCancel.DialogResult = DialogResult.Cancel;
 
-                label.SetBounds(16, 16, 380, 26);
-                textBox.SetBounds(16, 46, 380, 23);
-                buttonOk.SetBounds(236, 82, 75, 26);
-                buttonCancel.SetBounds(321, 82, 75, 26);
+                label.SetBounds(16, 14, 380, 44);
+                textBox.SetBounds(16, 62, 380, 23);
+                buttonOk.SetBounds(216, 98, 85, 28);
+                buttonCancel.SetBounds(311, 98, 85, 28);
 
-                form.ClientSize = new Size(415, 122);
+                form.ClientSize = new Size(415, 140);
                 form.FormBorderStyle = FormBorderStyle.FixedDialog;
                 form.StartPosition = FormStartPosition.CenterScreen;
                 form.MinimizeBox = false;
@@ -1546,7 +1890,7 @@ namespace MinecraftControlCenter
 
         public static string AutoDiscoverServerUrl(Action<string> statusUpdate = null)
         {
-            if (statusUpdate != null) statusUpdate("Verifica canali di sincronizzazione Cloud e notifiche push...");
+            if (statusUpdate != null) statusUpdate(LauncherText.T("disc.channels"));
 
             // 1. Query ntfy for candidates: solo sul topic del proprio Host (imparato in rete locale), mai su un topic fisso
             List<string> ntfyCandidates = string.IsNullOrEmpty(hostPushTopic) ? new List<string>() : QueryNtfyCandidates(hostPushTopic);
@@ -1556,13 +1900,13 @@ namespace MinecraftControlCenter
             {
                 if (cand.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
                 {
-                    if (statusUpdate != null) statusUpdate("Test connessione LAN (" + cand + ")...");
+                    if (statusUpdate != null) statusUpdate(LauncherText.T("disc.test_lan", cand));
                     if (VerifyKnownHost(cand)) { LearnHostIdentity(cand); return cand; }
                 }
             }
 
             // 2. Fast local subnet scan (in case host changed local IP)
-            if (statusUpdate != null) statusUpdate("Scansione rapida della rete Wi-Fi locale (porta 8080)...");
+            if (statusUpdate != null) statusUpdate(LauncherText.T("disc.scan_wifi"));
             string lanFound = ScanLocalSubnetForServer(8080);
             if (!string.IsNullOrEmpty(lanFound)) { LearnHostIdentity(lanFound); return lanFound; }
 
@@ -1571,7 +1915,7 @@ namespace MinecraftControlCenter
             {
                 if (cand.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
                 {
-                    if (statusUpdate != null) statusUpdate("Test indirizzo remoto (" + cand + ")...");
+                    if (statusUpdate != null) statusUpdate(LauncherText.T("disc.test_remote", cand));
                     if (VerifyKnownHost(cand)) return cand;
                 }
             }
@@ -1614,12 +1958,12 @@ namespace MinecraftControlCenter
                 {
                     if (userInitiated && trayIcon != null)
                     {
-                        trayIcon.ShowBalloonTip(2000, "Ricerca Server", "Scansione rapida LAN e Cloud in corso...", ToolTipIcon.Info);
+                        trayIcon.ShowBalloonTip(2000, LauncherText.T("disc.search_title"), LauncherText.T("disc.search_balloon"), ToolTipIcon.Info);
                     }
 
                     if (mainWindow != null)
                     {
-                        mainWindow.UpdateLoadingText("Ricerca automatica del server Minecraft in corso...\r\nScansione rete locale Wi-Fi e Cloud.");
+                        mainWindow.UpdateLoadingText(LauncherText.T("disc.searching"));
                     }
 
                     string found = AutoDiscoverServerUrl((msg) =>
@@ -1639,18 +1983,18 @@ namespace MinecraftControlCenter
 
                         if (trayIcon != null)
                         {
-                            trayIcon.ShowBalloonTip(3500, "Server Connesso", "Connesso automaticamente al server Minecraft su:\n" + found, ToolTipIcon.Info);
+                            trayIcon.ShowBalloonTip(3500, LauncherText.T("disc.connected_title"), LauncherText.T("disc.connected", found), ToolTipIcon.Info);
                         }
                     }
                     else
                     {
                         if (mainWindow != null)
                         {
-                            mainWindow.UpdateLoadingText("Impossibile trovare il server Minecraft in rete.\r\nVerifica che il PC host sia acceso o seleziona 'Cambia Indirizzo' dal menu dell'icona accanto all'orologio.");
+                            mainWindow.UpdateLoadingText(LauncherText.T("disc.not_found_window"));
                         }
                         if (userInitiated && trayIcon != null)
                         {
-                            trayIcon.ShowBalloonTip(3500, "Server Non Rilevato", "Nessun server trovato sulla rete locale o via Internet.\nVerifica che il server sia avviato.", ToolTipIcon.Warning);
+                            trayIcon.ShowBalloonTip(3500, LauncherText.T("disc.not_found_title"), LauncherText.T("disc.not_found"), ToolTipIcon.Warning);
                         }
                     }
                 }

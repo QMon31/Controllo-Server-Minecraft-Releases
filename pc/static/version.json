@@ -1,8 +1,8 @@
 {
-  "version_code": 96,
-  "version_name": "4.12.4",
+  "version_code": 102,
+  "version_name": "4.12.5",
   "download_url": "/static/Controllo_Server_Minecraft.apk",
-  "release_notes": "Correzione: i testi non tradotti (cronologia vecchia, nomi, messaggi) non vengono più modificati per sbaglio nelle altre lingue.",
+  "release_notes": "Nuova icona di Voxarium, anche nelle notifiche; titolo intero nell'intestazione di ogni sezione; finestre del PIN e Info più leggibili; l'aggiornamento scaricato non resta più in tre copie sul telefono.",
   "min_sdk": 26,
   "target_sdk": 35
 }

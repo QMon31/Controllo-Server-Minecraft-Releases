@@ -210,7 +210,7 @@ public class ServerMonitorService extends Service {
 
         builder.setContentTitle("Voxarium")
                 .setContentText(I18n.t("notif.monitoraggio_attivo_ricezione"))
-                .setSmallIcon(R.drawable.ic_launcher)
+                .setSmallIcon(R.drawable.ic_stat_voxarium)
                 .setContentIntent(pendingIntent)
                 .setOngoing(true);
 
@@ -584,7 +584,7 @@ public class ServerMonitorService extends Service {
             builder.setContentTitle(I18n.fromPc(title))
                     .setContentText(I18n.fromPc(message))
                     .setStyle(new Notification.BigTextStyle().bigText(I18n.fromPc(message)))
-                    .setSmallIcon(R.drawable.ic_launcher)
+                    .setSmallIcon(R.drawable.ic_stat_voxarium)
                     .setContentIntent(pendingIntent)
                     .setAutoCancel(true)
                     .setPriority(Notification.PRIORITY_MAX)
@@ -619,7 +619,7 @@ public class ServerMonitorService extends Service {
             builder.setContentTitle(I18n.fromPc(title))
                     .setContentText(I18n.fromPc(message))
                     .setStyle(new Notification.BigTextStyle().bigText(I18n.fromPc(message)))
-                    .setSmallIcon(R.drawable.ic_launcher)
+                    .setSmallIcon(R.drawable.ic_stat_voxarium)
                     .setContentIntent(pendingIntent)
                     .setAutoCancel(true);
 
@@ -652,7 +652,7 @@ public class ServerMonitorService extends Service {
             builder.setContentTitle(I18n.fromPc(title))
                     .setContentText(I18n.fromPc(message))
                     .setStyle(new Notification.BigTextStyle().bigText(I18n.fromPc(message)))
-                    .setSmallIcon(R.drawable.ic_launcher)
+                    .setSmallIcon(R.drawable.ic_stat_voxarium)
                     .setContentIntent(pendingIntent)
                     .setAutoCancel(true);
 
@@ -684,7 +684,7 @@ public class ServerMonitorService extends Service {
             builder.setContentTitle(I18n.fromPc(title))
                     .setContentText(I18n.fromPc(message))
                     .setStyle(new Notification.BigTextStyle().bigText(I18n.fromPc(message)))
-                    .setSmallIcon(R.drawable.ic_launcher)
+                    .setSmallIcon(R.drawable.ic_stat_voxarium)
                     .setContentIntent(pendingIntent)
                     .setAutoCancel(true);
 

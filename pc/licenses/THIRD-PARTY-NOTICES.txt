@@ -1,0 +1,27 @@
+Voxarium - licenses and third-party notices
+===========================================
+
+Voxarium is free software released under the GNU General Public License version 3
+(see Voxarium-LICENSE-GPL-3.0.txt). Source code: https://github.com/QMon31/Voxarium
+
+Voxarium is not an official Minecraft product and is not approved by or associated with
+Mojang or Microsoft.
+
+This installation also contains the following third-party components, unmodified and
+redistributed under their own licenses:
+
+1. Microsoft Edge WebView2 SDK (Microsoft.Web.WebView2 NuGet package, version 1.0.4258.31)
+   Files: Microsoft.Web.WebView2.Core.dll, Microsoft.Web.WebView2.WinForms.dll,
+          WebView2Loader.dll (signed by Microsoft Corporation)
+   License: BSD-style license, see WebView2-SDK-LICENSE.txt
+   Notices of the components it includes: WebView2-SDK-NOTICE.txt
+   The WebView2 Runtime that displays the panel is part of Windows and is not included.
+
+2. Python (embeddable distribution, Host installations only, folder "python")
+   License: Python Software Foundation License, see Python-LICENSE.txt
+   (the same text is in python\LICENSE.txt)
+
+3. Python libraries used by the panel (Host installations only), for example FastAPI,
+   Starlette, Uvicorn, Pydantic, websockets, psutil, cryptography, Pillow, qrcode.
+   Each library's license is in its folder python\Lib\site-packages\<name>.dist-info
+   (files LICENSE, LICENSE.txt or the "licenses" subfolder).

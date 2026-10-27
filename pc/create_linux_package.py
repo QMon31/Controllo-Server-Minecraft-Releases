@@ -47,6 +47,8 @@ def build(out=OUT):
                 path = os.path.join(root, file)
                 _add(tf, path, path.replace("\\", "/"))
         _add(tf, "requirements.txt", "requirements.txt")
+        # Licenza GPL di Voxarium (il pacchetto Linux non contiene WebView2 né un Python proprio)
+        _add(tf, os.path.join("licenses", "Voxarium-LICENSE-GPL-3.0.txt"), "LICENSE.txt")
         _add(tf, os.path.join("linux", "install.sh"), "install.sh", 0o755)
         _add(tf, os.path.join("linux", "voxarium.service"), "voxarium.service")
         for f in ("minecraft_block.png", "favicon.ico"):

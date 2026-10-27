@@ -2049,7 +2049,7 @@ function renderErrorsFeed(errors) {
           <span class="error-level-pill ${pillClass}">${escapeHtml(lvl)}</span>
           <span class="error-time">${escapeHtml(err.time || '')}</span>
         </div>
-        <button class="btn btn-xs btn-ghost" style="padding: 2px 6px; font-size: 0.72rem; color: #9a9ca2;" title="${th('ui.copia_testo_errore')}" onclick="copyErrorItemText(event, this)"></button>
+        <button class="btn btn-xs btn-ghost" style="padding: 2px 6px; font-size: 0.72rem; color: #9a9ca2;" title="${th('ui.copia_testo_errore')}" onclick="copyErrorItemText(event, this)">${th('header.copia')}</button>
       </div>
       <div class="error-msg-text">${escapeHtml(err.message || err.raw || t('msg.errore'))}</div>
       ${err.raw && err.raw !== err.message ? `<div class="error-raw-preview">${escapeHtml(err.raw)}</div>` : ''}
@@ -2095,7 +2095,7 @@ function appendErrorItem(err) {
         <span class="error-level-pill ${pillClass}">${escapeHtml(lvl)}</span>
         <span class="error-time">${escapeHtml(err.time || new Date().toLocaleTimeString('it-IT'))}</span>
       </div>
-      <button class="btn btn-xs btn-ghost" style="padding: 2px 6px; font-size: 0.72rem; color: #9a9ca2;" title="${th('ui.copia_testo_errore')}" onclick="copyErrorItemText(event, this)"></button>
+      <button class="btn btn-xs btn-ghost" style="padding: 2px 6px; font-size: 0.72rem; color: #9a9ca2;" title="${th('ui.copia_testo_errore')}" onclick="copyErrorItemText(event, this)">${th('header.copia')}</button>
     </div>
     <div class="error-msg-text">${escapeHtml(err.message || err.raw || t('msg.errore'))}</div>
     ${err.raw && err.raw !== err.message ? `<div class="error-raw-preview">${escapeHtml(err.raw)}</div>` : ''}
@@ -6619,7 +6619,7 @@ async function loadWhitelist(isManual = false) {
       row.style = 'display: flex; justify-content: space-between; align-items: center; background: #0b1120; padding: 6px 10px; border-radius: 6px; border: 1px solid #212023;';
       row.innerHTML = `
         <span style="color: #f4f4f5; font-weight: 500;">${escapeHtml(name)}</span>
-        <button class="btn btn-xs btn-rose" onclick="removeWhitelistPlayer('${escapeJsAttr(name)}')">${th('msg.rimuovi')}</button>
+        <button class="btn btn-xs btn-ruby" onclick="removeWhitelistPlayer('${escapeJsAttr(name)}')">${th('msg.rimuovi')}</button>
       `;
       listEl.appendChild(row);
     });
@@ -9374,9 +9374,9 @@ function renderInstancesGrid() {
           ` : `
             <button class="btn btn-sm btn-emerald" onclick="switchInstance('${inst.id}')">Passa a questa</button>
           `}
-          <button class="btn btn-sm btn-secondary" onclick="openEditInstanceModal('${inst.id}')" title="${th('ui.modifica_parametri_istanza')}"></button>
+          <button class="btn btn-sm btn-secondary" onclick="openEditInstanceModal('${inst.id}')" title="${th('ui.modifica_parametri_istanza')}">${th('files.modifica')}</button>
           ${!isActive && inst.id !== 'default' ? `
-            <button class="btn btn-sm btn-danger-subtle" onclick="deleteInstanceProfile('${inst.id}', '${escapeJsString(inst.name || inst.id)}')" title="${th('msg.rimuovi_istanza')}"></button>
+            <button class="btn btn-sm btn-danger-subtle" onclick="deleteInstanceProfile('${inst.id}', '${escapeJsString(inst.name || inst.id)}')" title="${th('msg.rimuovi_istanza')}">${th('msg.rimuovi')}</button>
           ` : ''}
         </div>
       </div>
@@ -9794,16 +9794,16 @@ function renderFileManagerTable(files) {
         <td style="text-align: right;">
           <div class="fm-row-actions">
             ${isEditable ? `
-              <button class="btn-fm-action" onclick="openFileForEditing('${escapeJsAttr(f.rel_path)}', '${escapeJsAttr(f.name)}')" title="${th('msg.modifica_file_nel_browser')}"></button>
+              <button class="btn btn-xs btn-secondary btn-fm-action" onclick="openFileForEditing('${escapeJsAttr(f.rel_path)}', '${escapeJsAttr(f.name)}')" title="${th('msg.modifica_file_nel_browser')}">${th('files.modifica')}</button>
             ` : ''}
             ${isZip ? `
-              <button class="btn-fm-action" onclick="unzipArchiveItem('${escapeJsAttr(f.rel_path)}')" title="${th('msg.estrai_archivio_zip_qui')}"></button>
+              <button class="btn btn-xs btn-secondary btn-fm-action" onclick="unzipArchiveItem('${escapeJsAttr(f.rel_path)}')" title="${th('msg.estrai_archivio_zip_qui')}">${th('files.estrai')}</button>
             ` : ''}
             ${!isDir ? `
-              <a href="/api/files/download?subpath=${encodeURIComponent(f.rel_path)}" class="btn-fm-action" download title="${th('msg.scarica_file_2')}"></a>
+              <a href="/api/files/download?subpath=${encodeURIComponent(f.rel_path)}" class="btn btn-xs btn-secondary btn-fm-action" download title="${th('msg.scarica_file_2')}">${th('ui.scarica')}</a>
             ` : ''}
-            <button class="btn-fm-action" onclick="promptRenameItem('${escapeJsAttr(f.rel_path)}', '${escapeJsAttr(f.name)}')" title="${th('ui.rinomina')}"></button>
-            <button class="btn-fm-action btn-fm-delete" onclick="deleteFileManagerItem('${escapeJsAttr(f.rel_path)}', '${escapeJsAttr(f.name)}', ${isDir})" title="${th('msg.elimina')}"></button>
+            <button class="btn btn-xs btn-secondary btn-fm-action" onclick="promptRenameItem('${escapeJsAttr(f.rel_path)}', '${escapeJsAttr(f.name)}')" title="${th('ui.rinomina')}">${th('ui.rinomina')}</button>
+            <button class="btn btn-xs btn-danger-subtle btn-fm-action btn-fm-delete" onclick="deleteFileManagerItem('${escapeJsAttr(f.rel_path)}', '${escapeJsAttr(f.name)}', ${isDir})" title="${th('msg.elimina')}">${th('msg.elimina')}</button>
           </div>
         </td>
       </tr>

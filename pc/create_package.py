@@ -68,6 +68,11 @@ with zipfile.ZipFile(zip_filename, "w", zipfile.ZIP_DEFLATED) as zf:
         if f.endswith(".py"):
             add_compiled(zf, os.path.join("routes", f), "routes/" + f + "c")
 
+    # Licenze: GPL di Voxarium e testi delle librerie incluse (WebView2, Python), obbligatori per ridistribuirle
+    for f in sorted(os.listdir("licenses")):
+        zf.write(os.path.join("licenses", f), "licenses/" + f)
+        print(f"Added license file: licenses/{f}")
+
     if os.path.isdir("static"):
         for root, dirs, files in os.walk("static"):
             for file in files:
