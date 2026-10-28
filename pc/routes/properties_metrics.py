@@ -29,6 +29,14 @@ def api_get_server_properties(request: Request):
             pass
 
     props = manager.get_server_properties()
+    pvp_rule = manager.pvp_is_gamerule()
+    if pvp_rule:
+        # Minecraft 1.21.9+: pvp= non c'è più in server.properties. Pannello e app leggono "pvp" da qui: valore vero
+        # dal server acceso, altrimenti quello scelto dal pannello (prima mostravano sempre "attivo")
+        value = manager.read_gamerules(["pvp"]).get("pvp") if manager.state == "ONLINE" else None
+        if value is None:
+            value = (manager.config.get("pvp_pending") or manager.config.get("pvp_gamerule") or "true") != "false"
+        props["pvp"] = "true" if value else "false"
     # Mask rcon.password before returning raw_text / props
     raw_text = re.sub(r"(?m)^(rcon\.password=).*$", r"\1********", raw_text)
     if "rcon.password" in props:
@@ -52,7 +60,8 @@ def api_get_server_properties(request: Request):
         "raw": raw_text,
         "backup_exists": backup_exists,
         "backup_info": backup_info,
-        "server_state": manager.state
+        "server_state": manager.state,
+        "pvp_is_gamerule": pvp_rule
     }
 
 @router.post("/api/server/properties/restore-backup")

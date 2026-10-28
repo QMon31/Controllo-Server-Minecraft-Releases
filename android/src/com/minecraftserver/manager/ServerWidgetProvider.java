@@ -175,7 +175,23 @@ public class ServerWidgetProvider extends AppWidgetProvider {
             os.close();
             int code = conn.getResponseCode();
             if (code == 403) {
-                prefs.edit().putString(MainActivity.PREF_ADMIN_PIN_REJECTED, pin).apply();
+                // PIN sbagliato: lo si ricorda come rifiutato. Non con "PIN predefinito" (il PC rifiuta solo l'accesso
+                // da internet con 1234): prima il widget lo segnava come sbagliato e non entrava più nemmeno in casa
+                String detail = "";
+                try {
+                    InputStream es = conn.getErrorStream();
+                    if (es != null) {
+                        BufferedReader er = new BufferedReader(new InputStreamReader(es, StandardCharsets.UTF_8));
+                        StringBuilder eb = new StringBuilder();
+                        String l;
+                        while ((l = er.readLine()) != null) eb.append(l);
+                        er.close();
+                        detail = eb.toString();
+                    }
+                } catch (Exception ignored) {}
+                if (!detail.contains("PIN predefinito")) {
+                    prefs.edit().putString(MainActivity.PREF_ADMIN_PIN_REJECTED, pin).apply();
+                }
             }
             if (code == 200) {
                 InputStream is = conn.getInputStream();

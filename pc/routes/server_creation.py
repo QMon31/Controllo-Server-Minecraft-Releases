@@ -10,7 +10,12 @@ from app import (
     ForgeInstallRequest, _async_broadcast, active_websockets, forge_installer, is_safe_server_path, manager, open_directory_in_explorer, verify_admin_access, verify_host_only_access,
 )
 
+from server_installer import folder_has_world
+
 router = APIRouter()
+
+WORLD_IN_FOLDER_MSG = ("In questa cartella c'è già un server con il suo mondo: scegli una cartella vuota o nuova "
+                       "per il nuovo server.")
 
 
 # =========================================================
@@ -51,6 +56,11 @@ def api_forge_install(req: ForgeInstallRequest, request: Request):
         raise HTTPException(status_code=409, detail="Il server Minecraft è attualmente in esecuzione. Spegni il server attivo prima di procedere con una nuova installazione.")
     if core.backup_mgr.is_running:
         raise HTTPException(status_code=409, detail="Attendi la fine del backup o del ripristino in corso.")
+    if folder_has_world(req.target_dir):
+        raise HTTPException(status_code=409, detail=WORLD_IN_FOLDER_MSG)
+    port_error = core.minecraft_port_error(req.port)
+    if port_error:
+        raise HTTPException(status_code=400, detail=port_error)
     success = forge_installer.start_installation(
         target_dir=req.target_dir,
         server_type=req.server_type,

@@ -34,6 +34,40 @@ def _make_writable(path: str):
             pass
     return None
 
+DISK_FULL_MSG = ("Spazio insufficiente sul Desktop per il backup: libera spazio e riprova. L'ultimo backup "
+                 "è rimasto com'era.")
+
+
+def _is_disk_full(e: BaseException) -> bool:
+    """Errore di disco pieno (Windows: 112, Linux: ENOSPC)."""
+    import errno
+    return isinstance(e, OSError) and (getattr(e, "winerror", None) in (39, 112) or e.errno == errno.ENOSPC)
+
+
+RESTORE_SPACE_MSG = ("Spazio insufficiente sul disco del server per il ripristino: servono {0} GB, liberi {1} GB. "
+                     "Libera spazio e riprova: il mondo non è stato toccato.")
+
+
+RESTORE_CANCELLED_MSG = "Ripristino annullato: il mondo è tornato com'era prima del ripristino."
+RESTORE_CANCELLED_PARTIAL_MSG = ("Ripristino annullato, ma alcuni file non sono tornati com'erano: le versioni di prima "
+                                 "sono nella cartella _prima_del_ripristino accanto a quella del server.")
+
+
+class RestoreSpaceError(Exception):
+    """Disco del server troppo pieno per il ripristino (controllato prima di toccare il mondo)."""
+
+
+def _tree_size(path: str) -> int:
+    total = 0
+    for root, _dirs, files in os.walk(path):
+        for f in files:
+            try:
+                total += os.path.getsize(os.path.join(root, f))
+            except OSError:
+                pass
+    return total
+
+
 def _remove_tree(path: str):
     """Cancella una cartella anche con file in sola lettura (Windows)."""
     def _retry(fn, p, *_):
@@ -227,8 +261,9 @@ class BackupManager:
                 pass
 
     def _make_room(self, needed_bytes: int):
-        """Spazio sul Desktop per il backup nuovo: si tolgono prima le copie vecchie (dalla più vecchia) e solo se
-        non basta ancora l'ultimo backup, come prima."""
+        """Spazio sul Desktop per il backup nuovo: si tolgono le copie vecchie, dalla più vecchia. L'ultimo backup
+        resta finché quello nuovo non è completo: prima, con poco spazio, si cancellava subito e se il backup nuovo
+        non riusciva (annullato, disco pieno, PC spento) non restava nessun backup."""
         def free():
             try:
                 return shutil.disk_usage(self.desktop_dir).free
@@ -240,12 +275,6 @@ class BackupManager:
                 return
             try:
                 os.remove(old)
-            except OSError:
-                pass
-        f = free()
-        if f is not None and f < needed_bytes and os.path.exists(self.target_path):
-            try:
-                os.remove(self.target_path)
             except OSError:
                 pass
 
@@ -542,7 +571,9 @@ class BackupManager:
 
                     except InterruptedError:
                         raise
-                    except Exception:
+                    except Exception as fe:
+                        if _is_disk_full(fe):
+                            raise   # disco pieno: il backup non è completo, non un file da saltare
                         # Non-critical skipped file (e.g. transient log or locked cache file)
                         processed_bytes += sz
                         skipped_files.append(rel_p.replace('\\', '/'))
@@ -642,8 +673,12 @@ class BackupManager:
                 self.is_running = False
                 self.cancel_requested = False
                 self.progress["active"] = False
-                self.progress["status"] = f"Errore durante il backup: {e}"
-                self.progress["error"] = str(e)
+                if _is_disk_full(e):
+                    self.progress["status"] = DISK_FULL_MSG
+                    self.progress["error"] = DISK_FULL_MSG
+                else:
+                    self.progress["status"] = f"Errore durante il backup: {e}"
+                    self.progress["error"] = str(e)
             self._notify_subscribers()
 
     @staticmethod
@@ -674,9 +709,9 @@ class BackupManager:
                     pass
         cloud_dir = self.cloud_sync_dir
         cloud_ok = bool(cloud_dir) and os.path.isdir(cloud_dir)
-        # Il backup vecchio e le sue copie precedenti si possono togliere se manca spazio: il loro spazio conta come libero
-        old_desktop = sum(os.path.getsize(p) for p in [self.target_path] + self.old_copies(self.target_path)
-                          if os.path.isfile(p))
+        # Solo le copie precedenti si possono togliere se manca spazio: l'ultimo backup resta finché il nuovo non è
+        # completo, quindi il suo spazio non conta come libero (prima la stima diceva "ci sta" contando anche quello)
+        old_desktop = sum(os.path.getsize(p) for p in self.old_copies(self.target_path) if os.path.isfile(p))
         old_cloud = 0
         if cloud_ok:
             old = os.path.join(cloud_dir, self.target_filename)
@@ -968,6 +1003,7 @@ class BackupManager:
             done_bytes = 0
             files_done = 0
             failed_files = []
+            undo = []   # (file del server, dove è finito quello di prima o None se non c'era): per annullare
             try:
                 with zipfile.ZipFile(src, 'r') as zf:
                     infolist = zf.infolist()
@@ -997,6 +1033,16 @@ class BackupManager:
                     # è immediato) in <server>_prima_del_ripristino accanto alla cartella del server. Si tiene solo
                     # l'ultima: se si ripristina il backup sbagliato, il mondo di prima è ancora lì.
                     safety_root = server_root + RESTORE_SAFETY_SUFFIX
+                    # I file di adesso si spostano (non liberano spazio): il disco del server deve contenere tutto il
+                    # backup. Prima con poco spazio i file non scritti restavano solo nella cartella di sicurezza e il
+                    # ripristino finiva "con successo" con un mondo a metà
+                    needed = int(total_bytes * 1.02) + 64 * 1024 * 1024
+                    free = self._free_bytes(os.path.dirname(server_root) or server_root)
+                    if free is not None:
+                        free += _tree_size(safety_root)   # la copia del ripristino precedente si cancella
+                        if free < needed:
+                            raise RestoreSpaceError(RESTORE_SPACE_MSG.format(round(needed / 1024 ** 3, 1),
+                                                                             round(free / 1024 ** 3, 1)))
                     try:
                         if os.path.isdir(safety_root):
                             _remove_tree(safety_root)
@@ -1005,19 +1051,23 @@ class BackupManager:
                         print(f"[Ripristino] Cartella {safety_root} non creata ({se}): i file vecchi vengono sostituiti")
                         safety_root = None
 
-                    def _set_aside(path: str):
-                        """Sposta un file del server nella cartella di sicurezza (copia se lo spostamento non riesce)."""
+                    def _set_aside(path: str) -> Optional[str]:
+                        """Sposta un file del server nella cartella di sicurezza (copia se lo spostamento non riesce).
+                        Restituisce dove è finito se è stato spostato (None se copiato o non messo da parte)."""
                         if not safety_root:
-                            return
+                            return None
                         dst = os.path.join(safety_root, os.path.relpath(path, server_root))
                         try:
                             os.makedirs(os.path.dirname(dst), exist_ok=True)
                             try:
                                 os.replace(path, dst)
+                                return dst
                             except OSError:
                                 shutil.copy2(path, dst)
+                                return dst
                         except OSError as me:
                             print(f"[Ripristino] {path} non messo da parte: {me}")
+                        return None
 
                     CHUNK_SIZE = 2 * 1024 * 1024  # 2 MB chunks
                     for info in infolist:
@@ -1035,9 +1085,13 @@ class BackupManager:
 
                         os.makedirs(os.path.dirname(dest), exist_ok=True)
                         old_attrs = _make_writable(dest)
+                        moved_to = None
                         try:
-                            if os.path.isfile(dest):
-                                _set_aside(dest)
+                            existed = os.path.isfile(dest)
+                            if existed:
+                                moved_to = _set_aside(dest)
+                            if moved_to or not existed:
+                                undo.append((dest, moved_to))
                             with zf.open(info) as src_f, open(dest, "wb") as out_f:
                                 while True:
                                     if self.cancel_requested:
@@ -1087,6 +1141,12 @@ class BackupManager:
                             raise
                         except Exception as fe:
                             failed_files.append((info.filename, str(fe)))
+                            if moved_to:
+                                # File non scritto: torna al suo posto quello di prima (prima mancava dal mondo)
+                                try:
+                                    os.replace(moved_to, dest)   # sostituisce anche un file scritto a metà
+                                except OSError as be:
+                                    print(f"[Ripristino] {dest} non rimesso a posto: {be}")
 
                     # Pulizia dei file creati dopo il backup. Si eliminano SOLO i file che il backup avrebbe salvato:
                     # quelli esclusi (backups/, crash-reports/, Distant Horizons se escluso, file di sistema...) non si toccano.
@@ -1147,6 +1207,14 @@ class BackupManager:
                         self.progress["status"] = status_text
                     self._notify_subscribers()
 
+            except RestoreSpaceError as se:
+                with self.lock:
+                    self.is_running = False
+                    self.cancel_requested = False
+                    self.progress["active"] = False
+                    self.progress["status"] = str(se)
+                    self.progress["error"] = str(se)
+                self._notify_subscribers()
             except InterruptedError:
                 with self.lock:
                     self.is_running = False
@@ -1157,6 +1225,19 @@ class BackupManager:
                     self.progress["eta_seconds"] = 0
                     self.progress["eta_formatted"] = "Annullato"
                     self.progress["status"] = "Ripristino annullato e bloccato dall'utente."
+                # Il mondo torna com'era: prima restava metà del backup e metà del mondo di prima
+                rolled_back = True
+                for dest, aside in reversed(undo):
+                    try:
+                        if aside and os.path.exists(aside):
+                            os.replace(aside, dest)
+                        elif not aside and os.path.exists(dest):
+                            os.remove(dest)
+                    except OSError as re_err:
+                        rolled_back = False
+                        print(f"[Ripristino] {dest} non rimesso com'era: {re_err}")
+                with self.lock:
+                    self.progress["status"] = RESTORE_CANCELLED_MSG if rolled_back else RESTORE_CANCELLED_PARTIAL_MSG
                     self.progress["error"] = "Operazione annullata dall'utente."
                 self._notify_subscribers()
             except Exception as e:

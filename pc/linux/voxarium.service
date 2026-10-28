@@ -12,7 +12,9 @@ Restart=on-failure
 RestartSec=5
 # Arresto ordinato: SIGINT arriva al pannello e al server Minecraft (stesso gruppo), che salva il mondo e si chiude
 KillSignal=SIGINT
-TimeoutStopSec=90
+# Minecraft con molte mod o un mondo grande può metterci più di un minuto a salvare: con 90 s systemd lo chiudeva a
+# forza anche a metà del salvataggio (su Windows il pannello aspetta fino a 180 s)
+TimeoutStopSec=240
 
 [Install]
 WantedBy=default.target

@@ -120,6 +120,28 @@ def parse_mc_version(v: str):
         suffix_nums = [int(x) for x in re.findall(r'\d+', suffix)]
         return (base_nums, 0, suffix_nums)
 
+JAVA8_ONLY_INSTALL_MSG = ("Forge {0} funziona solo con Java 8, ma sul PC c'è Java {1}: installa Java 8 (per esempio da "
+                          "adoptium.net) e impostala come Java del PC, oppure scegli una versione di Minecraft più recente.")
+
+
+def forge_needs_java8(mc_version: str) -> bool:
+    """Forge per Minecraft fino alla 1.12.2 (launchwrapper): con Java 9 e successive va in crash all'avvio."""
+    m = re.match(r"^1\.(\d+)", str(mc_version or "").strip())
+    return bool(m) and int(m.group(1)) <= 12
+
+
+def folder_has_world(target_dir: str) -> bool:
+    """La cartella contiene già un mondo di Minecraft (level.dat in una sua sottocartella, es. world/). Installarci un
+    nuovo server riscriveva server.properties, run.bat e server.jar, e il mondo partiva con un'altra versione."""
+    try:
+        for entry in os.scandir(target_dir):
+            if entry.is_dir() and os.path.isfile(os.path.join(entry.path, "level.dat")):
+                return True
+    except OSError:
+        pass
+    return False
+
+
 class ForgeServerInstaller:
     """Multi-type server installer: Forge, NeoForge, Fabric, Paper and Vanilla."""
     def __init__(self, config_path: str = "config.json"):
@@ -845,6 +867,9 @@ class ForgeServerInstaller:
             if have < need:
                 raise RuntimeError(f"Minecraft {mc_version} richiede Java {need}, ma sul PC c'è Java {have}: "
                                    "installa la versione richiesta (per esempio da adoptium.net) e riprova.")
+            if server_type == "forge" and forge_needs_java8(mc_version) and have > 8:
+                # Prima l'installazione riusciva e il server andava in crash a ogni avvio (ClassCastException)
+                raise RuntimeError(JAVA8_ONLY_INSTALL_MSG.format(mc_version, have))
             self._append_log(f"[OK] Java {have} (richiesta Java {need} o più recente).")
             if server_type == "fabric":
                 self._install_fabric(target_dir, mc_version, ram_gb, port, server_manager)

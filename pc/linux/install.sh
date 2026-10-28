@@ -66,8 +66,12 @@ if [ $UPDATE -eq 0 ]; then
     systemctl --user enable voxarium.service
     loginctl enable-linger "$(id -un)" 2>/dev/null || sudo loginctl enable-linger "$(id -un)" || true
     # Porte: pannello in casa (8080), accesso da internet (8443), Minecraft (25565). Solo se ufw è attivo.
+    # Il pannello (http, in chiaro) solo dalla rete di casa: su un PC con IP pubblico (es. un server in affitto)
+    # "allow 8080" lo apriva a tutta internet, con il PIN in chiaro
     if command -v ufw >/dev/null 2>&1 && sudo ufw status 2>/dev/null | grep -q "Status: active"; then
-        sudo ufw allow 8080/tcp comment "Voxarium pannello"
+        for NET in 192.168.0.0/16 10.0.0.0/8 172.16.0.0/12; do
+            sudo ufw allow from "$NET" to any port 8080 proto tcp comment "Voxarium pannello (rete di casa)"
+        done
         sudo ufw allow 8443/tcp comment "Voxarium da internet"
         sudo ufw allow 25565 comment "Minecraft"
     fi

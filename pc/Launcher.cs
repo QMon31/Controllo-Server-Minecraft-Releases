@@ -304,6 +304,13 @@ namespace MinecraftControlCenter
                 else
                 {
                     if (pendingError != null) ApplyBackendError();
+                    else if (Program.IsUnverifiedRemoteHost(targetUrl))
+                    {
+                        // All'indirizzo da internet non risponde l'Host con il suo certificato: niente PIN a chi c'è lì,
+                        // si cerca l'indirizzo giusto (rete di casa o ntfy) come quando l'Host non risponde
+                        UpdateLoadingText(LauncherText.T("disc.searching"));
+                        Program.TriggerAutoReconnectAsync(false);
+                    }
                     else webView.Source = new Uri(targetUrl);
                 }
 
@@ -821,6 +828,7 @@ namespace MinecraftControlCenter
                 { "tray.autostart_off", "Avvio automatico con Windows disattivato." },
                 { "tray.exit", "Esci" },
                 { "tray.exit_all", "Esci (chiude pannello e server)" },
+                { "tray.stopping", "Spegnimento sicuro del server Minecraft in corso: il programma si chiude appena il mondo è salvato." },
                 { "disc.channels", "Controllo dei canali di notifica e dell'indirizzo da internet..." },
                 { "disc.test_lan", "Prova della rete di casa ({0})..." },
                 { "disc.scan_wifi", "Ricerca veloce nella rete Wi-Fi di casa (porta 8080)..." },
@@ -831,6 +839,7 @@ namespace MinecraftControlCenter
                 { "disc.connected_title", "Collegato" },
                 { "disc.connected", "Collegato al PC Host:\n{0}" },
                 { "disc.not_found_window", "PC Host non trovato.\r\nControlla che sia acceso, oppure scegli 'Cambia indirizzo del PC Host' dal menu dell'icona accanto all'orologio." },
+                { "disc.first_at_home", "PC Host non trovato da internet: questo PC non lo conosce ancora.\r\nCollega questo PC una volta alla rete di casa del PC Host (stesso Wi-Fi): da quel momento funziona anche da fuori casa." },
                 { "disc.not_found_title", "PC Host non trovato" },
                 { "disc.not_found", "Nessun PC Host trovato in rete o su internet.\nControlla che sia acceso e che il programma sia avviato." },
                 { "upd.menu", "Controlla aggiornamenti" } } },
@@ -886,6 +895,7 @@ namespace MinecraftControlCenter
                 { "tray.autostart_off", "Automatic startup with Windows turned off." },
                 { "tray.exit", "Exit" },
                 { "tray.exit_all", "Exit (closes panel and server)" },
+                { "tray.stopping", "Safely shutting down the Minecraft server: the program will close as soon as the world is saved." },
                 { "disc.channels", "Checking notification channels and internet address..." },
                 { "disc.test_lan", "Testing the home network ({0})..." },
                 { "disc.scan_wifi", "Quick search on the home Wi-Fi network (port 8080)..." },
@@ -896,6 +906,7 @@ namespace MinecraftControlCenter
                 { "disc.connected_title", "Connected" },
                 { "disc.connected", "Connected to the Host PC:\n{0}" },
                 { "disc.not_found_window", "Host PC not found.\r\nCheck that it is turned on, or choose 'Change Host PC address' from the menu of the icon next to the clock." },
+                { "disc.first_at_home", "Host PC not found from the internet: this PC does not know it yet.\r\nConnect this PC once to the Host PC's home network (same Wi-Fi): from then on it also works away from home." },
                 { "disc.not_found_title", "Host PC not found" },
                 { "disc.not_found", "No Host PC found on the network or the internet.\nCheck that it is on and the program is running." },
                 { "upd.menu", "Check for updates" } } },
@@ -951,6 +962,7 @@ namespace MinecraftControlCenter
                 { "tray.autostart_off", "Inicio automático con Windows desactivado." },
                 { "tray.exit", "Salir" },
                 { "tray.exit_all", "Salir (cierra panel y servidor)" },
+                { "tray.stopping", "Apagando el servidor de Minecraft de forma segura: el programa se cerrará en cuanto se guarde el mundo." },
                 { "disc.channels", "Comprobando los canales de notificación y la dirección de internet..." },
                 { "disc.test_lan", "Probando la red de casa ({0})..." },
                 { "disc.scan_wifi", "Búsqueda rápida en la red Wi-Fi de casa (puerto 8080)..." },
@@ -961,6 +973,7 @@ namespace MinecraftControlCenter
                 { "disc.connected_title", "Conectado" },
                 { "disc.connected", "Conectado al PC Host:\n{0}" },
                 { "disc.not_found_window", "No se encontró el PC Host.\r\nComprueba que esté encendido o elige 'Cambiar dirección del PC Host' en el menú del icono junto al reloj." },
+                { "disc.first_at_home", "No se encontró el PC Host desde internet: este PC todavía no lo conoce.\r\nConecta este PC una vez a la red de casa del PC Host (mismo Wi-Fi): a partir de entonces también funciona fuera de casa." },
                 { "disc.not_found_title", "PC Host no encontrado" },
                 { "disc.not_found", "No se encontró ningún PC Host en la red ni en internet.\nComprueba que esté encendido y que el programa esté abierto." },
                 { "upd.menu", "Buscar actualizaciones" } } },
@@ -1016,6 +1029,7 @@ namespace MinecraftControlCenter
                 { "tray.autostart_off", "Démarrage automatique avec Windows désactivé." },
                 { "tray.exit", "Quitter" },
                 { "tray.exit_all", "Quitter (ferme le panneau et le serveur)" },
+                { "tray.stopping", "Arrêt sécurisé du serveur Minecraft en cours : le programme se fermera dès que le monde sera sauvegardé." },
                 { "disc.channels", "Vérification des canaux de notification et de l'adresse internet..." },
                 { "disc.test_lan", "Test du réseau domestique ({0})..." },
                 { "disc.scan_wifi", "Recherche rapide sur le réseau Wi-Fi domestique (port 8080)..." },
@@ -1026,6 +1040,7 @@ namespace MinecraftControlCenter
                 { "disc.connected_title", "Connecté" },
                 { "disc.connected", "Connecté au PC Hôte :\n{0}" },
                 { "disc.not_found_window", "PC Hôte introuvable.\r\nVérifiez qu'il est allumé ou choisissez « Modifier l'adresse du PC Hôte » dans le menu de l'icône près de l'horloge." },
+                { "disc.first_at_home", "PC Hôte introuvable depuis internet : ce PC ne le connaît pas encore.\r\nConnectez ce PC une fois au réseau domestique du PC Hôte (même Wi-Fi) : ensuite il fonctionnera aussi hors de chez vous." },
                 { "disc.not_found_title", "PC Hôte introuvable" },
                 { "disc.not_found", "Aucun PC Hôte trouvé sur le réseau ou sur internet.\nVérifiez qu'il est allumé et que le programme est lancé." },
                 { "upd.menu", "Rechercher des mises à jour" } } },
@@ -1081,6 +1096,7 @@ namespace MinecraftControlCenter
                 { "tray.autostart_off", "Autostart mit Windows ausgeschaltet." },
                 { "tray.exit", "Beenden" },
                 { "tray.exit_all", "Beenden (schließt Panel und Server)" },
+                { "tray.stopping", "Der Minecraft-Server wird sicher heruntergefahren: Das Programm schließt sich, sobald die Welt gespeichert ist." },
                 { "disc.channels", "Benachrichtigungskanäle und Internetadresse werden geprüft..." },
                 { "disc.test_lan", "Heimnetz wird getestet ({0})..." },
                 { "disc.scan_wifi", "Schnellsuche im Heim-WLAN (Port 8080)..." },
@@ -1091,6 +1107,7 @@ namespace MinecraftControlCenter
                 { "disc.connected_title", "Verbunden" },
                 { "disc.connected", "Mit dem Host-PC verbunden:\n{0}" },
                 { "disc.not_found_window", "Host-PC nicht gefunden.\r\nPrüfe, ob er eingeschaltet ist, oder wähle „Adresse des Host-PCs ändern“ im Menü des Symbols neben der Uhr." },
+                { "disc.first_at_home", "Host-PC über das Internet nicht gefunden: Dieser PC kennt ihn noch nicht.\r\nVerbinde diesen PC einmal mit dem Heimnetz des Host-PCs (gleiches WLAN): Danach funktioniert es auch unterwegs." },
                 { "disc.not_found_title", "Host-PC nicht gefunden" },
                 { "disc.not_found", "Kein Host-PC im Netzwerk oder im Internet gefunden.\nPrüfe, ob er eingeschaltet ist und das Programm läuft." },
                 { "upd.menu", "Nach Updates suchen" } } },
@@ -1146,6 +1163,7 @@ namespace MinecraftControlCenter
                 { "tray.autostart_off", "Inicialização automática com o Windows desativada." },
                 { "tray.exit", "Sair" },
                 { "tray.exit_all", "Sair (fecha painel e servidor)" },
+                { "tray.stopping", "Desligando o servidor Minecraft com segurança: o programa fecha assim que o mundo for salvo." },
                 { "disc.channels", "Verificando os canais de notificação e o endereço da internet..." },
                 { "disc.test_lan", "Testando a rede de casa ({0})..." },
                 { "disc.scan_wifi", "Busca rápida na rede Wi-Fi de casa (porta 8080)..." },
@@ -1156,6 +1174,7 @@ namespace MinecraftControlCenter
                 { "disc.connected_title", "Conectado" },
                 { "disc.connected", "Conectado ao PC Host:\n{0}" },
                 { "disc.not_found_window", "PC Host não encontrado.\r\nVerifique se está ligado ou escolha 'Alterar endereço do PC Host' no menu do ícone ao lado do relógio." },
+                { "disc.first_at_home", "PC Host não encontrado pela internet: este PC ainda não o conhece.\r\nConecte este PC uma vez à rede de casa do PC Host (mesmo Wi-Fi): a partir daí funciona também fora de casa." },
                 { "disc.not_found_title", "PC Host não encontrado" },
                 { "disc.not_found", "Nenhum PC Host encontrado na rede ou na internet.\nVerifique se está ligado e se o programa está aberto." },
                 { "upd.menu", "Procurar atualizações" } } }
@@ -1405,13 +1424,40 @@ namespace MinecraftControlCenter
             catch { return false; }
         }
 
-        /// <summary>Richiesta verso il pannello dell'Host: un certificato non valido è accettato solo se è quello dell'Host.</summary>
+        /// <summary>Richiesta verso il pannello dell'Host. Su un indirizzo IP numerico (https://IP:porta, l'accesso da
+        /// internet) vale SOLO l'impronta salvata: prima bastava anche un certificato "valido" per quell'IP, che chi
+        /// riceve il vecchio IP pubblico dell'Host può ottenere gratis (come già corretto nell'app Android).</summary>
         static HttpWebRequest CreateHostRequest(string url)
         {
             HttpWebRequest req = (HttpWebRequest)WebRequest.Create(url);
+            bool ipHost = IsIpHost(req.RequestUri.Host);
             req.ServerCertificateValidationCallback = (sender, cert, chain, errors) =>
-                errors == SslPolicyErrors.None || IsPinnedHostCertificate(cert);
+                ipHost ? IsPinnedHostCertificate(cert) : (errors == SslPolicyErrors.None || IsPinnedHostCertificate(cert));
             return req;
+        }
+
+        static bool IsPrivateLanUrl(string url)
+        {
+            Uri u;
+            IPAddress ip;
+            if (!Uri.TryCreate(url, UriKind.Absolute, out u) || !IPAddress.TryParse(u.Host, out ip)) return false;
+            byte[] b = ip.GetAddressBytes();
+            return b.Length == 4 && (b[0] == 10 || (b[0] == 172 && b[1] >= 16 && b[1] <= 31) || (b[0] == 192 && b[1] == 168));
+        }
+
+        static bool IsIpHost(string host)
+        {
+            IPAddress ip;
+            return !string.IsNullOrEmpty(host) && IPAddress.TryParse(host.Trim('[', ']'), out ip);
+        }
+
+        /// <summary>Indirizzo https://IP dell'Host: prima di aprirlo nella finestra si controlla che risponda il certificato
+        /// salvato. La finestra (WebView2) accetta da sola i certificati "validi" e non chiede l'impronta.</summary>
+        public static bool IsUnverifiedRemoteHost(string url)
+        {
+            Uri u;
+            if (!Uri.TryCreate(url, UriKind.Absolute, out u) || u.Scheme != Uri.UriSchemeHttps || !IsIpHost(u.Host)) return false;
+            return !VerifyServerCandidate(u.GetLeftPart(UriPartial.Authority));
         }
 
         /// <summary>Se l'Host è raggiungibile in rete locale, salva il suo topic ntfy, il suo identificativo
@@ -1545,10 +1591,21 @@ namespace MinecraftControlCenter
             menu.MenuItems.Add(itemAutoLocal);
             menu.MenuItems.Add("-");
             menu.MenuItems.Add(LauncherText.T("tray.exit_all"), (s, e) => {
-                trayIcon.Visible = false;
-                if (mainWindow != null) mainWindow.AllowExitAndClose();
-                KillPythonBackend();
-                Application.Exit();
+                // Prima si chiudeva a forza solo il pannello: il server Minecraft (processo figlio) restava acceso
+                // senza pannello, anche se la voce dice "chiude pannello e server". Ora lo si spegne con il salvataggio
+                trayIcon.ShowBalloonTip(5000, "Voxarium", LauncherText.T("tray.stopping"), ToolTipIcon.Info);
+                if (mainWindow != null) mainWindow.Hide();
+                Control ui = mainWindow;
+                Task.Run(() => {
+                    StopMinecraftServer(200);
+                    Action exit = () => {
+                        trayIcon.Visible = false;
+                        if (mainWindow != null) mainWindow.AllowExitAndClose();
+                        KillPythonBackend();
+                        Application.Exit();
+                    };
+                    try { if (ui != null && ui.IsHandleCreated) ui.Invoke(exit); else exit(); } catch { exit(); }
+                });
             });
 
             trayIcon.ContextMenu = menu;
@@ -1701,6 +1758,41 @@ namespace MinecraftControlCenter
             return false;
         }
 
+        /// <summary>Chiede al pannello di questo PC lo spegnimento sicuro del server Minecraft e aspetta che sia spento
+        /// (al massimo maxSeconds). Senza server acceso o senza pannello torna subito.</summary>
+        static void StopMinecraftServer(int maxSeconds)
+        {
+            string baseUrl = "http://127.0.0.1:" + webPort;
+            try
+            {
+                HttpWebRequest req = (HttpWebRequest)WebRequest.Create(baseUrl + "/api/server/stop");
+                req.Method = "POST";
+                req.ContentType = "application/json";
+                req.Timeout = 5000;
+                byte[] body = System.Text.Encoding.UTF8.GetBytes("{\"force\":false,\"reason\":\"Uscita dal programma\"}");
+                using (Stream st = req.GetRequestStream()) st.Write(body, 0, body.Length);
+                using (HttpWebResponse resp = (HttpWebResponse)req.GetResponse()) { }
+            }
+            catch { return; }   // pannello non raggiungibile: niente da aspettare
+            Stopwatch sw = Stopwatch.StartNew();
+            while (sw.Elapsed.TotalSeconds < maxSeconds)
+            {
+                Thread.Sleep(1000);
+                try
+                {
+                    HttpWebRequest req = (HttpWebRequest)WebRequest.Create(baseUrl + "/api/status");
+                    req.Timeout = 3000;
+                    using (HttpWebResponse resp = (HttpWebResponse)req.GetResponse())
+                    using (StreamReader reader = new StreamReader(resp.GetResponseStream()))
+                    {
+                        string state = ReadJsonString(reader.ReadToEnd(), "state");
+                        if (state == "STOPPED" || state == "CRASHED" || state == "OFFLINE") return;
+                    }
+                }
+                catch { return; }
+            }
+        }
+
         static void KillPythonBackend()
         {
             if (isRemoteMode) return;
@@ -1791,7 +1883,10 @@ namespace MinecraftControlCenter
                     {
                         // Look for LAN URLs
                         Match mLocal = Regex.Match(line, @"(?:local_url""\s*:\s*""|lan=|[Rr]ete LAN:\s*)(http://[0-9\.]+:[0-9]+)");
-                        if (mLocal.Success)
+                        // Solo indirizzi della rete di casa (10.x, 172.16-31.x, 192.168.x): un indirizzo pubblico in
+                        // chiaro (http) non è mai l'Host, e prima un messaggio sul topic poteva farlo aprire nella
+                        // finestra, dove si digita il PIN (il Launcher non ha il segreto per verificare la firma)
+                        if (mLocal.Success && IsPrivateLanUrl(mLocal.Groups[1].Value.Trim()))
                         {
                             string cand = mLocal.Groups[1].Value.Trim();
                             if (!candidates.Contains(cand)) candidates.Insert(0, cand);
@@ -1990,7 +2085,10 @@ namespace MinecraftControlCenter
                     {
                         if (mainWindow != null)
                         {
-                            mainWindow.UpdateLoadingText(LauncherText.T("disc.not_found_window"));
+                            // Mai collegato in casa: senza impronta del certificato e topic l'Host non si trova da internet,
+                            // e prima il messaggio diceva solo di controllare che fosse acceso
+                            bool neverPaired = string.IsNullOrEmpty(hostCertFingerprint) || string.IsNullOrEmpty(hostPushTopic);
+                            mainWindow.UpdateLoadingText(LauncherText.T(neverPaired ? "disc.first_at_home" : "disc.not_found_window"));
                         }
                         if (userInitiated && trayIcon != null)
                         {

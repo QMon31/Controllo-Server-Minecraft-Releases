@@ -248,6 +248,27 @@ def _save_remote_external_port(port: int):
 remote_access = RemoteAccess(os.path.dirname(os.path.abspath(__file__)), REMOTE_PORT, upnp_mgr, get_public_ip,
                              external_port=manager.config.get("remote_external_port"),
                              on_external_port=_save_remote_external_port)
+# Chiuso dal pannello prima dell'ultimo riavvio: resta chiuso (il controllo periodico non riapre la porta)
+remote_access.user_closed = bool(manager.config.get("remote_access_closed"))
+REMOTE_CLOSED_MSG = "Accesso da internet chiuso dal PC Host: si può riaprire dal pannello, dalla rete di casa."
+
+def panel_ports() -> set:
+    """Porte del programma: pannello (8080, mai da aprire sul router) e accesso da internet (8443 e quella del router)."""
+    return {p for p in (_valid_web_port(manager.config.get("web_port", 8080)), REMOTE_PORT, remote_access.port,
+                        remote_access.external_port) if p}
+
+def minecraft_port_error(port) -> Optional[str]:
+    """Messaggio se la porta non va bene per Minecraft. Prima si poteva scegliere la porta del pannello: il server non
+    partiva (porta occupata) e il programma la apriva sul router, mettendo su internet il pannello senza HTTPS."""
+    try:
+        port = int(port)
+    except (TypeError, ValueError):
+        return "Porta non valida: scegli un numero tra 1024 e 65535."
+    if not 1024 <= port <= 65535:
+        return "Porta non valida: scegli un numero tra 1024 e 65535."
+    if port in panel_ports():
+        return f"La porta {port} è usata da Voxarium: scegli un'altra porta per Minecraft (per esempio 25565)."
+    return None
 
 def remote_status_payload() -> Dict[str, Any]:
     st = remote_access.get_status()
@@ -506,6 +527,15 @@ class _TokenStore:
             self._last_used[token] = now
             return True
 
+    def revoke_all_except(self, keep: Optional[str] = None):
+        """PIN cambiato: tutti i dispositivi devono rimettere il PIN, tranne quello che l'ha cambiato. Prima chi
+        aveva il vecchio PIN restava collegato anche dopo il cambio."""
+        with self._lock:
+            kept = self._last_used.get(keep) if keep else None
+            self._last_used.clear()
+            if kept is not None:
+                self._last_used[keep] = kept
+
     def __len__(self) -> int:
         return len(self._last_used)
 
@@ -582,13 +612,50 @@ def is_cross_site_request(headers, is_api: bool = True) -> bool:
         return is_api and (headers.get("sec-fetch-mode") or "").lower() != "navigate"
     return False
 
+def _close_revoked_websockets():
+    """Chiude le connessioni aperte con un token non più valido (PIN cambiato) e, con l'accesso da internet chiuso,
+    quelle arrivate da internet: prima quei dispositivi continuavano a vedere la console e a mandare comandi."""
+    async def _close():
+        for ws in list(active_websockets):
+            tok = getattr(ws.state, "auth_token", None)
+            if (tok and tok not in valid_auth_tokens) or (remote_access.user_closed and getattr(ws.state, "internet", False)):
+                if ws in active_websockets:
+                    active_websockets.remove(ws)
+                try:
+                    await ws.close(code=4401)
+                except Exception:
+                    pass
+    if loop:
+        asyncio.run_coroutine_threadsafe(_close(), loop)
+
+def host_is_direct_address(headers) -> bool:
+    """La richiesta è rivolta all'indirizzo IP del PC, a localhost o al nome del PC (come fanno telefono e browser di
+    casa). Con "Richiedi PIN" disattivato in casa vale solo così: un sito malevolo aperto su un dispositivo di casa
+    poteva far puntare il proprio nome all'IP del PC (DNS rebinding) e comandare il pannello senza PIN."""
+    import ipaddress
+    host = (headers.get("host") or "").strip().lower()
+    if host.startswith("["):
+        host = host[1:host.find("]")] if "]" in host else host
+    elif host.count(":") == 1:
+        host = host.split(":")[0]
+    if not host:
+        return False
+    try:
+        ipaddress.ip_address(host)
+        return True
+    except ValueError:
+        pass
+    pc_name = socket.gethostname().lower()
+    return host in ("localhost", pc_name, pc_name + ".local", pc_name + ".lan", pc_name + ".home")
+
 def verify_admin_access(request: Request):
     # Con il PIN predefinito nessun accesso da internet, neanche con un token ottenuto prima in casa
     if is_internet_request(request):
         # Da internet il PIN serve sempre, anche se "Richiedi PIN" è disattivato (vale solo per la rete di casa)
         if pin_is_default():
             raise HTTPException(status_code=403, detail=DEFAULT_PIN_INTERNET_MSG)
-    elif is_local_request(request) or not manager.config.get("require_pin_for_remote", True):
+    elif is_local_request(request) or (not manager.config.get("require_pin_for_remote", True)
+                                       and host_is_direct_address(request.headers)):
         return True
     token = request.headers.get("X-Admin-Token")
     if token and token in valid_auth_tokens:
@@ -656,8 +723,14 @@ def sync_minecraft_port(force: bool = False) -> Optional[Dict[str, Any]]:
             manager.remember_server_port(port)   # es. porta cambiata nell'editor di server.properties
         res = None
         due = now - st["last_open"] > MC_PORT_REOPEN_SECONDS and now >= st["retry_at"]
-        if changed or force or due:
-            res = upnp_mgr.open_minecraft_port(port, avoid={remote_access.external_port, remote_access.port})
+        if port in panel_ports():
+            # Porta del pannello in server.properties (anche scritta a mano): mai aprirla sul router
+            if changed or force:
+                print(f"[UPnP] Porta Minecraft {port} non aperta: è una porta di Voxarium.")
+            res = {"success": False, "message": minecraft_port_error(port)}
+            st["retry_at"] = now + MC_PORT_RETRY_SECONDS
+        elif changed or force or due:
+            res = upnp_mgr.open_minecraft_port(port, avoid=panel_ports())
             st["last_open"] = now
             st["retry_at"] = 0.0 if res.get("success") else now + MC_PORT_RETRY_SECONDS
             if not res.get("success"):
@@ -793,6 +866,12 @@ async def block_cross_site_middleware(request: Request, call_next):
     # Nessun CORS: solo pagine servite da questo backend (stesso indirizzo) possono chiamare le API
     if is_cross_site_request(request.headers, request.scope.get("path", "").startswith("/api/")):
         return JSONResponse({"detail": CROSS_SITE_MSG}, status_code=403)
+    # Accesso da internet chiuso dal pannello: prima si chiudeva solo la porta sul router, e con una porta aperta a
+    # mano il programma continuava a rispondere da internet
+    if remote_access.user_closed and is_internet_request(request):
+        # 503 e non 403: l'app con 401/403 crede che il PIN salvato sia sbagliato, lo segna come rifiutato e non
+        # rientra più da sola nemmeno in casa; con 503 tratta il PC come non raggiungibile da internet
+        return JSONResponse({"detail": REMOTE_CLOSED_MSG}, status_code=503)
     return await call_next(request)
 
 @app.middleware("http")
@@ -810,6 +889,27 @@ def _host_id() -> str:
 
 # Percorsi del PC (con il nome utente di Windows) che gli indirizzi pubblici mostrano solo a chi ha accesso
 PRIVATE_PATH_KEYS = ("server_dir", "target_path", "cloud_sync_dir")
+
+
+async def save_upload(request: Request, path: str) -> int:
+    """Scrive in path il file caricato dal pannello; restituisce i byte. Se il caricamento si interrompe solleva
+    l'errore: chi chiama scrive in un file temporaneo e lo mette al suo posto solo a caricamento finito."""
+    size = 0
+    with open(path, "wb") as f:
+        async for chunk in request.stream():
+            f.write(chunk)
+            size += len(chunk)
+    return size
+
+
+def server_fully_stopped() -> bool:
+    """Server spento a mano o fermo dopo un crash, senza processo di Minecraft acceso. Prima backup, ripristino e
+    aggiornamento valevano solo per STOPPED: dopo un crash il pannello chiedeva di spegnere un server già fermo."""
+    if manager.state not in ("STOPPED", "CRASHED", "OFFLINE"):
+        return False
+    if manager.process and manager.process.poll() is None:
+        return False
+    return not (manager.psutil_proc and manager._proc_alive(manager.psutil_proc))
 
 
 def has_admin_access(request: Request) -> bool:
@@ -982,6 +1082,7 @@ def _remote_changed_response() -> Dict[str, Any]:
 def start_remote(request: Request):
     """Apre (o riapre) la porta HTTPS sul router e rilegge l'IP pubblico."""
     verify_admin_access(request)
+    _save_remote_closed(False)
     remote_access.refresh(reopen=True)
     return _remote_changed_response()
 
@@ -989,8 +1090,17 @@ def start_remote(request: Request):
 def stop_remote(request: Request):
     """Chiude la porta HTTPS sul router: niente accesso da internet finché non si riapre."""
     verify_admin_access(request)
+    _save_remote_closed(True)
     remote_access.close()
+    _close_revoked_websockets()
     return _remote_changed_response()
+
+def _save_remote_closed(closed: bool):
+    # Ricordato in config.json: prima al riavvio del programma (o del PC, o dopo un aggiornamento) la porta si
+    # riapriva da sola
+    if bool(manager.config.get("remote_access_closed")) != closed:
+        manager.config["remote_access_closed"] = closed
+        manager.save_config()
 
 class OpenUrlRequest(BaseModel):
     url: str
@@ -998,6 +1108,9 @@ class OpenUrlRequest(BaseModel):
 @app.post("/api/open-browser")
 def api_open_browser(req: OpenUrlRequest, request: Request):
     verify_admin_access(request)
+    # Solo dal PC Host (finestra del programma): dal telefono o da un altro PC la pagina si apriva sul PC Host invece
+    # che sul dispositivo usato, e chiunque avesse il PIN poteva aprire pagine nel browser del PC Host
+    verify_host_only_access(request)
     url = req.url.strip()
     if url.startswith("http://") or url.startswith("https://"):
         try:
@@ -1336,7 +1449,7 @@ def api_pc_update_check(request: Request):
 def api_pc_update_install(request: Request):
     verify_admin_access(request)
     verify_host_only_access(request)
-    if manager.state != "STOPPED":
+    if not server_fully_stopped():
         raise HTTPException(status_code=409, detail="Spegni il server Minecraft prima di aggiornare il programma.")
     if backup_mgr.is_running:
         raise HTTPException(status_code=409, detail="Attendi la fine del backup o del ripristino in corso.")
@@ -1346,6 +1459,20 @@ def api_pc_update_install(request: Request):
     return res
 
 # App OTA Updates
+@app.get("/api/qr.png")
+def api_qr_png(text: str = ""):
+    """Codice QR disegnato dal programma. Prima, se mancava, il pannello lo chiedeva a api.qrserver.com mandando
+    l'indirizzo del PC (anche quello pubblico per l'accesso da internet) a un sito esterno."""
+    from fastapi.responses import Response
+    text = (text or "").strip()
+    if not text or len(text) > 512:
+        raise HTTPException(status_code=400, detail="Testo non valido")
+    uri = generate_qr_data_uri(text)
+    if not uri:
+        raise HTTPException(status_code=500, detail="QR non generato")
+    return Response(content=base64.b64decode(uri.split(",", 1)[1]), media_type="image/png",
+                    headers={"Cache-Control": "no-store"})
+
 @app.get("/api/app/version")
 def get_app_version():
     v_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "version.json")
@@ -1432,12 +1559,17 @@ def update_config(req: ConfigUpdateRequest, request: Request):
             update_data.pop("push_topic", None)
         # La porta si scrive in server.properties (è quella che usa Minecraft): prima cambiava solo config.json
         new_port = update_data.pop("server_port", None)
-        if new_port is not None and not (1024 <= int(new_port) <= 65535):
-            raise HTTPException(status_code=400, detail="Porta non valida: scegli un numero tra 1024 e 65535.")
+        port_error = minecraft_port_error(new_port) if new_port is not None else None
+        if port_error:
+            raise HTTPException(status_code=400, detail=port_error)
         old_dir = current.get("server_dir", "")
+        pin_changed = "admin_pin" in update_data and update_data["admin_pin"] != str(current.get("admin_pin", "1234")).strip()
         for k, v in update_data.items():
             current[k] = v
         manager.save_config(current)
+        if pin_changed:
+            valid_auth_tokens.revoke_all_except(request.headers.get("X-Admin-Token"))
+            _close_revoked_websockets()
         port_res = None
         if new_port is not None and current.get("server_dir") and int(new_port) != manager.get_server_port():
             port_res = manager.set_server_port(int(new_port))
@@ -1530,6 +1662,9 @@ def api_get_autostart():
 @app.post("/api/autostart")
 def api_set_autostart(req: AutoStartRequest, request: Request):
     verify_admin_access(request)
+    # Solo dal PC Host: da un PC Remoto la casella sembrava quella del proprio PC e toglieva l'avvio automatico del PC
+    # Host (che dopo un riavvio non era più raggiungibile da fuori)
+    verify_host_only_access(request)
     success = set_windows_autostart(req.enabled)
     return {"status": "success" if success else "error", "autostart": get_windows_autostart()}
 
@@ -1550,7 +1685,7 @@ def api_backup_estimate(request: Request):
 @app.post("/api/backup/start")
 async def start_backup(request: Request):
     verify_admin_access(request)
-    is_stopped = (manager.state in ("STOPPED", "OFFLINE"))
+    is_stopped = server_fully_stopped()
     copy_cloud = False
     try:
         body = await request.json()
@@ -1627,7 +1762,7 @@ def api_get_backup_list(request: Request):
 @app.post("/api/backup/restore")
 def api_backup_restore(req: RestoreRequest, request: Request):
     verify_admin_access(request)
-    is_stopped = (manager.state == "STOPPED")
+    is_stopped = server_fully_stopped()
     res = backup_mgr.start_restore(is_server_stopped=is_stopped, source_path=req.source_path,
                                    confirm_other_server=req.confirm_other_server)
     if res.get("code") in ("other_server", "unknown_server"):
@@ -1828,14 +1963,18 @@ async def websocket_endpoint(websocket: WebSocket):
     if is_cross_site_request(hdrs):
         await websocket.close(code=4403)
         return
-    if internet and pin_is_default():
+    if internet and (pin_is_default() or remote_access.user_closed):
         await websocket.close(code=4403)
         return
-    pin_not_needed = not internet and (is_local or not manager.config.get("require_pin_for_remote", True))
+    pin_not_needed = not internet and (is_local or (not manager.config.get("require_pin_for_remote", True)
+                                                    and host_is_direct_address(hdrs)))
     if not (pin_not_needed or (token and token in valid_auth_tokens)):
         await websocket.close(code=4401)
         return
     await websocket.accept()
+    # Token usato per entrare: se il PIN cambia, la connessione si chiude (_close_revoked_websockets)
+    websocket.state.auth_token = None if pin_not_needed else token
+    websocket.state.internet = internet
     active_websockets.append(websocket)
     try:
         initial_status = manager.get_full_status()
@@ -1879,7 +2018,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 mins = data.get("minutes", 30)
                 manager.postpone_scheduled_restart(mins)
             elif action == "backup_start":
-                is_stopped = (manager.state == "STOPPED")
+                is_stopped = server_fully_stopped()
                 res = backup_mgr.start_backup(is_server_stopped=is_stopped)
                 if res.get("status") == "error":
                     await _send_ws(websocket, {"type": "toast_error", "message": res.get("message")})

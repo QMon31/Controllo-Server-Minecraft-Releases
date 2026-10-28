@@ -3,7 +3,7 @@ import json
 import uuid
 from typing import List, Dict, Any
 
-from platform_utils import read_json_with_backup, write_json_atomic
+from platform_utils import is_java_line, read_json_with_backup, write_json_atomic
 
 INSTANCES_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "instances.json")
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
@@ -32,11 +32,35 @@ def _drop_stale_default(data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     kept = [i for i in data
             if not (i.get("id") == "inst_default" and i.get("created_at") == "Inizializzazione"
                     and _is_stale_path(i.get("server_dir", "")))]
-    if len(kept) != len(data):
+    fixed = _fix_detected_versions(kept)
+    if len(kept) != len(data) or fixed:
         if kept and not any(i.get("is_active") for i in kept):
             kept[0]["is_active"] = True
         save_instances_data(kept)
     return kept
+
+
+def _fix_detected_versions(instances: List[Dict[str, Any]]) -> bool:
+    """Server collegati con le versioni precedenti: NeoForge con il numero di NeoForge come versione di Minecraft
+    (21.1.77) e modpack CurseForge con tipo "curseforge". Si correggono una volta; True se qualcosa è cambiato."""
+    import re
+    changed = False
+    for inst in instances:
+        t = str(inst.get("server_type") or "").lower()
+        v = str(inst.get("mc_version") or "")
+        m = re.match(r"^(\d+)\.", v)
+        if t == "neoforge" and m and 2 <= int(m.group(1)) < 26:
+            inst["mc_version"] = neoforge_to_mc_version(v) or v
+            changed = changed or inst["mc_version"] != v
+        if t == "curseforge" and inst.get("server_dir") and os.path.isdir(inst["server_dir"]):
+            try:
+                det = detect_server_details(inst["server_dir"])
+            except Exception:
+                det = {}
+            if det.get("server_type") and det["server_type"] != "curseforge":
+                inst["server_type"] = det["server_type"]
+                changed = True
+    return changed
 
 
 def load_instances_data() -> List[Dict[str, Any]]:
@@ -111,9 +135,15 @@ def get_active_instance() -> Dict[str, Any]:
     return {}
 
 
+# Stati in cui si può cambiare il server attivo: nessun processo di Minecraft in avvio, acceso o in arresto
+_SWITCH_OK_STATES = ("STOPPED", "CRASHED", "OFFLINE")
+
+
 def switch_instance(instance_id: str, manager=None) -> Dict[str, Any]:
     """Switches the active instance, synchronizing config.json and manager."""
-    if manager and getattr(manager, "state", "") == "ONLINE":
+    # Prima si controllava solo ONLINE: durante avvio o spegnimento il pannello passava all'altro server e perdeva di
+    # vista quello che stava ancora girando (il messaggio resta lo stesso, già tradotto nel pannello)
+    if manager and getattr(manager, "state", "STOPPED") not in _SWITCH_OK_STATES:
         return {
             "success": False,
             "error": "Il server corrente è ONLINE. Spegni il server attivo prima di cambiare istanza."
@@ -189,7 +219,7 @@ def add_instance(name: str, server_dir: str, server_run_bat: str = "", server_co
         set_active = True
 
     if set_active:
-        if manager and getattr(manager, "state", "") == "ONLINE":
+        if manager and getattr(manager, "state", "STOPPED") not in _SWITCH_OK_STATES:
             return {"success": False, "error": "Il server attivo è ONLINE. Spegnilo prima di attivare la nuova istanza."}
         for inst in instances:
             inst["is_active"] = False
@@ -214,6 +244,14 @@ def update_instance(instance_id: str, updates: Dict[str, Any], manager=None) -> 
 
     if not target:
         return {"success": False, "error": f"Istanza '{instance_id}' non trovata."}
+
+    # Cartella, avvio e porta del server attivo vanno anche in config.json, che a server acceso non si aggiorna: prima
+    # instances.json cambiava e config.json no (si vedevano due valori diversi fino al cambio di server successivo)
+    config_keys = {"server_dir", "server_run_bat", "server_command", "server_port"}
+    if (target.get("is_active") and manager and getattr(manager, "state", "STOPPED") not in _SWITCH_OK_STATES
+            and any(k in updates and str(updates[k]) != str(target.get(k, "")) for k in config_keys)):
+        return {"success": False,
+                "error": "Il server corrente è ONLINE. Spegni il server attivo prima di cambiare istanza."}
 
     for k in ["name", "server_dir", "server_run_bat", "server_command", "server_port", "server_type", "mc_version"]:
         if k in updates:
@@ -254,6 +292,19 @@ def delete_instance(instance_id: str) -> Dict[str, Any]:
     instances = [i for i in instances if i.get("id") != instance_id]
     save_instances_data(instances)
     return {"success": True, "instances": instances}
+
+
+def neoforge_to_mc_version(neoforge_version: str) -> str:
+    """Versione di Minecraft da quella di NeoForge: 21.1.77 -> 1.21.1, 20.4.237 -> 1.20.4, 21.0.167 -> 1.21;
+    dalla numerazione per anni (26.1.0.5 -> 26.1, 26.1.2.3 -> 26.1.2). "" se non si riconosce."""
+    import re
+    m = re.match(r"^(\d+)\.(\d+)(?:\.(\d+))?(?:\.(\d+))?", str(neoforge_version or "").strip())
+    if not m:
+        return ""
+    a, b, c, d = m.group(1), m.group(2), m.group(3), m.group(4)
+    if int(a) >= 26:
+        return f"{a}.{b}" + (f".{c}" if c and d and c != "0" else "")
+    return f"1.{a}" + (f".{b}" if b != "0" else "")
 
 
 def detect_server_details(folder_path: str) -> Dict[str, Any]:
@@ -332,7 +383,7 @@ def detect_server_details(folder_path: str) -> Dict[str, Any]:
                     # Try to extract actual launch command
                     for line in content.splitlines():
                         ls = line.strip()
-                        if ls.startswith("java ") or ls.startswith('"%JAVA_HOME%') or "@user_jvm_args.txt" in ls:
+                        if is_java_line(ls) or "@user_jvm_args.txt" in ls:
                             detected_cmd = ls
                             break
             except Exception:
@@ -348,9 +399,10 @@ def detect_server_details(folder_path: str) -> Dict[str, Any]:
         try:
             sub = os.listdir(neoforge_lib)
             if sub:
-                m = re.search(r"(\d+\.\d+(?:\.\d+)?)", sub[0])
-                if m:
-                    detected_version = m.group(1)
+                # Il numero di NeoForge non è quello di Minecraft: prima un server 1.21.1 risultava "21.1.77"
+                mc = neoforge_to_mc_version(sub[0])
+                if mc:
+                    detected_version = mc
                     confidence = "high"
         except Exception:
             pass
@@ -427,7 +479,13 @@ def detect_server_details(folder_path: str) -> Dict[str, Any]:
             with open(manifest_p, "r", encoding="utf-8", errors="ignore") as mf:
                 mdata = json.load(mf)
                 if "minecraft" in mdata:
-                    detected_type = "curseforge"
+                    # Tipo dal caricatore del modpack (forge-47.3.0, neoforge-21.1.77, fabric-0.16.5): prima "curseforge",
+                    # per cui lo Store cercava mod per un caricatore inesistente e non ne trovava
+                    loaders = [str(l.get("id", "")).lower() for l in (mdata["minecraft"].get("modLoaders") or [])
+                               if isinstance(l, dict)]
+                    pack_type = next((t for l in loaders for t in ("neoforge", "forge", "fabric", "quilt")
+                                      if l.startswith(t + "-")), "")
+                    detected_type = pack_type or detected_type or "curseforge"
                     detected_version = mdata["minecraft"].get("version", detected_version)
                     key_findings.append("Manifest Modpack CurseForge")
                     confidence = "high"

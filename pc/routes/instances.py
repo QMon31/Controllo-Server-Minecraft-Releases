@@ -7,7 +7,7 @@ from fastapi import APIRouter
 
 from app import (
     AddInstanceRequest, DeleteInstanceRequest, DetectInstanceRequest, SwitchInstanceRequest, UpdateInstanceRequest, backup_mgr, is_safe_server_path, manager,
-    request_minecraft_port_sync, verify_admin_access,
+    minecraft_port_error, request_minecraft_port_sync, verify_admin_access,
 )
 
 router = APIRouter()
@@ -124,6 +124,10 @@ def api_update_instance(req: UpdateInstanceRequest, request: Request):
         updates["mc_version"] = updates.pop("version")
     if "server_dir" in updates and not is_safe_server_path(updates["server_dir"]):
         raise HTTPException(status_code=400, detail="Percorso cartella non consentito.")
+    if "server_port" in updates:
+        port_error = minecraft_port_error(updates["server_port"])
+        if port_error:
+            raise HTTPException(status_code=400, detail=port_error)
     res = instance_manager.update_instance(req.instance_id, updates, manager=manager)
     if not res.get("success"):
         raise HTTPException(status_code=400, detail=res.get("error"))

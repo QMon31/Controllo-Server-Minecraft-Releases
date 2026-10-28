@@ -24,6 +24,7 @@ import shutil
 import psutil
 from mc_ping import query_server_status
 from platform_utils import (IS_WINDOWS, LAUNCH_SCRIPT, LAUNCH_SCRIPT_CANDIDATES, split_java_line, script_fallback_command,
+                            is_java_line, java_token_end,
                             read_json_with_backup, write_json_atomic, write_text_atomic)
 
 # Processi figli (java, jcmd, run.bat) senza finestra: il pannello gira senza console, quindi ogni processo
@@ -43,6 +44,14 @@ DEFAULT_CONFIG_PATH =os.path.join(os.path.dirname(os.path.abspath(__file__)), "c
 
 # Regole di gioco rinominate in Minecraft 1.21.11 (nome fino alla 1.21.10 -> nome nuovo). doFireTick è diventata un
 # raggio in blocchi (0 = il fuoco non si propaga, 128 = valore di base).
+# Forge 1.12.2 e più vecchi partono solo con Java 8 (con Java 9+ ClassCastException ... URLClassLoader)
+JAVA8_ONLY_RUNTIME_MSG = ("Questo server (Forge 1.12.2 o più vecchio) funziona solo con Java 8, ma il PC usa una Java più "
+                          "recente. Installa Java 8 (per esempio da adoptium.net) e impostala come Java del PC.")
+
+# PvP sui server Minecraft 1.21.9+ (regola di gioco "pvp" invece di pvp= in server.properties)
+PVP_NOW_MSG = "PvP aggiornato: vale subito, senza riavviare il server."
+PVP_PENDING_MSG = "PvP salvato: verrà applicato appena il server si accende."
+
 GAMERULE_NEW_NAMES = {
     "keepInventory": "keep_inventory",
     "mobGriefing": "mob_griefing",
@@ -88,6 +97,27 @@ def _read_nbt(f, tag_type):
     raise ValueError(f"tag NBT sconosciuto {tag_type}")
 
 
+def read_world_spawn_dimension(server_dir: str) -> str:
+    """Dimensione dello spawn del mondo (da Minecraft 1.21.9 in level.dat, "spawn"/"dimension"); di base il mondo normale."""
+    import gzip
+    try:
+        level = "world"
+        props = os.path.join(server_dir, "server.properties")
+        if os.path.isfile(props):
+            for line in open(props, encoding="utf-8", errors="ignore"):
+                if line.startswith("level-name="):
+                    level = line.split("=", 1)[1].strip() or "world"
+        with gzip.open(os.path.join(server_dir, level, "level.dat"), "rb") as f:
+            root_type = f.read(1)[0]
+            f.read(int.from_bytes(f.read(2), "big"))
+            dim = ((_read_nbt(f, root_type).get("Data", {}).get("spawn") or {}).get("dimension") or "")
+        if re.fullmatch(r"[a-z0-9_.-]+:[a-z0-9_./-]+", str(dim)):
+            return dim
+    except Exception:
+        pass
+    return "minecraft:overworld"
+
+
 def read_world_spawn(server_dir: str) -> Optional[Tuple[int, int, int]]:
     """Punto di spawn del mondo principale (x, y, z) da level.dat; None se non si legge.
     Fino a Minecraft 1.21.4 sono SpawnX/Y/Z, dopo un gruppo "spawn" con "pos"."""
@@ -118,15 +148,18 @@ class ServerManager:
     _RE_SERVER_READY = re.compile(r'Done \([0-9.]+s\)! For help, type "help"')
     _RE_SERVER_READY2 = re.compile(r'Time elapsed: [0-9.]+ ms')
     _RE_SERVER_READY3 = re.compile(r'Listening on \/0\.0\.0\.0:[0-9]+')
-    # Intestazione di una riga INFO: "[...] [Server thread/INFO]" (Vanilla, Forge, Fabric) o "[14:15:16 INFO]" (console
-    # di Paper, dove prima giocatori e chat non venivano mai riconosciuti)
-    _INFO = r'(?:\[Server thread/INFO\]|^\[\d{1,2}:\d{2}:\d{2} INFO\])'
-    _RE_PLAYER_JOIN = re.compile(_INFO + r'.*?: (\w+) joined the game')
-    _RE_PLAYER_JOIN2 = re.compile(_INFO + r'.*?: (\w+)\[/[0-9.:]+\] logged in with entity id')
-    _RE_PLAYER_LEAVE = re.compile(_INFO + r'.*?: (\w+) left the game')
-    _RE_PLAYER_LEAVE2 = re.compile(_INFO + r'.*?: (\w+) lost connection')
-    _RE_PLAYER_LEAVE3 = re.compile(r'Disconnecting (\w+)')
-    _RE_CHAT_MSG = re.compile(_INFO + r'.*?: (?:\[Not Secure\] )?<(\w+)>\s+(.*)')
+    # Intestazione di una riga INFO, dall'inizio della riga fino al testo del messaggio: "[12:00:00] [Server thread/INFO]: "
+    # (Vanilla), "[...] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: " (Forge), "[...] [Server
+    # thread/INFO] (Minecraft) " (Fabric) o "[14:15:16 INFO]: " (console di Paper). Legata all'inizio della riga: prima
+    # bastava scrivere in chat "x: Alice joined the game" o "Disconnecting Alice" per far entrare o uscire Alice
+    _INFO = (r'^(?:\[[^\]]*\] )?(?:\[Server thread/INFO\]|\[\d{1,2}:\d{2}:\d{2} INFO\])'
+             r'(?: \[[^\]]*\])*(?:: | \([^)]*\) )')
+    _RE_PLAYER_JOIN = re.compile(_INFO + r'(\w+) joined the game')
+    _RE_PLAYER_JOIN2 = re.compile(_INFO + r'(\w+)\[/[0-9.:]+\] logged in with entity id')
+    _RE_PLAYER_LEAVE = re.compile(_INFO + r'(\w+) left the game')
+    _RE_PLAYER_LEAVE2 = re.compile(_INFO + r'(\w+) lost connection')
+    _RE_PLAYER_LEAVE3 = re.compile(r'^(?:\[[^\]]*\] ?)+: Disconnecting (\w+)')
+    _RE_CHAT_MSG = re.compile(_INFO + r'(?:\[Not Secure\] )?<(\w+)>\s+(.*)')
     # Livello scritto nell'intestazione della riga: "[14:15:16] [main/WARN] [mixin/]: ...", "[...] [Server thread/ERROR]: ..."
     # o, con Paper, "[14:15:16 ERROR]: ..."
     _RE_LOG_LEVEL = re.compile(r'^\[(?:[^\]]*\] \[[^\]]*/|\d{1,2}:\d{2}:\d{2} )(TRACE|DEBUG|INFO|WARN|ERROR|FATAL)\]')
@@ -281,7 +314,9 @@ class ServerManager:
                     # Escludi categoricamente i client di gioco Minecraft Forge / Vanilla / Fabric
                     if 'forgeclient' in cmdline or '--accesstoken' in cmdline or 'net.minecraft.client' in cmdline or 'minecraft.client' in cmdline:
                         continue
-                    in_server_dir = (cwd == server_dir) or (server_dir in cmdline)
+                    # Percorso intero e non solo l'inizio: "c:\server" non deve riconoscere "c:\server creativo\..."
+                    in_server_dir = (cwd == server_dir) or re.search(re.escape(server_dir) + r'(?=[\\/"]|$)',
+                                                                      cmdline) is not None
                     looks_like_server = ('nogui' in cmdline or 'forgeserver' in cmdline or 'win_args.txt' in cmdline
                                          or 'unix_args.txt' in cmdline or 'server.jar' in cmdline or 'user_jvm_args.txt' in cmdline)
                     if in_server_dir and looks_like_server:
@@ -704,6 +739,14 @@ class ServerManager:
         props_path = os.path.join(server_dir, "server.properties")
         if not os.path.isfile(props_path):
             return {"status": "error", "message": "File server.properties non trovato."}
+        pvp_when = None
+        if "pvp" in new_props and self.pvp_is_gamerule():
+            # Minecraft 1.21.9+: il PvP non si scrive in server.properties (lo ignorerebbe) ma con la regola di gioco
+            new_props = dict(new_props)
+            pvp_when = self.set_pvp(str(new_props.pop("pvp")).strip().lower() != "false")
+            if not new_props:
+                return {"status": "success", "pvp_gamerule": pvp_when, "needs_restart": False,
+                        "message": PVP_NOW_MSG if pvp_when == "now" else PVP_PENDING_MSG}
 
         try:
             # Create safety backup server.properties.bak before modifying
@@ -743,7 +786,8 @@ class ServerManager:
             return {
                 "status": "success",
                 "message": "Impostazioni salvate! Riavvia il server per renderle effettive.",
-                "needs_restart": self.state == "ONLINE"
+                "needs_restart": self.state == "ONLINE",
+                "pvp_gamerule": pvp_when
             }
         except Exception as e:
             return {"status": "error", "message": f"Errore nel salvataggio: {e}"}
@@ -903,7 +947,7 @@ class ServerManager:
                 with open(c_bat, "r", encoding="utf-8", errors="ignore") as f:
                     for line in f:
                         s = line.strip()
-                        if s.startswith("java "):
+                        if is_java_line(s):
                             return split_java_line(s, server_dir)
             except Exception:
                 pass
@@ -1005,6 +1049,52 @@ class ServerManager:
         if not m:
             return False
         return (int(m.group(1)), int(m.group(2)), int(m.group(3) or 0)) >= (1, 21, 11)
+
+    def _mc_version_tuple(self) -> Optional[Tuple[int, int, int]]:
+        """Versione di Minecraft del server: dal ping (server acceso) o dall'elenco dei server (anche a server spento)."""
+        candidates = [self.server_info.get("version")]
+        try:
+            import instance_manager
+            candidates.append(instance_manager.get_active_instance().get("mc_version"))
+        except Exception:
+            pass
+        for v in candidates:
+            m = re.search(r'(\d+)\.(\d+)(?:\.(\d+))?', str(v or ""))
+            if m:
+                a, b = int(m.group(1)), int(m.group(2))
+                if 2 <= a < 26:
+                    # Numero di NeoForge salvato come versione dalle versioni precedenti (21.1.77 = Minecraft 1.21.1)
+                    return 1, a, b
+                return a, b, int(m.group(3) or 0)
+        return None
+
+    def pvp_is_gamerule(self) -> bool:
+        """Da Minecraft 1.21.9 il PvP è la regola di gioco "pvp" (nel mondo) e non più pvp= in server.properties."""
+        v = self._mc_version_tuple()
+        return bool(v) and v >= (1, 21, 9)
+
+    def set_pvp(self, enabled: bool) -> str:
+        """PvP sui server 1.21.9+: subito con il comando se il server è acceso, altrimenti appena si accende.
+        Prima pannello e app scrivevano pvp= in server.properties, che Minecraft ignora: il PvP non cambiava."""
+        value = "true" if enabled else "false"
+        self.config["pvp_gamerule"] = value
+        if self.state == "ONLINE" and self.send_command(f"gamerule pvp {value}").get("status") == "success":
+            self.config.pop("pvp_pending", None)
+            self.save_config()
+            return "now"
+        self.config["pvp_pending"] = value
+        self.save_config()
+        return "pending"
+
+    def _apply_pending_pvp(self):
+        """Server appena acceso: PvP scelto a server spento (sui server 1.21.9+)."""
+        value = self.config.get("pvp_pending")
+        if value in ("true", "false") and self.pvp_is_gamerule():
+            time.sleep(1)
+            if self.state == "ONLINE" and self.send_command(f"gamerule pvp {value}").get("status") == "success":
+                self.config.pop("pvp_pending", None)
+                self.save_config()
+                self.add_log(f"[Pannello] PvP impostato a {value} (scelto a server spento).")
 
     def _translate_gamerule(self, cmd: str) -> str:
         """Pannello, app e guida dei comandi usano i nomi delle regole fino alla 1.21.10 (keepInventory): sui server
@@ -1161,6 +1251,11 @@ class ServerManager:
             return {"status": "success", "message": "Procedura di arresto sicuro avviata."}
 
     def _graceful_stop_worker(self, reason: str):
+        with self.lock:
+            # Riavvio programmato, Modalità Eco e riavvio dal pannello: prima lo stato restava ONLINE finché Minecraft
+            # non si chiudeva (fino a STOP_TIMEOUT_SECONDS), mentre il pulsante Ferma mostrava già STOPPING
+            if self.state in ("ONLINE", "STARTING"):
+                self.state = "RESTARTING" if self.scheduled_restart_in_progress else "STOPPING"
         try:
             self.send_command(f"say §c[Server] ATTENZIONE: Il server si sta arrestando ({reason})")
             time.sleep(1)
@@ -1361,7 +1456,8 @@ class ServerManager:
         elif t_lower in ("salva", "salva tutto", "salvataggio", "/save-all"):
             self.send_command("save-all")
             reply = "Salvataggio forzato del mondo avviato." if is_online else "Server offline: nessun salvataggio necessario."
-        elif t_lower.startswith("riavvia"):
+        # Solo la frase esatta: prima "riavviamo dopo cena?" o "riavviate il gioco" riavviavano (o accendevano) il server
+        elif t_lower in ("riavvia", "riavvia server", "riavvia il server"):
             if is_online:
                 self.restart_server(reason="Riavvio richiesto dalla chat", warning_countdown=10)
                 reply = "Riavvio programmato tra 10 secondi."
@@ -1495,6 +1591,8 @@ class ServerManager:
             if self.state not in ("ONLINE", "STOPPING", "RESTARTING"):
                 self.state = "ONLINE"
                 self.add_log("[Pannello] SERVER MINECRAFT COMPLETAMENTE ONLINE E PRONTO!")
+                if self.config.get("pvp_pending"):
+                    threading.Thread(target=self._apply_pending_pvp, daemon=True).start()
 
         # 2. Player Join Detection
         join_match = self._RE_PLAYER_JOIN.search(line)
@@ -1599,6 +1697,12 @@ class ServerManager:
             err_msg = (f"Questo server richiede Java {need}: la Java del PC è più vecchia. Installa Java {need} "
                        "(per esempio da adoptium.net) e riavvia il server." if need else
                        "La Java del PC è troppo vecchia per questo server: installa una versione più recente.")
+            self.add_log(f"[Pannello/ERRORE] {err_msg}")
+        elif "ClassCastException" in line and "URLClassLoader" in line:
+            # Forge 1.12.2 e più vecchi con Java 9 o più recente: si chiude subito e prima risultava solo "crash"
+            is_error = True
+            level = "CRITICAL"
+            err_msg = JAVA8_ONLY_RUNTIME_MSG
             self.add_log(f"[Pannello/ERRORE] {err_msg}")
         elif log_level in ("ERROR", "FATAL"):
             is_error = True
@@ -1823,6 +1927,9 @@ class ServerManager:
                             tags="zzz,battery"
                         )
                         self.server_empty_since = None
+                        # Spegnimento voluto: prima, se Minecraft usciva con un codice diverso da 0 o il server era
+                        # stato trovato già acceso, risultava un crash e il riavvio automatico lo riaccendeva
+                        self.intentional_stop = True
                         threading.Thread(target=self._graceful_stop_worker, args=("Spegnimento automatico Modalità Eco",), daemon=True).start()
                 else:
                     self.server_empty_since = None
@@ -2375,6 +2482,9 @@ class ServerManager:
 
     def clean_old_logs(self) -> Dict[str, Any]:
         s_dir = self.config.get("server_dir", "")
+        if not s_dir or not os.path.isdir(s_dir):
+            # Prima con la cartella vuota si cercavano logs e crash-reports nella cartella del programma
+            return {"status": "error", "message": "Nessun server collegato: scegli prima la cartella del server."}
         logs_dir = os.path.join(s_dir, "logs")
         deleted_count = 0
         freed_bytes = 0
@@ -2423,6 +2533,27 @@ class ServerManager:
             "freed_mb": freed_mb
         }
 
+    PLAYER_NOT_ONLINE_MSG = "Il giocatore {0} non è connesso al server: azione non eseguita."
+
+    def _player_command(self, cmd: str, player_name: str, timeout: float = 1.5) -> Dict[str, Any]:
+        """Comando su un giocatore: se Minecraft risponde che non c'è, errore invece di "fatto". Prima il pannello
+        diceva per esempio "Nessuno teletrasportato allo spawn" anche con il giocatore già uscito."""
+        seq = self.log_seq
+        res = self.send_command(cmd)
+        if res.get("status") == "error":
+            return res
+        if "No player was found" in str(res.get("message", "")) or "No entity was found" in str(res.get("message", "")):
+            return {"status": "error", "message": self.PLAYER_NOT_ONLINE_MSG.format(player_name)}
+        end = time.time() + timeout
+        while time.time() < end:
+            for line in self.logs_since(seq).get("lines", []):
+                if "No player was found" in line or "No entity was found" in line:
+                    return {"status": "error", "message": self.PLAYER_NOT_ONLINE_MSG.format(player_name)}
+                if player_name in line and not line.lstrip().startswith(">") and cmd not in line:
+                    return res
+            time.sleep(0.1)
+        return res
+
     def player_quick_action(self, player_name: str, action: str, value: Optional[str] = None) -> Dict[str, Any]:
         if not re.match(r"^[\.\*]?[a-zA-Z0-9_]{2,16}$", player_name):
             return {"status": "error", "message": "Nome giocatore non valido"}
@@ -2433,16 +2564,17 @@ class ServerManager:
         if action == "tp" and (value or "").strip().lower() == "spawn":
             action = "spawn"
         if action == "heal":
-            cmd = f"effect give {player_name} minecraft:instant_health 1 255"
+            # Livello 20: Minecraft cura 4 << livello punti e da 29 in su il conto dà 0 (con 255 non curava nulla)
+            cmd = f"effect give {player_name} minecraft:instant_health 1 20"
             cmd_feed = f"effect give {player_name} minecraft:saturation 1 255"
-            res = self.send_command(cmd)
+            res = self._player_command(cmd, player_name)
             if res.get("status") == "error":
                 return res
             self.send_command(cmd_feed)
             action_desc = f"Salute e nutrizione di {player_name} ripristinate al massimo."
         elif action == "feed":
             cmd = f"effect give {player_name} minecraft:saturation 1 255"
-            res = self.send_command(cmd)
+            res = self._player_command(cmd, player_name)
             if res.get("status") == "error":
                 return res
             action_desc = f"Fame di {player_name} saziata."
@@ -2451,14 +2583,14 @@ class ServerManager:
             if mode not in ["survival", "creative", "adventure", "spectator"]:
                 mode = "survival"
             cmd = f"gamemode {mode} {player_name}"
-            res = self.send_command(cmd)
+            res = self._player_command(cmd, player_name)
             if res.get("status") == "error":
                 return res
             action_desc = f"Modalità di {player_name} impostata a {mode}."
         elif action == "tp":
             dest = value or "@p"
             cmd = f"tp {player_name} {dest}"
-            res = self.send_command(cmd)
+            res = self._player_command(cmd, player_name)
             if res.get("status") == "error":
                 return res
             action_desc = f"Teletrasporto di {player_name} eseguito."
@@ -2468,47 +2600,48 @@ class ServerManager:
             if not spawn:
                 return {"status": "error", "message": "Non riesco a leggere il punto di spawn del mondo (level.dat)."}
             x, y, z = spawn
-            cmd = f"execute in minecraft:overworld run tp {player_name} {x + 0.5} {y} {z + 0.5}"
-            res = self.send_command(cmd)
+            # Dimensione dello spawn (da Minecraft 1.21.9 può essere anche il Nether o l'End): prima sempre il mondo normale
+            cmd = f"execute in {read_world_spawn_dimension(self.config.get('server_dir', ''))} run tp {player_name} {x + 0.5} {y} {z + 0.5}"
+            res = self._player_command(cmd, player_name)
             if res.get("status") == "error":
                 return res
             action_desc = f"{player_name} teletrasportato allo spawn del mondo ({x} {y} {z})."
         elif action == "give":
             item = value or "minecraft:cooked_beef 16"
             cmd = f"give {player_name} {item}"
-            res = self.send_command(cmd)
+            res = self._player_command(cmd, player_name)
             if res.get("status") == "error":
                 return res
             action_desc = f"Oggetto {item} donato a {player_name}."
         elif action == "clear_inventory":
             cmd = f"clear {player_name}"
-            res = self.send_command(cmd)
+            res = self._player_command(cmd, player_name)
             if res.get("status") == "error":
                 return res
             action_desc = f"Inventario di {player_name} svuotato."
         elif action == "op":
             cmd = f"op {player_name}"
-            res = self.send_command(cmd)
+            res = self._player_command(cmd, player_name)
             if res.get("status") == "error":
                 return res
             action_desc = f"{player_name} promosso ad operatore (OP)."
         elif action == "deop":
             cmd = f"deop {player_name}"
-            res = self.send_command(cmd)
+            res = self._player_command(cmd, player_name)
             if res.get("status") == "error":
                 return res
             action_desc = f"Privilegi operatore rimossi da {player_name}."
         elif action == "kick":
             reason = value or "Espulso dall'amministratore"
             cmd = f"kick {player_name} {reason}"
-            res = self.send_command(cmd)
+            res = self._player_command(cmd, player_name)
             if res.get("status") == "error":
                 return res
             action_desc = f"Giocatore {player_name} espulso."
         elif action == "ban":
             reason = value or "Bannato dall'amministratore"
             cmd = f"ban {player_name} {reason}"
-            res = self.send_command(cmd)
+            res = self._player_command(cmd, player_name)
             if res.get("status") == "error":
                 return res
             action_desc = f"Giocatore {player_name} bannato dal server."
@@ -2575,10 +2708,15 @@ class ServerManager:
     def _rewrite_java_line(self, line: str, ram_gb: int, use_aikar: bool) -> str:
         """Stessa riga java con -Xms/-Xmx nuovi e le flag di Aikar aggiunte o tolte; il resto resta com'è."""
         indent = line[:len(line) - len(line.lstrip())]
-        parts = line.strip().split(" ")
-        rest = [p for p in parts[1:] if p and not p.startswith(("-Xmx", "-Xms")) and p not in self.AIKAR_FLAGS]
+        s = line.strip()
+        # Il programma java resta com'è, anche "C:\Program Files\...\java.exe" tra virgolette (prima diviso agli spazi)
+        lead = "@" if s.startswith("@") else ""
+        s = s[len(lead):].lstrip()
+        end = java_token_end(s)
+        java, parts = s[:end], s[end:].split(" ")
+        rest = [p for p in parts if p and not p.startswith(("-Xmx", "-Xms")) and p not in self.AIKAR_FLAGS]
         mem = [f"-Xms{ram_gb}G", f"-Xmx{ram_gb}G"]
-        return indent + " ".join([parts[0]] + mem + (self.AIKAR_FLAGS if use_aikar else []) + rest)
+        return indent + lead + " ".join([java] + mem + (self.AIKAR_FLAGS if use_aikar else []) + rest)
 
     def save_jvm_tuning(self, ram_gb: int, use_aikar: bool) -> Dict[str, Any]:
         s_dir = self.config.get("server_dir", "")
@@ -2592,11 +2730,24 @@ class ServerManager:
         written = ""
         try:
             if self._uses_jvm_args_file():
-                lines = ["# Configurazione JVM & RAM generata da Voxarium", f"-Xms{ram_gb}G", f"-Xmx{ram_gb}G"]
+                jvm_path = os.path.join(s_dir, "user_jvm_args.txt")
+                header = "# Configurazione JVM & RAM generata da Voxarium"
+                # Le altre opzioni scritte nel file (es. -Dfml...) e i commenti restano: prima il file si riscriveva da capo
+                kept = []
+                if os.path.isfile(jvm_path):
+                    with open(jvm_path, "r", encoding="utf-8", errors="ignore") as f:
+                        for l in f.read().splitlines():
+                            if not l.strip() or l.strip().startswith("#"):
+                                if l.strip() != header:
+                                    kept.append(l)
+                                continue
+                            opts = [o for o in l.split() if not o.startswith(("-Xmx", "-Xms")) and o not in self.AIKAR_FLAGS]
+                            if opts:
+                                kept.append(" ".join(opts))
+                lines = [header, f"-Xms{ram_gb}G", f"-Xmx{ram_gb}G"]
                 if use_aikar:
                     lines.extend(self.AIKAR_FLAGS)
-                with open(os.path.join(s_dir, "user_jvm_args.txt"), "w", encoding="utf-8") as f:
-                    f.write("\n".join(lines) + "\n")
+                write_text_atomic(jvm_path, "\n".join(lines + kept) + "\n")
                 written = "user_jvm_args.txt"
             else:
                 # Vanilla, Paper, Fabric...: la RAM è nella riga java di run.bat (o nel comando salvato)
@@ -2606,7 +2757,7 @@ class ServerManager:
                         bat_lines = f.read().splitlines()
                     changed = False
                     for i, l in enumerate(bat_lines):
-                        if l.strip().startswith("java "):
+                        if is_java_line(l):
                             bat_lines[i] = self._rewrite_java_line(l, ram_gb, use_aikar)
                             changed = True
                             break
@@ -2614,7 +2765,7 @@ class ServerManager:
                         write_text_atomic(bat, "\n".join(bat_lines) + "\n")
                         written = os.path.basename(bat)
                 cmd = (self.config.get("server_command") or "").strip()
-                if cmd.startswith("java "):
+                if is_java_line(cmd):
                     self.config["server_command"] = self._rewrite_java_line(cmd, ram_gb, use_aikar)
                     self.save_config()
                     written = written or "comando di avvio"

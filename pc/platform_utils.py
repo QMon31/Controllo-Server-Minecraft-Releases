@@ -158,10 +158,38 @@ def write_launch_script(target_dir: str, label: str, launch_cmd: str) -> str:
     return path
 
 
+JAVA_NAMES = ("java", "java.exe", "javaw", "javaw.exe")
+
+
+def java_token_end(line: str) -> int:
+    """Fine del primo elemento della riga: il programma java, anche tra virgolette con spazi ("C:/Program Files/...")."""
+    s = line
+    if s.startswith('"'):
+        end = s.find('"', 1)
+        return len(s) if end < 0 else end + 1
+    end = s.find(" ")
+    return len(s) if end < 0 else end
+
+
+def is_java_line(line: str) -> bool:
+    """Riga che avvia Java: "java ...", "@java ...", "java.exe ...", "C:/.../bin/java.exe" ... o "%JAVA_HOME%/bin/java" ...
+    Prima valeva solo "java ...": con il percorso completo il server partiva tramite cmd e il "pause" in fondo a
+    run.bat teneva acceso il processo (arresto lungo 3 minuti e crash mai riconosciuti)."""
+    s = line.strip()
+    if s.startswith("@"):
+        s = s[1:].lstrip()
+    if not s or s.lower().startswith(("rem ", "::", "#")):
+        return False
+    tok = s[:java_token_end(s)].strip('"').replace("\\", "/")
+    return tok.rsplit("/", 1)[-1].lower() in JAVA_NAMES
+
+
 def split_java_line(line: str, server_dir: str = "") -> List[str]:
     """Riga "java ..." dello script di avvio → argomenti per Popen, con "nogui" in fondo.
     Su Linux un win_args.txt (server copiato da Windows) diventa unix_args.txt se c'è: il primo usa ';' come separatore."""
     s = line.strip()
+    if s.startswith("@"):
+        s = s[1:].lstrip()   # "@java ...": in cmd vuol dire solo "non mostrare la riga"
     if "%*" in s:
         # "%*" = argomenti passati allo script: al loro posto "nogui", se la riga non lo ha già (era "nogui nogui")
         s = " ".join(s.replace("%*", "" if "nogui" in s else "nogui").split())
@@ -172,7 +200,11 @@ def split_java_line(line: str, server_dir: str = "") -> List[str]:
     elif "nogui" not in s:
         s += " nogui"
     if IS_WINDOWS:
-        return shlex.split(s, posix=False)
+        # In cmd le virgolette raggruppano e basta: prima arrivavano a Java dentro il nome ("forge-1.16.5.jar" con le
+        # virgolette, "Unable to access jarfile") e i server Forge 1.16.5 / 1.12.2 creati dal pannello non partivano.
+        # %JAVA_HOME% e le altre variabili si sostituiscono come farebbe cmd
+        return [os.path.expandvars(p).replace('"', "") if "%" in p else p.replace('"', "")
+                for p in shlex.split(s, posix=False)]
     parts = shlex.split(s, posix=True)
     for i, p in enumerate(parts):
         if p.startswith("@") and p.endswith("win_args.txt"):

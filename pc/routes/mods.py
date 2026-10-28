@@ -6,9 +6,10 @@ import instance_manager
 import mod_info
 import modrinth_store
 import os
+import zipfile
 from fastapi import APIRouter
 
-from app import get_mods_dir, get_server_dir_path, manager, verify_admin_access
+from app import get_mods_dir, get_server_dir_path, manager, save_upload, verify_admin_access
 
 router = APIRouter()
 
@@ -275,19 +276,23 @@ async def api_upload_mod_file(request: Request, name: str):
         raise HTTPException(status_code=400, detail="Solo i file con estensione .jar possono essere installati nella cartella mods")
         
     target_path = os.path.join(mods_dir, clean_name)
+    # Prima <mod>.part (non finisce in .jar: Minecraft non lo carica), poi il controllo del .jar e lo scambio.
+    # Prima un caricamento interrotto lasciava un .jar a metà in mods/ (crash all'avvio) o rovinava la mod di prima
+    part_path = target_path + ".part"
     try:
-        size = 0
-        with open(target_path, "wb") as f:
-            async for chunk in request.stream():
-                f.write(chunk)
-                size += len(chunk)
-        if size == 0:
-            if os.path.exists(target_path):
+        try:
+            size = await save_upload(request, part_path)
+            if size == 0:
+                raise HTTPException(status_code=400, detail="Il file caricato è vuoto")
+            if not zipfile.is_zipfile(part_path):
+                raise HTTPException(status_code=400, detail="Il file caricato non è un .jar valido (caricamento interrotto o file rovinato).")
+            os.replace(part_path, target_path)
+        finally:
+            if os.path.exists(part_path):
                 try:
-                    os.remove(target_path)
-                except Exception:
+                    os.remove(part_path)
+                except OSError:
                     pass
-            raise HTTPException(status_code=400, detail="Il file caricato è vuoto")
         return {"status": "success", "filename": clean_name, "size": size}
     except HTTPException:
         raise

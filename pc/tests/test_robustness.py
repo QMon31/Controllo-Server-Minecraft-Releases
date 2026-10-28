@@ -13,7 +13,7 @@ import tempfile
 import threading
 import time
 import unittest
-from typing import Dict
+from typing import Dict, Optional
 from unittest import mock
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -203,6 +203,34 @@ class InstanceConfigSyncTest(unittest.TestCase):
         self.assertEqual(m.config["server_dir"], b)
         self.assertEqual(m.config["admin_pin"], "987654")  # niente perso anche con config.json illeggibile
 
+    def test_no_switch_or_config_change_while_server_starts_or_stops(self):
+        import instance_manager
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d, True)
+        inst_file, cfg_file = os.path.join(d, "instances.json"), os.path.join(d, "config.json")
+        a, b = os.path.join(d, "A"), os.path.join(d, "B")
+        with open(inst_file, "w", encoding="utf-8") as f:
+            json.dump([{"id": "a", "name": "A", "server_dir": a, "server_port": 25565, "is_active": True},
+                       {"id": "b", "name": "B", "server_dir": b, "is_active": False}], f)
+
+        class FakeManager:
+            config = {"server_dir": a}
+
+            def save_config(self):
+                pass
+        m = FakeManager()
+        with mock.patch.object(instance_manager, "INSTANCES_FILE", inst_file), \
+                mock.patch.object(instance_manager, "CONFIG_FILE", cfg_file):
+            for st in ("STARTING", "STOPPING", "RESTARTING", "ONLINE"):
+                m.state = st
+                self.assertFalse(instance_manager.switch_instance("b", manager=m)["success"], st)
+                self.assertFalse(instance_manager.update_instance("a", {"server_port": 25570}, manager=m)["success"], st)
+            # Il nome si può cambiare anche a server acceso
+            self.assertTrue(instance_manager.update_instance("a", {"name": "Nuovo"}, manager=m)["success"])
+            for st in ("STOPPED", "CRASHED"):
+                m.state = st
+                self.assertTrue(instance_manager.switch_instance("b", manager=m)["success"], st)
+
     def test_first_created_server_is_listed_once(self):
         # Primo server creato: config.json ha già la cartella, instances.json non c'è ancora
         import instance_manager
@@ -289,6 +317,31 @@ class BackupRotationAndRestoreTest(unittest.TestCase):
         self.assertTrue(os.path.exists(old[0]))     # la più recente rimasta
         self.assertTrue(os.path.exists(self.bm.target_path))
 
+    def test_last_backup_never_removed_to_make_room(self):
+        for i in range(2):
+            self._write("world/level.dat", f"versione {i}")
+            self._backup(time.time() - 86400 + i * 3600)
+        with mock.patch.object(self.bm_mod.shutil, "disk_usage", lambda _p: mock.Mock(free=0)):
+            self.bm._make_room(10 ** 12)                # spazio che non basta mai
+        self.assertTrue(os.path.exists(self.bm.target_path))
+        self.assertEqual(self.bm.old_copies(self.bm.target_path), [])
+
+    def test_disk_full_keeps_last_backup_and_says_so(self):
+        self._write("world/level.dat", "buono")
+        self._backup(time.time() - 3600)
+        with open(self.bm.target_path, "rb") as f:
+            good = f.read()
+        import errno
+        full = OSError(errno.ENOSPC, "No space left on device")
+        self.assertTrue(self.bm_mod._is_disk_full(full))
+        with mock.patch.object(self.bm_mod.zipfile.ZipFile, "close", side_effect=full):
+            self.bm.start_backup(is_server_stopped=True)
+            while self.bm.is_running:
+                time.sleep(0.05)
+        self.assertEqual(self.bm.progress["error"], self.bm_mod.DISK_FULL_MSG)
+        with open(self.bm.target_path, "rb") as f:
+            self.assertEqual(f.read(), good)
+
     def test_restore_sets_current_world_aside(self):
         self._write("world/level.dat", "mondo del backup")
         self._backup(time.time() - 3600)
@@ -304,6 +357,58 @@ class BackupRotationAndRestoreTest(unittest.TestCase):
         self.assertEqual(_read(os.path.join(safety, "world", "level.dat")), "mondo di adesso")
         self.assertTrue(os.path.isfile(os.path.join(safety, "world", "nuovo.dat")))
 
+    def test_restore_refused_without_space_world_untouched(self):
+        self._write("world/level.dat", "mondo del backup")
+        self._backup(time.time() - 3600)
+        self._write("world/level.dat", "mondo di adesso")
+        with mock.patch.object(self.bm_mod.BackupManager, "_free_bytes", staticmethod(lambda p: 1000)):
+            self.bm.start_restore(is_server_stopped=True, source_path="desktop", confirm_other_server=True)
+            self._wait()
+        self.assertIn("Spazio insufficiente", self.bm.progress.get("error") or "")
+        self.assertEqual(_read(os.path.join(self.server, "world", "level.dat")), "mondo di adesso")
+
+    def test_cancelled_restore_puts_world_back(self):
+        for i in range(6):
+            self._write(f"world/region/r.{i}.mca", f"regione {i} del backup")
+        self._backup(time.time() - 3600)
+        for i in range(6):
+            self._write(f"world/region/r.{i}.mca", f"regione {i} di adesso")
+        self._write("world/solo_adesso.dat", "nuovo")
+        real_open = open
+        count = {"n": 0}
+
+        def cancel_midway(path, mode="r", *a, **k):
+            if "w" in mode and str(path).endswith(".mca"):
+                count["n"] += 1
+                if count["n"] == 4:
+                    self.bm.cancel_requested = True   # l'utente annulla a metà
+            return real_open(path, mode, *a, **k)
+        with mock.patch("builtins.open", cancel_midway):
+            self.bm.start_restore(is_server_stopped=True, source_path="desktop", confirm_other_server=True)
+            self._wait()
+        self.assertEqual(self.bm.progress["status"], self.bm_mod.RESTORE_CANCELLED_MSG)
+        for i in range(6):
+            self.assertEqual(_read(os.path.join(self.server, "world", "region", f"r.{i}.mca")), f"regione {i} di adesso")
+        self.assertEqual(_read(os.path.join(self.server, "world", "solo_adesso.dat")), "nuovo")
+
+    def test_file_not_written_goes_back_in_place(self):
+        self._write("world/level.dat", "mondo del backup")
+        self._write("world/region.mca", "regione del backup")
+        self._backup(time.time() - 3600)
+        self._write("world/level.dat", "mondo di adesso")
+        real_open = open
+
+        def flaky_open(path, mode="r", *a, **k):
+            if "w" in mode and str(path).endswith("level.dat"):
+                raise PermissionError(13, "bloccato")
+            return real_open(path, mode, *a, **k)
+        with mock.patch("builtins.open", flaky_open):
+            self.bm.start_restore(is_server_stopped=True, source_path="desktop", confirm_other_server=True)
+            self._wait()
+        # Il file non ripristinato resta quello di prima, non sparisce dal mondo
+        self.assertEqual(_read(os.path.join(self.server, "world", "level.dat")), "mondo di adesso")
+        self.assertEqual(_read(os.path.join(self.server, "world", "region.mca")), "regione del backup")
+
 
 class TokenStoreTest(unittest.TestCase):
     """I token di accesso scadono se non usati e non crescono senza limite (classe letta da app.py senza avviarlo)."""
@@ -313,7 +418,7 @@ class TokenStoreTest(unittest.TestCase):
         with open(os.path.join(ROOT, "app.py"), encoding="utf-8") as f:
             tree = ast.parse(f.read())
         node = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "_TokenStore")
-        ns = {"Dict": Dict, "threading": threading, "time": time}
+        ns = {"Dict": Dict, "Optional": Optional, "threading": threading, "time": time}
         exec(compile(ast.Module(body=[node], type_ignores=[]), "app.py", "exec"), ns)
         cls.Store = ns["_TokenStore"]
 
@@ -331,6 +436,93 @@ class TokenStoreTest(unittest.TestCase):
             s.add(f"t{i}")
         self.assertEqual(len(s), self.Store.TOKEN_MAX)
         self.assertIn(f"t{self.Store.TOKEN_MAX + 19}", s)
+
+    def test_pin_change_revokes_other_devices(self):
+        s = self.Store()
+        for t in ("telefono", "pc_remoto", "chi_cambia"):
+            s.add(t)
+        s.revoke_all_except("chi_cambia")
+        self.assertIn("chi_cambia", s)
+        self.assertNotIn("telefono", s)
+        self.assertNotIn("pc_remoto", s)
+        s.revoke_all_except(None)      # cambio fatto dal PC stesso (senza token): fuori tutti
+        self.assertEqual(len(s), 0)
+        s.revoke_all_except("sconosciuto")
+        self.assertNotIn("sconosciuto", s)
+
+    def test_backup_restore_and_update_allowed_after_a_crash(self):
+        with open(os.path.join(ROOT, "app.py"), encoding="utf-8") as f:
+            src = f.read()
+        tree = ast.parse(src)
+        node = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "server_fully_stopped")
+
+        class P:
+            def __init__(self, alive):
+                self.alive = alive
+
+            def poll(self):
+                return None if self.alive else 0
+
+        class M:
+            process = psutil_proc = None
+            state = "STOPPED"
+
+            @staticmethod
+            def _proc_alive(p):
+                return p.alive
+        ns = {"manager": M}
+        exec(compile(ast.Module(body=[node], type_ignores=[]), "app.py", "exec"), ns)
+        stopped = ns["server_fully_stopped"]
+        for st, expected in (("STOPPED", True), ("CRASHED", True), ("ONLINE", False), ("STARTING", False),
+                             ("STOPPING", False), ("RESTARTING", False)):
+            M.state = st
+            self.assertEqual(stopped(), expected, st)
+        M.state, M.process = "CRASHED", P(True)       # processo ancora acceso: niente backup
+        self.assertFalse(stopped())
+        M.process, M.psutil_proc = None, P(True)
+        self.assertFalse(stopped())
+        M.psutil_proc = P(False)
+        self.assertTrue(stopped())
+        self.assertNotIn('is_stopped = (manager.state', src)
+        self.assertNotIn('if manager.state != "STOPPED"', src)
+
+    def test_list_file_errors_reported_when_server_is_off(self):
+        with open(os.path.join(ROOT, "routes", "players.py"), encoding="utf-8") as f:
+            tree = ast.parse(f.read())
+        routes = {n.name: ast.unparse(n) for n in tree.body if isinstance(n, ast.FunctionDef)}
+        for name in ("api_whitelist_add", "api_whitelist_remove", "api_ban_player", "api_unban_player"):
+            self.assertIn("_file_error(", routes[name], name)
+        node = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "_file_error")
+
+        class HTTPException(Exception):
+            def __init__(self, status_code, detail=""):
+                super().__init__(detail)
+                self.status_code = status_code
+
+        class M:
+            state = "STOPPED"
+        ns = {"HTTPException": HTTPException, "manager": M, "LIST_FILE_ERROR_MSG": "{0}"}
+        exec(compile(ast.Module(body=[node], type_ignores=[]), "players.py", "exec"), ns)
+        with self.assertRaises(HTTPException):
+            ns["_file_error"]("whitelist.json")
+        M.state = "ONLINE"
+        ns["_file_error"]("whitelist.json")   # a server acceso ci pensa il comando: nessun errore
+
+    def test_whitelist_and_ban_refused_while_server_starts_or_stops(self):
+        with open(os.path.join(ROOT, "routes", "players.py"), encoding="utf-8") as f:
+            tree = ast.parse(f.read())
+        routes = {n.name: ast.unparse(n) for n in tree.body if isinstance(n, ast.FunctionDef) and n.decorator_list}
+        for name in ("api_whitelist_toggle", "api_whitelist_add", "api_whitelist_remove", "api_ban_player",
+                     "api_unban_player"):
+            self.assertIn("_refuse_while_changing()", routes[name], name)
+
+    def test_update_config_revokes_tokens_when_pin_changes(self):
+        with open(os.path.join(ROOT, "app.py"), encoding="utf-8") as f:
+            src = f.read()
+        body = src[src.index("def update_config("):src.index("manager.save_config(current)", src.index("def update_config("))
+                   + 300]
+        self.assertIn("valid_auth_tokens.revoke_all_except(", body)
+        self.assertIn("_close_revoked_websockets()", body)
 
 
 class RequirementsLockTest(unittest.TestCase):
@@ -508,6 +700,297 @@ class ServerInstallerTest(unittest.TestCase):
         self.assertEqual(dl.call_args[1]["hashes"], {"sha1": "abc"})
 
 
+class JavaLineTest(unittest.TestCase):
+    """Riga java di run.bat: percorso completo, virgolette, "@java". Prima i server Forge 1.16.5/1.12.2 creati dal
+    pannello non partivano (virgolette passate a Java) e con il percorso completo il "pause" bloccava arresto e crash."""
+
+    def test_recognized_lines(self):
+        for line in ("java -jar server.jar", "@java -Xmx4G -jar server.jar", "java.exe -jar a.jar",
+                     '"C:\\Program Files\\Java\\bin\\java.exe" -jar server.jar', '"%JAVA_HOME%\\bin\\java" -jar a.jar',
+                     "/usr/lib/jvm/java-21/bin/java -jar server.jar", "  JAVA -jar server.jar"):
+            self.assertTrue(platform_utils.is_java_line(line), line)
+        for line in ("@echo off", "REM java -jar server.jar", "pause", "javascript.exe", 'cd "%~dp0"', ""):
+            self.assertFalse(platform_utils.is_java_line(line), line)
+
+    @unittest.skipUnless(platform_utils.IS_WINDOWS, "virgolette alla maniera di cmd")
+    def test_quotes_not_passed_to_java(self):
+        parts = platform_utils.split_java_line('"C:\\Program Files\\Java\\bin\\java.exe" -Xmx4G -jar "forge-1.16.5.jar" %*')
+        self.assertEqual(parts, ["C:\\Program Files\\Java\\bin\\java.exe", "-Xmx4G", "-jar", "forge-1.16.5.jar", "nogui"])
+        self.assertEqual(platform_utils.split_java_line("@java -jar server.jar")[0], "java")
+
+    def test_ram_rewrite_keeps_quoted_java_path(self):
+        import server_manager
+        m = server_manager.ServerManager.__new__(server_manager.ServerManager)
+        line = '"C:\\Program Files\\Java\\bin\\java.exe" -Xmx2G -jar "server.jar" nogui'
+        self.assertEqual(m._rewrite_java_line(line, 6, False),
+                         '"C:\\Program Files\\Java\\bin\\java.exe" -Xms6G -Xmx6G -jar "server.jar" nogui')
+        self.assertEqual(m._rewrite_java_line("@java -Xmx2G -jar server.jar", 3, False),
+                         "@java -Xms3G -Xmx3G -jar server.jar")
+
+    def test_other_server_with_same_prefix_not_adopted(self):
+        with open(os.path.join(ROOT, "server_manager.py"), encoding="utf-8") as f:
+            self.assertNotIn("(server_dir in cmdline)", f.read())
+        import re
+        server_dir = "c:\\minecraft\\server"
+        pat = re.escape(server_dir) + r'(?=[\\/"]|$)'
+        with open(os.path.join(ROOT, "server_manager.py"), encoding="utf-8") as f:
+            self.assertIn("re.escape(server_dir) + r'(?=[\\\\/\"]|$)'", f.read())
+        for other in ("server creativo", "server2", "server_vecchio"):
+            self.assertIsNone(re.search(pat, f'java -jar "c:\\minecraft\\{other}\\server.jar" nogui'), other)
+        self.assertIsNotNone(re.search(pat, 'java -jar "c:\\minecraft\\server\\server.jar" nogui'))
+
+
+class ServerDetectionTest(unittest.TestCase):
+    """Server collegati dal pannello: versione di Minecraft per NeoForge e caricatore dei modpack CurseForge."""
+
+    def test_neoforge_numbers(self):
+        from instance_manager import neoforge_to_mc_version as f
+        for nf, mc in (("21.1.77", "1.21.1"), ("20.4.237", "1.20.4"), ("21.0.167", "1.21"), ("21.11.4-beta", "1.21.11"),
+                       ("26.1.0.5", "26.1"), ("26.1.2.3", "26.1.2"), ("x", "")):
+            self.assertEqual(f(nf), mc, nf)
+
+    def test_detection(self):
+        import instance_manager as im
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d, True)
+        os.makedirs(os.path.join(d, "libraries", "net", "neoforged", "neoforge", "21.1.77"))
+        r = im.detect_server_details(d)
+        self.assertEqual((r["server_type"], r["mc_version"]), ("neoforge", "1.21.1"))
+        d2 = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d2, True)
+        os.makedirs(os.path.join(d2, "libraries", "net", "minecraftforge", "forge", "1.20.1-47.3.0"))
+        with open(os.path.join(d2, "manifest.json"), "w", encoding="utf-8") as f:
+            json.dump({"minecraft": {"version": "1.20.1", "modLoaders": [{"id": "forge-47.3.0", "primary": True}]}}, f)
+        r = im.detect_server_details(d2)
+        self.assertEqual((r["server_type"], r["mc_version"]), ("forge", "1.20.1"))
+
+    def test_saved_instances_fixed_once(self):
+        import instance_manager as im
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d, True)
+        pack = os.path.join(d, "pack")
+        os.makedirs(os.path.join(pack, "libraries", "net", "fabricmc"))
+        inst_file = os.path.join(d, "instances.json")
+        with open(inst_file, "w", encoding="utf-8") as f:
+            json.dump([{"id": "a", "server_dir": d, "server_type": "neoforge", "mc_version": "21.1.77", "is_active": True},
+                       {"id": "b", "server_dir": pack, "server_type": "curseforge", "mc_version": "1.21.1"}], f)
+        with mock.patch.object(im, "INSTANCES_FILE", inst_file):
+            items = im.load_instances_data()
+        self.assertEqual(items[0]["mc_version"], "1.21.1")
+        self.assertEqual(items[1]["server_type"], "fabric")
+        with open(inst_file, encoding="utf-8") as f:
+            self.assertEqual(json.load(f)[0]["mc_version"], "1.21.1")
+
+
+class ForgeJava8Test(unittest.TestCase):
+    """Forge 1.12.2 e più vecchi solo con Java 8: prima si installavano con Java 21 e andavano in crash a ogni avvio."""
+
+    def test_versions(self):
+        from server_installer import forge_needs_java8
+        for v in ("1.12.2", "1.7.10", "1.10.2"):
+            self.assertTrue(forge_needs_java8(v), v)
+        for v in ("1.16.5", "1.13.2", "1.20.1", "26.3", "", None):
+            self.assertFalse(forge_needs_java8(v), v)
+
+    def test_install_refused_with_newer_java(self):
+        import server_installer
+        inst = server_installer.ForgeServerInstaller.__new__(server_installer.ForgeServerInstaller)
+        inst.lock = threading.Lock()
+        inst.log_lines, inst.status, inst.error_message, inst.step_text = [], "downloading", "", ""
+        inst.required_java = lambda v: 8
+        inst.java_major = lambda *a: 21
+        inst._install_forge = mock.Mock()
+        inst._run_install_worker("x", "forge", "1.12.2", 4, 25565, None)
+        inst._install_forge.assert_not_called()
+        self.assertEqual(inst.status, "error")
+        self.assertIn("solo con Java 8", inst.error_message)
+        inst.java_major = lambda *a: 8
+        inst._run_install_worker("x", "forge", "1.12.2", 4, 25565, None)
+        inst._install_forge.assert_called_once()
+
+    def test_crash_explained(self):
+        import server_manager
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d, True)
+        p = os.path.join(d, "config.json")
+        with open(p, "w", encoding="utf-8") as f:
+            json.dump({"push_secret": "z" * 64, "push_topic": "mc_server_0011223344556677"}, f)
+        m = server_manager.ServerManager(config_path=p)
+        self.addCleanup(setattr, m, "running", False)
+        m.send_push_notification = lambda *a, **k: None
+        m._parse_log_line("java.lang.ClassCastException: class jdk.internal.loader.ClassLoaders$AppClassLoader cannot be "
+                          "cast to class java.net.URLClassLoader")
+        self.assertEqual(list(m.errors_list)[-1]["level"], "CRITICAL")
+        self.assertIn(server_manager.JAVA8_ONLY_RUNTIME_MSG, "\n".join(m.log_buffer))
+
+
+class NewServerSafetyTest(unittest.TestCase):
+    """Nuovo server: mai sopra un mondo esistente, mai sulle porte del pannello (che finirebbero aperte sul router)."""
+
+    def test_folder_with_world_detected(self):
+        from server_installer import folder_has_world
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d, True)
+        self.assertFalse(folder_has_world(d))
+        with open(os.path.join(d, "server.properties"), "w", encoding="utf-8") as f:
+            f.write("server-port=25565\n")   # installazione fallita a metà: si può riprovare
+        self.assertFalse(folder_has_world(d))
+        os.makedirs(os.path.join(d, "mondo"))
+        with open(os.path.join(d, "mondo", "level.dat"), "wb") as f:
+            f.write(b"x")
+        self.assertTrue(folder_has_world(d))
+        self.assertFalse(folder_has_world(os.path.join(d, "non_esiste")))
+
+    def test_panel_ports_refused_for_minecraft(self):
+        with open(os.path.join(ROOT, "app.py"), encoding="utf-8") as f:
+            src = f.read()
+        node = next(n for n in ast.parse(src).body if isinstance(n, ast.FunctionDef) and n.name == "minecraft_port_error")
+        ns = {"Optional": Optional, "panel_ports": lambda: {8080, 8443, 32770}}
+        exec(compile(ast.Module(body=[node], type_ignores=[]), "app.py", "exec"), ns)
+        err = ns["minecraft_port_error"]
+        for bad in (8080, 8443, 32770, "8080", 80, 70000, "abc", None):
+            self.assertIsNotNone(err(bad), bad)
+        self.assertIsNone(err(25565))
+        self.assertIn("if port in panel_ports():", src[src.index("def sync_minecraft_port"):])
+        with open(os.path.join(ROOT, "routes", "server_creation.py"), encoding="utf-8") as f:
+            creation = f.read()
+        self.assertIn("folder_has_world(req.target_dir)", creation)
+        self.assertIn("minecraft_port_error(req.port)", creation)
+        with open(os.path.join(ROOT, "routes", "instances.py"), encoding="utf-8") as f:
+            self.assertIn("minecraft_port_error(updates[\"server_port\"])", f.read())
+
+
+class RemoteClosedAndUploadsTest(unittest.TestCase):
+    """Accesso da internet chiuso ricordato al riavvio; caricamenti interrotti senza file a metà."""
+
+    def test_closed_remote_access_stays_closed_after_restart(self):
+        import remote_access as ra
+
+        class FakeUpnp:
+            opened, closed = [], []
+
+            def open_port(self, port, **kw):
+                FakeUpnp.opened.append(port)
+                return {"success": True}
+
+            def close_port(self, port):
+                FakeUpnp.closed.append(port)
+
+            def get_external_ip(self):
+                return "81.1.2.3"
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d, True)
+        r = ra.RemoteAccess(d, 8443, FakeUpnp(), lambda force: "81.1.2.3")
+        r.user_closed = True            # come app.py con "remote_access_closed": true in config.json
+        r._stop.set()                   # solo il primo giro del controllo
+        done = threading.Event()
+        orig = r.refresh
+        r.refresh = lambda reopen=True: (orig(reopen=reopen), done.set())
+        r.start_watcher()
+        self.assertTrue(done.wait(5))
+        self.assertEqual(FakeUpnp.opened, [])
+        self.assertEqual(FakeUpnp.closed, [8443])
+        self.assertFalse(r.get_status()["active"])
+
+    def test_app_refuses_internet_when_closed_and_remembers_choice(self):
+        with open(os.path.join(ROOT, "app.py"), encoding="utf-8") as f:
+            src = f.read()
+        self.assertIn('remote_access.user_closed = bool(manager.config.get("remote_access_closed"))', src)
+        mw = src[src.index("async def block_cross_site_middleware"):src.index("async def normalize_slashes_middleware")]
+        self.assertIn("remote_access.user_closed and is_internet_request(request)", mw)
+        self.assertIn("status_code=503", mw)   # mai 401/403: l'app segnerebbe il PIN salvato come sbagliato
+        self.assertIn("_save_remote_closed(True)", src)
+        self.assertIn("_save_remote_closed(False)", src)
+
+    def test_interrupted_upload_keeps_old_mod(self):
+        import asyncio
+        with open(os.path.join(ROOT, "app.py"), encoding="utf-8") as f:
+            node = next(n for n in ast.parse(f.read()).body
+                        if isinstance(n, ast.AsyncFunctionDef) and n.name == "save_upload")
+        ns = {"Request": object}
+        exec(compile(ast.Module(body=[node], type_ignores=[]), "app.py", "exec"), ns)
+
+        class BrokenRequest:
+            async def stream(self):
+                yield b"PK\x03\x04 meta"
+                raise ConnectionResetError("telefono disconnesso")
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d, True)
+        with self.assertRaises(ConnectionResetError):
+            asyncio.run(ns["save_upload"](BrokenRequest(), os.path.join(d, "mod.jar.part")))
+        for name in ("mods.py", "files.py"):
+            with open(os.path.join(ROOT, "routes", name), encoding="utf-8") as f:
+                route = f.read()
+            self.assertIn('part_path = target_path + ".part"', route, name)
+            self.assertIn("os.replace(part_path, target_path)", route, name)
+        with open(os.path.join(ROOT, "routes", "mods.py"), encoding="utf-8") as f:
+            self.assertIn("zipfile.is_zipfile(part_path)", f.read())
+
+
+class LanWithoutPinTest(unittest.TestCase):
+    """"Richiedi PIN" disattivato in casa: solo richieste all'IP o al nome del PC, mai a un nome di un altro sito."""
+
+    @classmethod
+    def setUpClass(cls):
+        import socket
+        with open(os.path.join(ROOT, "app.py"), encoding="utf-8") as f:
+            cls.src = f.read()
+        node = next(n for n in ast.parse(cls.src).body
+                    if isinstance(n, ast.FunctionDef) and n.name == "host_is_direct_address")
+        ns = {"socket": socket}
+        exec(compile(ast.Module(body=[node], type_ignores=[]), "app.py", "exec"), ns)
+        cls.direct = staticmethod(ns["host_is_direct_address"])
+        cls.pc = socket.gethostname().lower()
+
+    def test_addresses(self):
+        for host in ("192.168.1.10:8080", "192.168.1.10", "127.0.0.1:8080", "localhost:8080", "[::1]:8080",
+                     "[fe80::1]", f"{self.pc}:8080", f"{self.pc}.local:8080"):
+            self.assertTrue(self.direct({"host": host}), host)
+        for host in ("sito-malevolo.com:8080", "192.168.1.10.nip.io:8080", "", "evil.local:8080"):
+            self.assertFalse(self.direct({"host": host}), host)
+
+    def test_used_where_pin_is_skipped(self):
+        self.assertEqual(self.src.count("and host_is_direct_address("), 2)
+
+
+class StoreUninstallTest(unittest.TestCase):
+    """Disinstallazione dallo Store: la mod giusta (anche disattivata) e mai file fuori da mods/ e plugins/."""
+
+    def setUp(self):
+        import modrinth_store
+        self.ms = modrinth_store
+        self.d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.d, True)
+        os.makedirs(os.path.join(self.d, "mods"))
+
+    def _files(self, *names):
+        for n in names:
+            with open(os.path.join(self.d, "mods", n), "wb") as f:
+                f.write(b"x")
+
+    def test_disabled_mod_removed_not_a_similar_one(self):
+        self._files("create-1.21.1-6.0.jar.disabled", "create_enchantment_industry-2.0.jar")
+        self.ms.save_installed_projects(self.d, {"create": {"filename": "create-1.21.1-6.0.jar", "folder": "mods"}})
+        res = self.ms.uninstall_modrinth_project("create", self.d)
+        self.assertTrue(res["success"])
+        self.assertEqual(os.listdir(os.path.join(self.d, "mods")), ["create_enchantment_industry-2.0.jar"])
+        self.assertFalse(self.ms.uninstall_modrinth_project("create", self.d)["success"])
+
+    def test_search_by_name_only_when_one_file_matches(self):
+        self._files("sodium-fabric-0.6.0.jar", "lithium-0.14.jar", "lithium-extra-1.0.jar")
+        self.assertEqual(self.ms.uninstall_modrinth_project("sodium", self.d)["filename"], "sodium-fabric-0.6.0.jar")
+        self.assertEqual(self.ms.uninstall_modrinth_project("lithium", self.d)["filename"], "lithium-0.14.jar")
+        self.assertIn("lithium-extra-1.0.jar", os.listdir(os.path.join(self.d, "mods")))
+
+    def test_no_files_outside_the_mods_folder(self):
+        outside = os.path.join(self.d, "segreto.txt")
+        with open(outside, "w", encoding="utf-8") as f:
+            f.write("x")
+        for name in ("../segreto.txt", "..\\segreto.txt", "../segreto.jar"):
+            self.assertFalse(self.ms.uninstall_modrinth_project("nessuno", self.d, filename=name)["success"])
+        self.assertTrue(os.path.exists(outside))
+
+
 class ModStoreSafetyTest(unittest.TestCase):
     def test_file_names_and_urls(self):
         import modrinth_store as ms
@@ -562,6 +1045,121 @@ class PaperConsoleTest(unittest.TestCase):
         self.addCleanup(setattr, self.m, "running", False)
         self.m.send_push_notification = lambda *a, **k: None
 
+    def test_quick_action_on_missing_player_is_an_error(self):
+        m = self.m
+
+        def fake_send(cmd, reply):
+            m.add_log(f"> {cmd}")
+            m.add_log(reply)
+            return {"status": "success", "message": "Comando inviato"}
+        m.send_command = lambda c: fake_send(c, "[12:00:00] [Server thread/INFO]: No player was found")
+        res = m.player_quick_action("Nessuno", "gamemode", "creative")
+        self.assertEqual(res["status"], "error")
+        self.assertIn("non è connesso", res["message"])
+        m.send_command = lambda c: fake_send(c, "[12:00:00] [Server thread/INFO]: Set Notch's game mode to Creative Mode")
+        self.assertEqual(m.player_quick_action("Notch", "gamemode", "creative")["status"], "success")
+
+    def test_pvp_is_a_gamerule_from_1_21_9(self):
+        import instance_manager
+        m = self.m
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d, True)
+        props = os.path.join(d, "server.properties")
+        with open(props, "w", encoding="utf-8") as f:
+            f.write("motd=x\n")
+        m.config["server_dir"] = d
+        sent = []
+        m.send_command = lambda c: sent.append(c) or {"status": "success"}
+        with mock.patch.object(instance_manager, "get_active_instance", return_value={"mc_version": "1.21.8"}):
+            self.assertFalse(m.pvp_is_gamerule())
+            m.save_server_properties({"pvp": "false"})
+            with open(props, encoding="utf-8") as f:
+                self.assertIn("pvp=false", f.read())   # fino alla 1.21.8 resta in server.properties
+        with mock.patch.object(instance_manager, "get_active_instance", return_value={"mc_version": "26.3"}):
+            self.assertTrue(m.pvp_is_gamerule())
+            m.state = "STOPPED"
+            res = m.save_server_properties({"pvp": "true"})
+            self.assertEqual(res["pvp_gamerule"], "pending")
+            self.assertEqual(m.config["pvp_pending"], "true")
+            m.state = "ONLINE"
+            res = m.save_server_properties({"pvp": "false", "motd": "y"})
+            self.assertEqual(res["pvp_gamerule"], "now")
+            self.assertEqual(sent[-1], "gamerule pvp false")
+            self.assertNotIn("pvp_pending", m.config)
+
+    def test_heal_really_heals_and_chat_does_not_restart(self):
+        m = self.m
+        sent = []
+        m.send_command = lambda c: sent.append(c) or {"status": "success"}
+        m.player_quick_action("Notch", "heal")
+        amp = int(sent[0].split()[-1])
+        self.assertGreater(min(4 << (amp & 31), 2**31 - 1), 0)  # 4 << livello punti, come Minecraft (int a 32 bit)
+        self.assertLess(amp, 29)
+        m.restart_server = mock.Mock()
+        m.start_server = mock.Mock()
+        m.process = mock.Mock(poll=lambda: None, stdin=None)
+        for msg in ("riavviamo dopo cena?", "riavviate il gioco", "Riavviato tutto?"):
+            m.talk_to_server(msg)
+        m.restart_server.assert_not_called()
+        m.start_server.assert_not_called()
+        m.talk_to_server("riavvia")
+        m.restart_server.assert_called_once()
+
+    def test_ram_change_keeps_other_forge_jvm_options(self):
+        m = self.m
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d, True)
+        m.config["server_dir"] = d
+        p = os.path.join(d, "user_jvm_args.txt")
+        with open(p, "w", encoding="utf-8") as f:
+            f.write("# Xmx and Xms set the maximum and minimum RAM usage\n-Xmx4G\n-Dfml.queryResult=confirm\n")
+        m._uses_jvm_args_file = lambda: True
+        m._host_ram_gb = lambda: 32
+        self.assertEqual(m.save_jvm_tuning(6, True)["status"], "success")
+        self.assertEqual(m.save_jvm_tuning(8, False)["status"], "success")
+        with open(p, encoding="utf-8") as f:
+            text = f.read()
+        self.assertIn("-Dfml.queryResult=confirm", text)
+        self.assertIn("# Xmx and Xms set", text)
+        self.assertIn("-Xmx8G", text)
+        self.assertNotIn("-Xmx4G", text)
+        self.assertNotIn("-Xmx6G", text)
+        self.assertNotIn("UseG1GC", text)
+        self.assertEqual(text.count("generata da Voxarium"), 1)
+
+    def test_clean_logs_without_server(self):
+        self.m.config["server_dir"] = ""
+        self.assertEqual(self.m.clean_old_logs()["status"], "error")
+
+    def test_automatic_stops_show_stopping_state(self):
+        m = self.m
+        m.send_command = lambda *a, **k: {"status": "success"}
+        m.STOP_TIMEOUT_SECONDS = 0
+        with mock.patch("server_manager.time.sleep"):
+            m.state = "ONLINE"
+            m.scheduled_restart_in_progress = False
+            m._graceful_stop_worker("Modalità Eco")
+            self.assertIn(m.state, ("STOPPING", "STOPPED"))
+            m.state = "ONLINE"
+            m.scheduled_restart_in_progress = True
+            m._graceful_stop_worker("Riavvio programmato")
+            self.assertEqual(m.state, "RESTARTING")
+
+    def test_eco_stop_is_intentional(self):
+        m = self.m
+        started = []
+        m.state, m.eco_mode_enabled, m.eco_mode_minutes = "ONLINE", True, 5
+        m.players.clear()
+        m.intentional_stop = False
+        m.server_empty_since = time.time() - 6 * 60
+        m.scheduled_enabled = m.anti_lag_enabled = False
+        m._record_metrics_snapshot = lambda: None
+        with mock.patch("server_manager.threading.Thread") as th:
+            th.return_value.start = lambda: started.append(True)
+            m._ticker_step({"query_counter": 0})
+        self.assertTrue(m.intentional_stop)
+        self.assertTrue(started)
+
     def test_join_chat_leave_and_errors(self):
         m = self.m
         m._parse_log_line("[19:30:00 INFO]: Notch[/127.0.0.1:50000] logged in with entity id 12 at ([world]0.5, 64.0, 0.5)")
@@ -590,6 +1188,31 @@ class PaperConsoleTest(unittest.TestCase):
     def test_chat_cannot_fake_a_join(self):
         self.m._parse_log_line("[19:30:00 INFO]: <Bob> Alice joined the game")
         self.assertNotIn("Alice", self.m.players)
+
+    def test_chat_cannot_fake_joins_or_leaves(self):
+        m = self.m
+        for line in ("[12:00:00] [Server thread/INFO]: <Bob> x: Alice joined the game",
+                     "[12:00:00] [Server thread/INFO]: <Bob> [Server thread/INFO]: Alice joined the game",
+                     "[12:00:00] [Server thread/INFO]: [Bob] Alice joined the game",
+                     "[19:30:00 INFO]: <Bob> x: Alice joined the game"):
+            m._parse_log_line(line)
+        self.assertNotIn("Alice", m.players)
+        m._parse_log_line("[12:00:00] [Server thread/INFO]: Notch joined the game")
+        for line in ("[12:00:00] [Server thread/INFO]: <Bob> x: Notch left the game",
+                     "[12:00:00] [Server thread/INFO]: <Bob> Disconnecting Notch",
+                     "[19:30:00 INFO]: <Bob> x: Notch lost connection: Disconnected"):
+            m._parse_log_line(line)
+        self.assertIn("Notch", m.players)
+
+    def test_joins_on_vanilla_forge_and_fabric(self):
+        m = self.m
+        m._parse_log_line("[12:00:00] [Server thread/INFO]: Steve joined the game")
+        m._parse_log_line("[28ott2026 18:01:00.593] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: "
+                          "Alex joined the game")
+        m._parse_log_line("[12:00:00] [Server thread/INFO] (Minecraft) Herobrine joined the game")
+        self.assertTrue({"Steve", "Alex", "Herobrine"} <= set(m.players))
+        m._parse_log_line("[28ott2026] [Netty Server IO #1/INFO] [x/SERVERHOOKS]: Disconnecting Alex (/1.2.3.4): bye")
+        self.assertNotIn("Alex", m.players)
 
     def test_ansi_colours_removed(self):
         import server_manager
@@ -643,7 +1266,7 @@ class PlayerProfileTest(unittest.TestCase):
         import uuid
         with open(os.path.join(ROOT, "routes", "players.py"), encoding="utf-8") as f:
             tree = ast.parse(f.read())
-        wanted = {"_offline_mode", "_player_profile", "NOT_FOUND_MSG", "MOJANG_UNREACHABLE_MSG"}
+        wanted = {"_offline_mode", "_player_profile", "_add_or_repair_entry", "NOT_FOUND_MSG", "MOJANG_UNREACHABLE_MSG"}
         body = [n for n in tree.body if (isinstance(n, ast.FunctionDef) and n.name in wanted) or
                 (isinstance(n, ast.Assign) and n.targets[0].id in wanted if isinstance(n, ast.Assign) and
                  isinstance(n.targets[0], ast.Name) else False)]
@@ -685,6 +1308,16 @@ class PlayerProfileTest(unittest.TestCase):
             with self.assertRaises(Exception) as cm:
                 self.ns["_player_profile"]("Notch")
         self.assertEqual(cm.exception.status_code, 503)
+
+    def test_old_entry_with_empty_uuid_is_repaired(self):
+        add = self.ns["_add_or_repair_entry"]
+        profile = ("069a79f4-44e9-4726-a5be-fca90e38aaf5", "Notch")
+        current = [{"uuid": "", "name": "notch", "reason": "x"}]
+        self.assertTrue(add(current, "Notch", profile, {"reason": "y"}))
+        self.assertEqual(current, [{"uuid": profile[0], "name": "Notch", "reason": "x"}])
+        self.assertFalse(add(current, "NOTCH", profile, {}))
+        self.assertTrue(add(current, "Steve", ("8667ba71-b85a-4004-af54-457a9734eed7", "Steve"), {}))
+        self.assertEqual(len(current), 2)
 
 
 class WebPortTest(unittest.TestCase):

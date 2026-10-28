@@ -1,5 +1,6 @@
 import os
 import json
+import re
 import time
 import hashlib
 import threading
@@ -615,53 +616,60 @@ def uninstall_modrinth_project(
         return {"success": False, "error": "Cartella del server non trovata."}
 
     installed = get_installed_projects(server_dir)
-    target_filename = filename
+    # Solo il nome del file dentro mods/ o plugins/: prima "../" nel nome faceva cancellare file fuori dalla cartella
+    target_filename = _safe_jar_name(filename) if filename else ""
+    if filename and not target_filename:
+        return {"success": False, "error": "Nome del file della mod non valido."}
     target_folder = ""
 
     # Check ledger
     record = installed.get(project_id_or_slug)
     if record:
-        target_filename = record.get("filename") or target_filename
-        target_folder = record.get("folder") or "mods"
+        target_filename = _safe_jar_name(record.get("filename")) or target_filename
+        target_folder = record.get("folder") if record.get("folder") in ("mods", "plugins") else "mods"
 
     deleted = False
 
-    # If filename is known, look in target folder or both mods/ and plugins/
-    folders_to_check = [target_folder] if target_folder else ["mods", "plugins"]
-    for folder in folders_to_check:
-        if not folder:
-            continue
-        if target_filename:
-            candidate = os.path.join(server_dir, folder, target_filename)
-            if os.path.isfile(candidate):
-                try:
-                    os.remove(candidate)
-                    deleted = True
-                    break
-                except Exception as e:
-                    return {"success": False, "error": f"Impossibile eliminare il file '{target_filename}': {e}"}
+    # If filename is known, look in target folder or both mods/ and plugins/. Anche disattivata dalla lista delle
+    # mod (.jar.disabled): prima non si trovava e si passava alla ricerca per nome, che cancellava un'altra mod
+    if target_filename:
+        base = target_filename[:-len(".disabled")] if target_filename.lower().endswith(".disabled") else target_filename
+        for folder in ([target_folder] if target_folder else ["mods", "plugins"]):
+            for name in (target_filename, base, base + ".disabled"):
+                candidate = os.path.join(server_dir, folder, name)
+                if os.path.isfile(candidate):
+                    try:
+                        os.remove(candidate)
+                        deleted = True
+                        target_filename = name
+                        break
+                    except Exception as e:
+                        return {"success": False, "error": f"Impossibile eliminare il file '{name}': {e}"}
+            if deleted:
+                break
 
-    # If still not found, search by prefix/slug in mods/ and plugins/
+    # Se il file non si trova, si cerca per nome del progetto ("sodium-0.6.jar", "sodium-fabric-0.6.jar"), e si
+    # cancella solo se il file è uno solo. Prima bastava che il nome contenesse il progetto: disinstallando "create"
+    # si cancellava "create_enchantment_industry"
     if not deleted:
         slug_norm = project_id_or_slug.lower().replace("-", "_").replace(" ", "_")
+        pattern = re.compile(re.escape(slug_norm) + r"(_(fabric|forge|neoforge|quilt|paper|bukkit|spigot))?"
+                             r"(_(v|mc)?\d.*)?\.jar(\.disabled)?$")
+        matches = []
         for folder in ["mods", "plugins"]:
             dir_path = os.path.join(server_dir, folder)
             if os.path.isdir(dir_path):
                 for fname in os.listdir(dir_path):
-                    if not fname.lower().endswith(".jar"):
-                        continue
-                    fn_norm = fname.lower().replace("-", "_").replace(" ", "_")
-                    if fn_norm.startswith(slug_norm + "_") or fn_norm.startswith(slug_norm + "-") or fn_norm == slug_norm + ".jar" or (len(slug_norm) > 4 and slug_norm in fn_norm):
-                        candidate = os.path.join(dir_path, fname)
-                        try:
-                            os.remove(candidate)
-                            deleted = True
-                            target_filename = fname
-                            break
-                        except Exception as e:
-                            return {"success": False, "error": f"Impossibile eliminare il file '{fname}': {e}"}
-                if deleted:
-                    break
+                    if pattern.match(fname.lower().replace("-", "_").replace(" ", "_")):
+                        matches.append((dir_path, fname))
+        if len(matches) == 1:
+            dir_path, fname = matches[0]
+            try:
+                os.remove(os.path.join(dir_path, fname))
+                deleted = True
+                target_filename = fname
+            except Exception as e:
+                return {"success": False, "error": f"Impossibile eliminare il file '{fname}': {e}"}
 
     # Clean from ledger
     installed.pop(project_id_or_slug, None)

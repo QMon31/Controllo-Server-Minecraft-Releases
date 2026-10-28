@@ -197,7 +197,11 @@ class RemoteAccess:
 
     def start_watcher(self, interval_seconds: int = CHECK_INTERVAL_SECONDS):
         def _loop():
-            self.refresh(reopen=True)
+            # Chiuso dal pannello (ricordato in config.json): all'avvio non si riapre, e si toglie dal router una
+            # mappatura rimasta (es. chiusura non riuscita perché il router non rispondeva)
+            if self.user_closed:
+                self.close()
+            self.refresh(reopen=not self.user_closed)
             while not self._stop.wait(interval_seconds):
                 self.refresh(reopen=False)
         threading.Thread(target=_loop, daemon=True).start()

@@ -871,12 +871,19 @@ async function stopRemoteAccess() {
 
 async function openUrlInBrowser(url) {
   if (!url) return;
+  // Da un altro dispositivo la pagina si apre subito qui (aprirla dopo la risposta del PC la farebbe bloccare come popup)
+  if (!isLocalHostClient() || document.body.classList.contains('is-remote-client')) {
+    window.open(url, '_blank');
+    return;
+  }
   try {
-    await fetch('/api/open-browser', {
+    const res = await fetch('/api/open-browser', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url: url })
     });
+    // Pannello aperto da un altro dispositivo: il PC Host rifiuta (403) e la pagina si apre qui
+    if (!res.ok) throw new Error('HTTP ' + res.status);
     showToast(t('msg.apertura_nel_browser_predefinito'), 'info');
   } catch (_) {
     window.open(url, '_blank');
@@ -1030,7 +1037,7 @@ function ensureLanQrRendered() {
     .catch(() => {
       if (qrLanImg && !qrLanImg.src) {
         const fallbackUrl = (networkInfo && networkInfo.lan_url) || window.location.origin;
-        qrLanImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=4&data=${encodeURIComponent(fallbackUrl)}`;
+        qrLanImg.src = `/api/qr.png?text=${encodeURIComponent(fallbackUrl)}`;
       }
     });
 }
@@ -1124,7 +1131,7 @@ function updateApkQrDisplay() {
     if (targetQr) {
       qrImg.src = targetQr;
     } else if (targetUrl) {
-      qrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=4&data=${encodeURIComponent(targetUrl)}`;
+      qrImg.src = `/api/qr.png?text=${encodeURIComponent(targetUrl)}`;
     }
   }
   if (inputUrl) {
@@ -3254,8 +3261,9 @@ async function saveSettings(e) {
     }
     if (savedCfg && savedCfg.config) renderDefaultPinBanner(savedCfg.config.admin_pin_is_default);
 
-    // Save autostart state only if on PC
-    if (!isMobileClient) {
+    // Avvio automatico del PC Host: si salva solo dalla finestra sul PC Host (da un altro PC era quella del PC Host,
+    // non del proprio)
+    if (!isMobileClient && isLocalHostClient() && !document.body.classList.contains('is-remote-client')) {
       const autoEl = document.getElementById('cfg-autostart-boot');
       if (autoEl) {
         try {

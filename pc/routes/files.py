@@ -7,7 +7,8 @@ import os
 from fastapi import APIRouter
 
 from app import (
-    CreateItemRequest, DeleteItemRequest, RenameItemRequest, SaveFileRequest, UnzipItemRequest, get_server_dir_path, verify_admin_access,
+    CreateItemRequest, DeleteItemRequest, RenameItemRequest, SaveFileRequest, UnzipItemRequest, get_server_dir_path, save_upload,
+    verify_admin_access,
 )
 
 router = APIRouter()
@@ -112,12 +113,19 @@ async def api_files_upload(request: Request, filename: str, path: str = ""):
         raise HTTPException(status_code=400, detail="Nome file non valido.")
     
     target_path = os.path.join(target_dir, clean_name)
+    # Prima un file .part, al suo posto solo a caricamento finito: prima un caricamento interrotto lasciava un file a
+    # metà (o rovinava quello che c'era con lo stesso nome)
+    part_path = target_path + ".part"
     try:
-        size = 0
-        with open(target_path, "wb") as f:
-            async for chunk in request.stream():
-                f.write(chunk)
-                size += len(chunk)
+        try:
+            size = await save_upload(request, part_path)
+            os.replace(part_path, target_path)
+        finally:
+            if os.path.exists(part_path):
+                try:
+                    os.remove(part_path)
+                except OSError:
+                    pass
         return {
             "status": "success",
             "filename": clean_name,

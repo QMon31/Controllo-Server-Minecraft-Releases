@@ -438,7 +438,8 @@ class InternetAccessTest(unittest.TestCase):
         with open(os.path.join(ROOT, "app.py"), encoding="utf-8") as fh:
             src = fh.read()
         wanted = ("is_internet_request", "is_local_request", "verify_admin_access", "pin_is_default",
-                  "has_admin_access", "hide_private_paths", "is_public_client_ip", "public_network_payload")
+                  "has_admin_access", "hide_private_paths", "is_public_client_ip", "public_network_payload",
+                  "host_is_direct_address")
         fns = [n for n in ast.parse(src).body if isinstance(n, ast.FunctionDef) and n.name in wanted]
         cls.config = {"admin_pin": "583921", "require_pin_for_remote": True}
 
@@ -450,7 +451,8 @@ class InternetAccessTest(unittest.TestCase):
             config = cls.config
 
         cls.HTTPException = HTTPException
-        cls.ns = {"REMOTE_PORT": 8443, "manager": Manager, "valid_auth_tokens": {"tok"}, "HTTPException": HTTPException,
+        import socket
+        cls.ns = {"socket": socket, "REMOTE_PORT": 8443, "manager": Manager, "valid_auth_tokens": {"tok"}, "HTTPException": HTTPException,
                   "is_default_pin": is_default_pin, "DEFAULT_PIN_INTERNET_MSG": "", "Request": object,
                   "Dict": dict, "Any": object, "PRIVATE_PATH_KEYS": ("server_dir", "target_path", "cloud_sync_dir")}
         exec(compile(ast.Module(body=fns, type_ignores=[]), "app.py", "exec"), cls.ns)
@@ -478,7 +480,9 @@ class InternetAccessTest(unittest.TestCase):
         self.assertEqual(self._status(self._req(8080)), 200)                      # PC Host
         self.assertEqual(self._status(self._req(8080, "192.168.1.20")), 401)      # telefono in casa senza token
         self.config["require_pin_for_remote"] = False
-        self.assertEqual(self._status(self._req(8080, "192.168.1.20")), 200)
+        self.assertEqual(self._status(self._req(8080, "192.168.1.20", {"host": "192.168.1.10:8080"})), 200)
+        # Stesso telefono, ma la pagina è di un altro sito che punta all'IP del PC (DNS rebinding): serve il PIN
+        self.assertEqual(self._status(self._req(8080, "192.168.1.20", {"host": "sito-malevolo.com:8080"})), 401)
 
     def test_internet_always_needs_pin(self):
         self.config["require_pin_for_remote"] = False                              # vale solo per la rete di casa

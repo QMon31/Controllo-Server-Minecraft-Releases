@@ -48,17 +48,41 @@ def api_get_whitelist(request: Request):
 @router.post("/api/whitelist/toggle")
 def api_whitelist_toggle(request: Request):
     verify_admin_access(request)
+    _refuse_while_changing()
     props = manager.get_server_properties()
     cur = str(props.get("white-list", "false")).lower() == "true"
     new_state = not cur
     props["white-list"] = "true" if new_state else "false"
-    manager.save_server_properties(props)
+    saved = manager.save_server_properties({"white-list": props["white-list"]})
+    if saved.get("status") == "error":
+        # Prima l'errore (es. server.properties mancante) veniva ignorato e il pannello mostrava la whitelist cambiata
+        raise HTTPException(status_code=400, detail=saved.get("message"))
     if manager.state == "ONLINE":
         manager.send_command("whitelist on" if new_state else "whitelist off")
         manager.send_command("whitelist reload")
     if core.loop and active_websockets:
         asyncio.run_coroutine_threadsafe(_async_broadcast({"type": "whitelist_status", "enabled": new_state}), core.loop)
     return {"status": "success", "enabled": new_state}
+
+LIST_FILE_ERROR_MSG = "Impossibile aggiornare {0} (file illeggibile o bloccato): la modifica non è stata salvata."
+
+
+def _file_error(name: str):
+    """A server spento il file è l'unico posto della modifica: prima un errore (file rovinato o bloccato) veniva solo
+    scritto nel registro e il pannello rispondeva comunque "fatto". A server acceso ci pensa il comando a Minecraft."""
+    if manager.state != "ONLINE":
+        raise HTTPException(status_code=500, detail=LIST_FILE_ERROR_MSG.format(name))
+
+
+SERVER_CHANGING_MSG = "Il server si sta avviando o spegnendo: riprova tra qualche secondo."
+
+
+def _refuse_while_changing():
+    """Whitelist e ban scritti nei file mentre Minecraft si avvia o si spegne: Minecraft li legge o li riscrive in quel
+    momento e la modifica si perdeva senza avviso. Si accettano solo a server acceso (comando) o spento (file)."""
+    if manager.state in ("STARTING", "STOPPING", "RESTARTING"):
+        raise HTTPException(status_code=409, detail=SERVER_CHANGING_MSG)
+
 
 NOT_FOUND_MSG = "Il giocatore {0} non esiste su Minecraft: controlla il nome."
 MOJANG_UNREACHABLE_MSG = ("Impossibile verificare il nome del giocatore (servizio Mojang non raggiungibile): "
@@ -102,9 +126,24 @@ def _player_profile(player: str):
     return str(uuid.UUID(raw)), data.get("name") or player
 
 
+def _add_or_repair_entry(current: list, player: str, profile, extra: dict) -> bool:
+    """Aggiunge il giocatore a whitelist.json / banned-players.json (elenco già letto). Una voce con lo stesso nome
+    ma l'uuid vuoto, scritta dalle versioni fino alla 4.22.2, riceve l'uuid giusto: prima restava vuota anche
+    ripetendo il comando. True se l'elenco è cambiato e va salvato."""
+    same = next((e for e in current if isinstance(e, dict) and e.get("name", "").lower() == player.lower()), None)
+    if same is None:
+        current.append({"uuid": profile[0], "name": profile[1], **extra})
+        return True
+    if not same.get("uuid"):
+        same["uuid"], same["name"] = profile[0], profile[1]
+        return True
+    return False
+
+
 @router.post("/api/whitelist/add")
 def api_whitelist_add(req: PlayerActionRequest, request: Request):
     verify_admin_access(request)
+    _refuse_while_changing()
     player = req.target_player
     if not player or not re.match(r"^\w{2,16}$", player):
         raise HTTPException(status_code=400, detail="Nome giocatore Minecraft non valido (2-16 caratteri alfanumerici)")
@@ -129,21 +168,18 @@ def api_whitelist_add(req: PlayerActionRequest, request: Request):
             with open(w_path, "r", encoding="utf-8") as f:
                 current = json.load(f)
         
-        # Check if already present
-        if not any(entry.get("name", "").lower() == player.lower() for entry in current):
-            current.append({
-                "uuid": profile[0],
-                "name": profile[1]
-            })
+        if _add_or_repair_entry(current, player, profile, {}):
             write_json_atomic(w_path, current)
     except Exception as e:
         print(f"Error updating whitelist.json: {e}")
+        _file_error("whitelist.json")
         
     return {"status": "success", "message": f"Giocatore {player} aggiunto alla whitelist."}
 
 @router.post("/api/whitelist/remove")
 def api_whitelist_remove(req: PlayerActionRequest, request: Request):
     verify_admin_access(request)
+    _refuse_while_changing()
     player = req.target_player
     if not player:
         raise HTTPException(status_code=400, detail="Nome giocatore non valido")
@@ -161,6 +197,7 @@ def api_whitelist_remove(req: PlayerActionRequest, request: Request):
             write_json_atomic(w_path, updated)
     except Exception as e:
         print(f"Error updating whitelist.json: {e}")
+        _file_error("whitelist.json")
         
     return {"status": "success", "message": f"Giocatore {player} rimosso dalla whitelist."}
 
@@ -199,6 +236,7 @@ def _console_replied(seq: int, text: str, ok_text: str, timeout: float = 3.0) ->
 @router.post("/api/ban/add")
 def api_ban_player(req: PlayerActionRequest, request: Request):
     verify_admin_access(request)
+    _refuse_while_changing()
     player = req.target_player
     if not player:
         raise HTTPException(status_code=400, detail="Nome giocatore non specificato")
@@ -225,25 +263,24 @@ def api_ban_player(req: PlayerActionRequest, request: Request):
             if os.path.exists(b_path):
                 with open(b_path, "r", encoding="utf-8") as f:
                     current = json.load(f)
-            if not any(entry.get("name", "").lower() == player.lower() for entry in current):
-                current.append({
-                    "uuid": profile[0],
-                    "name": profile[1],
+            if _add_or_repair_entry(current, player, profile, {
                     # Fuso orario del PC (prima sempre +0200, anche con l'ora solare)
                     "created": datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %z"),
                     "source": "Pannello Remoto",
                     "expires": "forever",
                     "reason": reason
-                })
+            }):
                 write_json_atomic(b_path, current)
         except Exception as e:
             print(f"Error updating banned-players.json: {e}")
+            _file_error("banned-players.json")
             
     return {"status": "success", "message": f"Giocatore {player} bannato con successo."}
 
 @router.post("/api/ban/remove")
 def api_unban_player(req: PlayerActionRequest, request: Request):
     verify_admin_access(request)
+    _refuse_while_changing()
     player = req.target_player
     if not player:
         raise HTTPException(status_code=400, detail="Nome giocatore non specificato")
@@ -261,5 +298,6 @@ def api_unban_player(req: PlayerActionRequest, request: Request):
             write_json_atomic(b_path, updated)
     except Exception as e:
         print(f"Error unbanning player: {e}")
+        _file_error("banned-players.json")
         
     return {"status": "success", "message": f"Giocatore {player} sbannato con successo."}
