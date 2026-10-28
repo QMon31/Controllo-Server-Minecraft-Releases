@@ -117,6 +117,59 @@ public class ApiClient {
         });
     }
 
+    public static final int HOST_SAME = 0, HOST_OTHER = 1, HOST_UNREACHABLE = 2;
+
+    public interface HostCallback {
+        void onResult(int result);
+    }
+
+    /**
+     * Chi risponde a baseUrl è il PC con questo identificativo pubblico (host_id di /api/status)? Senza token: su un
+     * Wi-Fi che non è quello di casa all'indirizzo 192.168.x.y può esserci un altro dispositivo. HOST_UNREACHABLE solo
+     * se non risponde nessuno; qualunque risposta diversa (pagina web, errore, identificativo diverso) è HOST_OTHER.
+     */
+    public static void checkHost(final String baseUrl, final String expectedHostId, final int timeoutMs, final HostCallback cb) {
+        executor.execute(new Runnable() {
+            @Override
+            public void run() {
+                final int result = checkHostBlocking(baseUrl, expectedHostId, timeoutMs);
+                mainHandler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        cb.onResult(result);
+                    }
+                });
+            }
+        });
+    }
+
+    /** Come checkHost, sul thread chiamante (per il widget, che lavora già in un thread suo). */
+    public static int checkHostBlocking(String baseUrl, String expectedHostId, int timeoutMs) {
+        HttpURLConnection conn = null;
+        int code;
+        String response;
+        try {
+            conn = (HttpURLConnection) new URL(baseUrl + "/api/status").openConnection();
+            conn.setRequestMethod("GET");
+            conn.setInstanceFollowRedirects(false);
+            conn.setConnectTimeout(timeoutMs);
+            conn.setReadTimeout(timeoutMs + 2000);
+            code = conn.getResponseCode();
+            response = readStream(code >= 200 && code < 400 ? conn.getInputStream() : conn.getErrorStream());
+        } catch (Exception e) {
+            return HOST_UNREACHABLE;
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
+        if (expectedHostId == null || expectedHostId.isEmpty()) return HOST_SAME;   // PC mai riconosciuto: come prima
+        String seen = "";
+        try {
+            if (code == 200) seen = new org.json.JSONObject(response).optString("host_id", "");
+        } catch (Exception ignored) {
+        }
+        return expectedHostId.equals(seen) ? HOST_SAME : HOST_OTHER;
+    }
+
     /** Risposta d'errore del PC ({"detail": "..."}): solo il messaggio invece di tutto il JSON. */
     private static String errorDetail(String response) {
         try {

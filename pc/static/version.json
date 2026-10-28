@@ -1,8 +1,8 @@
 {
-  "version_code": 102,
-  "version_name": "4.12.5",
+  "version_code": 105,
+  "version_name": "4.13.0",
   "download_url": "/static/Controllo_Server_Minecraft.apk",
-  "release_notes": "Nuova icona di Voxarium, anche nelle notifiche; titolo intero nell'intestazione di ogni sezione; finestre del PIN e Info più leggibili; l'aggiornamento scaricato non resta più in tre copie sul telefono.",
+  "release_notes": "Più server dal telefono (scelta del server attivo dalla Dashboard); un backup per ogni server; il teletrasporto porta allo spawn del mondo. Sicurezza: su un Wi-Fi che non è quello di casa token e PIN vanno solo al tuo PC; i comandi del widget non possono arrivare da altre app; da internet il PC è riconosciuto solo dall'impronta del suo certificato; i dati dell'app non vanno nel backup di Google.",
   "min_sdk": 26,
   "target_sdk": 35
 }

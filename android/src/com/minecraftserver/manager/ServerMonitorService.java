@@ -454,16 +454,9 @@ public class ServerMonitorService extends Service {
         SharedPreferences prefs = getSharedPreferences("MinecraftControllerPrefs", MODE_PRIVATE);
         String secret = prefs.getString("push_secret", "");
 
-        // Senza il segreto ricevuto dal PC (login non ancora fatto) gli indirizzi si aggiornano solo via LAN (/api/network)
-        if (secret.isEmpty()) {
-            return;
-        }
-        // Messaggi senza firma o con firma errata: scartati
-        if (sig.isEmpty()) {
-            return;
-        }
-        String expectedSig = hmacSha256Hex(secret, directRemote + "|" + directLocal + "|" + fp);
-        if (!java.security.MessageDigest.isEqual(sig.getBytes(StandardCharsets.UTF_8), expectedSig.getBytes(StandardCharsets.UTF_8))) {
+        // Senza il segreto ricevuto dal PC (login non ancora fatto) gli indirizzi si aggiornano solo via LAN (/api/network).
+        // Messaggi senza firma, con firma errata o più vecchi dell'ultimo accettato: scartati
+        if (!acceptAddressMessage(this, secret, directRemote, directLocal, fp, sig, allText)) {
             return;
         }
         PcTls.saveFingerprint(this, fp); // impronta accettata solo con firma valida
@@ -548,6 +541,38 @@ public class ServerMonitorService extends Service {
         if (Math.abs(System.currentTimeMillis() / 1000L - Long.parseLong(ts)) > 24L * 3600L) return false;
         String expected = hmacSha256Hex(secret, msgObj.optString("title", "") + "\n" + msgObj.optString("message", "") + "\n" + ts);
         return java.security.MessageDigest.isEqual(sig.getBytes(StandardCharsets.UTF_8), expected.getBytes(StandardCharsets.UTF_8));
+    }
+
+    /** Ora (secondi, orologio del PC) dell'ultimo messaggio con gli indirizzi accettato. */
+    static final String PREF_URL_MSG_TS = "ntfy_url_msg_ts";
+
+    /**
+     * Messaggio del PC con indirizzi e impronta del certificato: firmato con push_secret e non più vecchio dell'ultimo
+     * accettato. Dalla 4.21.1 il PC aggiunge "ts=<secondi> | sig2=HMAC(url|lan|fp|ts)": chi conosce il nome del topic
+     * non può rimandare un messaggio vecchio (con un IP pubblico che intanto può essere passato a qualcun altro).
+     * Il formato senza ora (sig) vale solo finché dal PC non è arrivato un messaggio col nuovo formato.
+     */
+    static synchronized boolean acceptAddressMessage(Context ctx, String secret, String remote, String local, String fp,
+                                                     String sig, String allText) {
+        if (secret == null || secret.isEmpty() || sig == null || sig.isEmpty()) return false;
+        String signed = remote + "|" + local + "|" + fp;
+        SharedPreferences prefs = ctx.getSharedPreferences("MinecraftControllerPrefs", MODE_PRIVATE);
+        long lastTs = prefs.getLong(PREF_URL_MSG_TS, 0L);
+        Matcher mTs = Pattern.compile("(?:^|\\s)ts=(\\d{1,12})\\b").matcher(allText);
+        Matcher mSig2 = Pattern.compile("sig2=([0-9a-fA-F]{64})").matcher(allText);
+        if (mTs.find() && mSig2.find()) {
+            long ts = Long.parseLong(mTs.group(1));
+            String expected = hmacSha256Hex(secret, signed + "|" + ts);
+            String got = mSig2.group(1).toLowerCase(java.util.Locale.ROOT);
+            if (!java.security.MessageDigest.isEqual(got.getBytes(StandardCharsets.UTF_8), expected.getBytes(StandardCharsets.UTF_8))) return false;
+            if (ts < lastTs || ts > System.currentTimeMillis() / 1000L + 24L * 3600L) return false;
+            if (ts > lastTs) prefs.edit().putLong(PREF_URL_MSG_TS, ts).apply();
+            return true;
+        }
+        if (lastTs > 0) return false;   // il PC manda già l'ora: un messaggio senza è vecchio o rimandato
+        String expected = hmacSha256Hex(secret, signed);
+        return java.security.MessageDigest.isEqual(sig.toLowerCase(java.util.Locale.ROOT).getBytes(StandardCharsets.UTF_8),
+                expected.getBytes(StandardCharsets.UTF_8));
     }
 
     private static String hmacSha256Hex(String key, String data) {

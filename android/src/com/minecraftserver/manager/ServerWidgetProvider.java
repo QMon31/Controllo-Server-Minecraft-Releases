@@ -50,13 +50,9 @@ public class ServerWidgetProvider extends AppWidgetProvider {
         String action = intent.getAction();
         if (action == null) return;
 
-        if (ACTION_WIDGET_START.equals(action)) {
-            sendServerActionAsync(context, "/api/server/start", "POST", "{}");
-        } else if (ACTION_WIDGET_RESTART.equals(action)) {
-            sendServerActionAsync(context, "/api/server/restart", "POST", "{\"countdown\":0,\"reason\":\"Riavvio rapido da Widget Android\"}");
-        } else if (ACTION_WIDGET_STOP.equals(action)) {
-            sendServerActionAsync(context, "/api/server/stop", "POST", "{\"force\":false,\"reason\":\"Arresto rapido da Widget Android\"}");
-        } else if (ACTION_WIDGET_UPDATE.equals(action)) {
+        // Avvia / Riavvia / Ferma arrivano a WidgetActionReceiver (non esportato): questo ricevitore lo deve essere per
+        // il sistema dei widget, quindi qui non si accetta nessun comando verso il server
+        if (ACTION_WIDGET_UPDATE.equals(action)) {
             AppWidgetManager appWidgetManager = AppWidgetManager.getInstance(context);
             ComponentName thisWidget = new ComponentName(context, ServerWidgetProvider.class);
             int[] allWidgetIds = appWidgetManager.getAppWidgetIds(thisWidget);
@@ -84,17 +80,17 @@ public class ServerWidgetProvider extends AppWidgetProvider {
         views.setOnClickPendingIntent(R.id.widget_icon, piOpen);
 
         // Start Button Intent
-        Intent startIntent = new Intent(context, ServerWidgetProvider.class);
+        Intent startIntent = new Intent(context, WidgetActionReceiver.class);
         startIntent.setAction(ACTION_WIDGET_START);
         views.setOnClickPendingIntent(R.id.widget_btn_start, getBroadcastIntent(context, 101, startIntent));
 
         // Restart Button Intent
-        Intent restartIntent = new Intent(context, ServerWidgetProvider.class);
+        Intent restartIntent = new Intent(context, WidgetActionReceiver.class);
         restartIntent.setAction(ACTION_WIDGET_RESTART);
         views.setOnClickPendingIntent(R.id.widget_btn_restart, getBroadcastIntent(context, 102, restartIntent));
 
         // Stop Button Intent
-        Intent stopIntent = new Intent(context, ServerWidgetProvider.class);
+        Intent stopIntent = new Intent(context, WidgetActionReceiver.class);
         stopIntent.setAction(ACTION_WIDGET_STOP);
         views.setOnClickPendingIntent(R.id.widget_btn_stop, getBroadcastIntent(context, 103, stopIntent));
 
@@ -117,8 +113,23 @@ public class ServerWidgetProvider extends AppWidgetProvider {
         return PendingIntent.getBroadcast(context, requestCode, intent, flags);
     }
 
+    /**
+     * Indirizzo da usare (sempre da un thread in background). Sull'indirizzo di casa (in chiaro) prima si controlla che
+     * risponda il nostro PC: su un Wi-Fi esterno allo stesso indirizzo può esserci un altro dispositivo, che riceverebbe
+     * token e PIN. In quel caso si passa all'indirizzo da internet, oppure ("Solo Wi-Fi") non si manda niente.
+     */
     private static String getBaseUrl(Context context) {
         SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        String base = chooseBaseUrl(context, prefs);
+        String local = prefs.getString(PREF_LOCAL_URL, DEFAULT_LOCAL_URL).replaceAll("/+$", "");
+        if (base.isEmpty() || !base.equals(local) || base.startsWith("https://")) return base;
+        String hostId = prefs.getString(MainActivity.PREF_PC_HOST_ID, "");
+        if (ApiClient.checkHostBlocking(base, hostId, 1500) != ApiClient.HOST_OTHER) return base;
+        String remote = prefs.getString(PREF_REMOTE_URL, "").replaceAll("/+$", "");
+        return prefs.getInt(PREF_CONN_MODE, 0) != 1 && !remote.isEmpty() ? remote : "";
+    }
+
+    private static String chooseBaseUrl(Context context, SharedPreferences prefs) {
         int mode = prefs.getInt(PREF_CONN_MODE, 0);
         String local = prefs.getString(PREF_LOCAL_URL, DEFAULT_LOCAL_URL).replaceAll("/+$", "");
         String remote = prefs.getString(PREF_REMOTE_URL, "").replaceAll("/+$", "");
@@ -190,6 +201,7 @@ public class ServerWidgetProvider extends AppWidgetProvider {
             public void run() {
                 try {
                     String baseUrl = getBaseUrl(context);
+                    if (baseUrl.isEmpty()) return;
                     URL url = new URL(baseUrl + "/api/status");
                     HttpURLConnection conn = (HttpURLConnection) url.openConnection();
                     conn.setRequestMethod("GET");
@@ -241,12 +253,13 @@ public class ServerWidgetProvider extends AppWidgetProvider {
         }).start();
     }
 
-    private static void sendServerActionAsync(final Context context, final String endpoint, final String method, final String jsonBody) {
+    static void sendServerActionAsync(final Context context, final String endpoint, final String method, final String jsonBody) {
         new Thread(new Runnable() {
             @Override
             public void run() {
                 try {
                     String baseUrl = getBaseUrl(context);
+                    if (baseUrl.isEmpty()) return;
                     String token = getOrFetchAuthToken(context, baseUrl);
 
                     URL url = new URL(baseUrl + endpoint);

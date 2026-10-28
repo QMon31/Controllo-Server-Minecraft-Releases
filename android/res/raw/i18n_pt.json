@@ -182,6 +182,7 @@
 "app.wi_fi_auto": "Wi-Fi (auto)",
 "app.accesso_internet_bloccato_sul_pc_host": "Acesso pela internet bloqueado: o PC host ainda usa o PIN 1234. Troque nas configurações do painel no PC (em casa funciona).",
 "app.pin_salvato_nell_app_non_piu_quello_pc": "O PIN salvo no app não é mais o do PC: digite o novo em Backup e conexão.",
+"app.pc_casa_non_riconosciuto": "No endereço de casa responde outro dispositivo, não o teu PC: por segurança a app não lhe envia nem o token nem o PIN.",
 "app.sincronizzazione_indirizzi_corso": "Sincronizando endereços...",
 "app.indirizzo_lan_sincronizzato_dal_pc": "Endereço LAN sincronizado do PC:\n{0}",
 "app.indirizzo_aggiornato_ntfy_lan_remoto": "Endereço atualizado pelo ntfy:\nLAN: {0}\nRemoto: {1}",
@@ -585,6 +586,8 @@
 "pc.backup_server_deve_essere_spento": "O servidor Minecraft precisa estar TOTALMENTE PARADO para um backup seguro.",
 "ui.correzione_v4_12_4_testi_non_tradotti": "Correção (v4.12.4): os textos não traduzidos (histórico antigo, nomes, mensagens) não são mais alterados por engano nos outros idiomas.",
 "ui.v4_12_4_build_96_testi_non_tradotti": "• v4.12.4 (Build 96):\nOs textos não traduzidos não são mais alterados por engano nos outros idiomas.",
+"ui.novita_v4_13_0_piu_server": "Novidades (v4.13.0): vários servidores pelo telefone (se o PC tiver pelo menos dois, escolhe-se o ativo no Painel; nome e versão no subtítulo e no menu); um backup para cada servidor; \"Teletransportar para o spawn\" leva ao spawn do mundo. Segurança: num Wi-Fi que não é o de casa, o token e o PIN vão só para o teu PC; os comandos do widget não podem vir de outras apps; pela internet o PC é reconhecido só pela impressão digital do seu certificado; os dados da app já não vão para o backup do Google.",
+"ui.v4_13_0_build_105_server": "• v4.13.0 (Build 105):\nVários servidores pelo telefone; um backup para cada servidor; teletransporte para o spawn do mundo; mais segurança noutras redes Wi-Fi, no widget e na ligação pela internet.",
 "ui.novita_v4_12_5_icona": "Novidades (v4.12.5): novo ícone do Voxarium, também nas notificações (antes aparecia um quadrado branco na barra); título completo no cabeçalho de cada seção; janelas do PIN e Info mais legíveis; a atualização baixada não fica mais em três cópias no telefone.",
 "ui.v4_12_5_build_102_icona": "• v4.12.5 (Build 102):\nNovo ícone; títulos completos no cabeçalho; janelas do PIN e Info mais legíveis; atualização baixada em uma só cópia."
 }

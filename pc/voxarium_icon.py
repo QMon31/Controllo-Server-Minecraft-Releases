@@ -7,6 +7,8 @@ Uso: python voxarium_icon.py [cartella_android]
   - voxarium.ico: la stessa icona per i collegamenti di Desktop e Menu Start (un nome nuovo, così Windows non
     continua a mostrare la vecchia icona che tiene in memoria per minecraft.ico)
   - minecraft_block.png e static/minecraft_block.png: 256 px (pannello, favicon PNG, pacchetto Linux)
+  - static/apple-touch-icon.png (180 px), static/icon-512.png e static/icon-maskable-512.png (ritagliabile a cerchio):
+    pannello aggiunto alla schermata Home del telefono
   - <cartella_android>/res/drawable/ic_launcher.png: 192 px (icona dell'app), se la cartella è indicata
 I nomi dei file restano quelli di prima perché li usano installer, Launcher, pannello e aggiornamenti.
 """
@@ -28,15 +30,17 @@ LEFT_FACE = [(17.6, 22), (48.8, 40), (48.8, 76), (17.6, 58)]
 RIGHT_FACE = [(82.4, 22), (51.2, 40), (51.2, 76), (82.4, 58)]
 
 
-def draw_vector(size):
-    """Icona disegnata 8 volte più grande e ridotta: bordi lisci, per 32 px e oltre."""
+def draw_vector(size, radius=RADIUS, scale=1.0):
+    """Icona disegnata 8 volte più grande e ridotta: bordi lisci, per 32 px e oltre.
+    scale < 1 rimpicciolisce il cubo verso il centro (icona che il telefono ritaglia a cerchio)."""
     big = size * 8
     k = big / 100.0
     im = Image.new("RGBA", (big, big), (0, 0, 0, 0))
     d = ImageDraw.Draw(im)
-    d.rounded_rectangle((0, 0, big - 1, big - 1), radius=int(RADIUS * k), fill=TILE)
-    d.polygon([(x * k, y * k) for x, y in LEFT_FACE], fill=LIGHT)
-    d.polygon([(x * k, y * k) for x, y in RIGHT_FACE], fill=SHADE)
+    d.rounded_rectangle((0, 0, big - 1, big - 1), radius=int(radius * k), fill=TILE)
+    pt = lambda x, y: ((50 + (x - 50) * scale) * k, (50 + (y - 50) * scale) * k)
+    d.polygon([pt(x, y) for x, y in LEFT_FACE], fill=LIGHT)
+    d.polygon([pt(x, y) for x, y in RIGHT_FACE], fill=SHADE)
     return im.reduce(8)  # media di ogni blocco 8x8: bordi lisci senza aloni
 
 
@@ -81,6 +85,12 @@ def main():
         save_ico(os.path.join(ROOT, rel), ico_sizes)
     for rel in ("minecraft_block.png", os.path.join("static", "minecraft_block.png")):
         icon(256).save(os.path.join(ROOT, rel))
+    # Pannello aggiunto alla schermata Home del telefono: fondo pieno senza angoli trasparenti (iPhone e Android
+    # arrotondano da soli, gli angoli trasparenti diventerebbero neri)
+    draw_vector(180, radius=0).convert("RGB").save(os.path.join(ROOT, "static", "apple-touch-icon.png"))
+    draw_vector(512, radius=0).convert("RGB").save(os.path.join(ROOT, "static", "icon-512.png"))
+    # Android ritaglia l'icona a cerchio: il cubo deve stare nell'80% centrale, altrimenti la mette in un cerchio bianco
+    draw_vector(512, radius=0, scale=0.75).convert("RGB").save(os.path.join(ROOT, "static", "icon-maskable-512.png"))
     if len(sys.argv) > 1:
         icon(192).save(os.path.join(sys.argv[1], "res", "drawable", "ic_launcher.png"))
     print("Icona Voxarium rigenerata.")

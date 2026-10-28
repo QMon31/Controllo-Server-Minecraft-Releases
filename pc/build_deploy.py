@@ -95,6 +95,11 @@ FILES_TO_SYNC = [
     *[os.path.join("static", f"i18n_{lang}.js") for lang in ("it", "en", "es", "fr", "de", "pt")],
     os.path.join("static", "style.css"),
     os.path.join("static", "theme.css"),
+    # Pannello aggiunto alla schermata Home del telefono (iPhone e Android)
+    os.path.join("static", "manifest.json"),
+    os.path.join("static", "apple-touch-icon.png"),
+    os.path.join("static", "icon-512.png"),
+    os.path.join("static", "icon-maskable-512.png"),
     "minecraft.ico",
     "minecraft_block.png",
     "favicon.ico",

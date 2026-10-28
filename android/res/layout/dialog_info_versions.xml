@@ -83,14 +83,23 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Novità per telefono (v4.12.5)"
-                android:tag="t:ui.novita_telefono|v4.12.5"
+                android:text="Novità per telefono (v4.13.0)"
+                android:tag="t:ui.novita_telefono|v4.13.0"
                 android:textColor="#f4f4f5"
                 android:textSize="14sp"
                 android:textStyle="bold"
                 android:layout_marginBottom="8dp" />
 
             <!-- CONTENUTO NOVITÀ TELEFONO -->
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Novità (v4.13.0): più server dal telefono (se sul PC ce ne sono almeno due si sceglie quello attivo dalla Dashboard; nome e versione nel sottotitolo e nel menu); un backup per ogni server; &quot;Teletrasporta allo spawn&quot; porta allo spawn del mondo. Sicurezza: su un Wi-Fi che non è quello di casa token e PIN vanno solo al tuo PC; i comandi del widget non possono arrivare da altre app; da internet il PC è riconosciuto solo dall'impronta del suo certificato; i dati dell'app non finiscono nel backup di Google."
+                    android:tag="t:ui.novita_v4_13_0_piu_server"
+                    android:textColor="#c4c4c8"
+                    android:textSize="12sp"
+                    android:layout_marginBottom="6dp" />
+
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -193,6 +202,15 @@
                 android:background="#0f0f11"
                 android:padding="12dp"
                 android:layout_marginBottom="8dp">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="• v4.13.0 (Build 105):\nPiù server dal telefono; un backup per ogni server; teletrasporto allo spawn del mondo; più sicurezza su Wi-Fi esterni, nel widget e nel collegamento da internet."
+                    android:tag="t:ui.v4_13_0_build_105_server"
+                    android:textColor="#c4c4c8"
+                    android:textSize="12sp"
+                    android:layout_marginBottom="4dp" />
 
                 <TextView
                     android:layout_width="match_parent"

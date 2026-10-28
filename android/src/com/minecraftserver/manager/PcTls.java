@@ -58,9 +58,12 @@ public final class PcTls {
             HttpsURLConnection.setDefaultHostnameVerifier(new HostnameVerifier() {
                 @Override
                 public boolean verify(String hostname, SSLSession session) {
-                    if (systemVerifier.verify(hostname, session)) return true;
-                    // Certificato del PC: vale solo per un indirizzo IP numerico (https://IP:porta), mai per un nome di dominio
-                    if (hostname == null || !IPV4_PATTERN.matcher(hostname).matches()) return false;
+                    // Nomi di dominio (ntfy.sh, GitHub): verifica normale. Indirizzi IP numerici (https://IP:porta) sono
+                    // il PC: vale SOLO l'impronta salvata. Prima bastava anche un certificato "valido" per quell'IP, come
+                    // quello che chi riceve il tuo vecchio IP pubblico può ottenere gratis o uno installato sul telefono
+                    if (hostname == null || !IPV4_PATTERN.matcher(hostname).matches()) {
+                        return systemVerifier.verify(hostname, session);
+                    }
                     try {
                         Certificate[] chain = session.getPeerCertificates();
                         return chain.length > 0 && chain[0] instanceof X509Certificate

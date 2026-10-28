@@ -249,6 +249,14 @@ class ServerManagerConfigTest(unittest.TestCase):
         expected = hmac.new(("b" * 64).encode(), f"https://81.0.0.1:8443|http://192.168.1.50:8080|{'f' * 64}".encode(),
                             hashlib.sha256).hexdigest()
         self.assertIn("sig=" + expected, msg)
+        # sig2 firma anche l'ora: un messaggio vecchio non si può rimandare all'app
+        import re
+        ts = re.search(r"\bts=(\d+)", msg).group(1)
+        self.assertLess(abs(int(ts) - time.time()), 60)
+        expected2 = hmac.new(("b" * 64).encode(), f"https://81.0.0.1:8443|http://192.168.1.50:8080|{'f' * 64}|{ts}".encode(),
+                             hashlib.sha256).hexdigest()
+        self.assertIn("sig2=" + expected2, msg)
+        self.assertEqual(re.search(r"sig=([0-9a-f]{64})", msg).group(1), expected)   # le app vecchie trovano ancora sig
 
 
 class NoConsoleWindowsTest(unittest.TestCase):
@@ -545,7 +553,7 @@ class PinLockoutTest(unittest.TestCase):
                    "VerifyPinRequest": object, "Request": object, "DEFAULT_PIN_INTERNET_MSG": "",
                    "_internet_failed_attempts": [], "AUTH_INTERNET_WINDOW_SECONDS": 3600,
                    "AUTH_INTERNET_MAX_WRONG_PINS": 20, "List": list,
-                   "_alert_internet_pin_lock": lambda: self.alerts.append(1)}
+                   "_alert_internet_pin_lock": lambda: self.alerts.append(1), "_host_id": lambda: "0123456789abcdef"}
         self.alerts = []
         exec(compile(ast.Module(body=fn, type_ignores=[]), "app.py", "exec"), self.ns)
         self.HTTPException = HTTPException
@@ -562,7 +570,9 @@ class PinLockoutTest(unittest.TestCase):
     def test_same_wrong_pin_does_not_lock(self):
         for _ in range(12):   # l'app che ritenta il vecchio PIN salvato
             self.assertEqual(self._try("1234")[0], 403)
-        self.assertEqual(self._try("583921")[0], 200)
+        code, res = self._try("583921")
+        self.assertEqual(code, 200)
+        self.assertEqual(res["host_id"], "0123456789abcdef")   # l'app lo usa per riconoscere il PC all'indirizzo di casa
 
     def test_different_wrong_pins_lock_with_remaining_time(self):
         for pin in ("111111", "222222", "333333", "444444", "555555"):

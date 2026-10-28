@@ -5887,3 +5887,38 @@ body.drawer-open {
   font-size: 0.82rem;
   line-height: 1.45;
 }
+
+/* Suggerimento sull'iPhone: aggiungere il pannello alla schermata Home per usarlo come un'app */
+.ios-home-hint {
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  z-index: 900;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: #1d2a17;
+  border: 1px solid #7cb342;
+  border-radius: 10px;
+  color: #dfe9d4;
+  font-size: 0.85rem;
+  line-height: 1.4;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+.ios-home-hint span {
+  flex: 1;
+}
+.ios-home-hint button {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: #9ccc65;
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+}

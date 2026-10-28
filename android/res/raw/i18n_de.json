@@ -182,6 +182,7 @@
 "app.wi_fi_auto": "WLAN (auto)",
 "app.accesso_internet_bloccato_sul_pc_host": "Internetzugriff gesperrt: Der Host-PC nutzt noch die PIN 1234. Ändere sie in den Panel-Einstellungen am PC (zu Hause geht es).",
 "app.pin_salvato_nell_app_non_piu_quello_pc": "Die in der App gespeicherte PIN ist nicht mehr die des PCs: Gib die neue unter Backup und Verbindung ein.",
+"app.pc_casa_non_riconosciuto": "An der Heimadresse antwortet ein anderes Gerät, nicht dein PC: Aus Sicherheitsgründen sendet die App ihm weder Token noch PIN.",
 "app.sincronizzazione_indirizzi_corso": "Adressen werden abgeglichen...",
 "app.indirizzo_lan_sincronizzato_dal_pc": "LAN-Adresse vom PC übernommen:\n{0}",
 "app.indirizzo_aggiornato_ntfy_lan_remoto": "Adresse über ntfy aktualisiert:\nLAN: {0}\nRemote: {1}",
@@ -585,6 +586,8 @@
 "pc.backup_server_deve_essere_spento": "Der Minecraft-Server muss für ein sicheres Backup VOLLSTÄNDIG GESTOPPT sein.",
 "ui.correzione_v4_12_4_testi_non_tradotti": "Korrektur (v4.12.4): Nicht übersetzte Texte (alter Verlauf, Namen, Nachrichten) werden in anderen Sprachen nicht mehr versehentlich verändert.",
 "ui.v4_12_4_build_96_testi_non_tradotti": "• v4.12.4 (Build 96):\nNicht übersetzte Texte werden in anderen Sprachen nicht mehr versehentlich verändert.",
+"ui.novita_v4_13_0_piu_server": "Neu (v4.13.0): mehrere Server vom Handy aus (hat der PC mindestens zwei, wählt man den aktiven im Dashboard; Name und Version im Untertitel und im Menü); ein Backup für jeden Server; „Zum Spawn teleportieren“ führt zum Welt-Spawn. Sicherheit: in einem fremden WLAN gehen Token und PIN nur an deinen PC; Widget-Befehle können nicht von anderen Apps kommen; aus dem Internet wird der PC nur am Fingerabdruck seines Zertifikats erkannt; App-Daten landen nicht mehr im Google-Backup.",
+"ui.v4_13_0_build_105_server": "• v4.13.0 (Build 105):\nMehrere Server vom Handy aus; ein Backup für jeden Server; Teleport zum Welt-Spawn; mehr Sicherheit in fremden WLANs, im Widget und bei der Verbindung übers Internet.",
 "ui.novita_v4_12_5_icona": "Neu (v4.12.5): neues Voxarium-Symbol, auch in den Benachrichtigungen (vorher erschien in der Leiste ein weißes Quadrat); vollständiger Titel in der Kopfzeile jedes Bereichs; besser lesbare PIN- und Info-Fenster; das heruntergeladene Update bleibt nicht mehr in drei Kopien auf dem Handy.",
 "ui.v4_12_5_build_102_icona": "• v4.12.5 (Build 102):\nNeues Symbol; vollständige Titel in der Kopfzeile; besser lesbare PIN- und Info-Fenster; heruntergeladenes Update nur noch in einer Kopie."
 }

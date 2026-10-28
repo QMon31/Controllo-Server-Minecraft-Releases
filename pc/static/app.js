@@ -7,12 +7,23 @@ function trDefault(value) {
   return (typeof value === 'string' && window.i18n) ? window.i18n.t(value) : value;
 }
 
+// Dopo "Annulla" o un PIN sbagliato il PIN non si richiede da solo: gli aggiornamenti periodici lo riaprivano
+// ogni pochi secondi e sul telefono la pagina restava bloccata. Si richiede al prossimo tocco o clic.
+let _pinPromptPaused = false;
+document.addEventListener('pointerdown', () => { _pinPromptPaused = false; }, true);
+document.addEventListener('keydown', () => { _pinPromptPaused = false; }, true);
+
 function ensureAdminLogin() {
   if (_loginPromise) return _loginPromise;
+  if (_pinPromptPaused) return Promise.resolve(false);
   _loginPromise = (async () => {
+    let ok = false;
     try {
       const pin = prompt(t('msg.inserisci_pin_amministratore_pannello'));
-      if (!pin) return false;
+      if (!pin) {
+        if (typeof showToast === 'function') showToast(t('actions.pin_non_inserito'), 'info');
+        return false;
+      }
       const r = await _origFetch('/api/auth/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -32,10 +43,12 @@ function ensureAdminLogin() {
       const authData = await r.json();
       if (!authData || !authData.token) return false;
       localStorage.setItem('mc_admin_token', authData.token);
+      ok = true;
       return true;
     } catch (e) {
       return false;
     } finally {
+      if (!ok) _pinPromptPaused = true;
       // permette un nuovo tentativo alla prossima richiesta rifiutata
       setTimeout(() => { _loginPromise = null; }, 0);
     }
@@ -424,6 +437,7 @@ const ctx = canvas ? canvas.getContext('2d') : null;
 // Initialize on DOM loaded
 document.addEventListener('DOMContentLoaded', () => {
   updateHostOnlyVisibility(isLocalHostClient());
+  setupMobileWebClient();
   initWebSocket();
   fetch('/api/config').then(r => r.ok ? r.json() : null).then(cfg => {
     if (!cfg) return;
@@ -1132,6 +1146,99 @@ function copyApkDownloadUrl() {
   if (!inputUrl) return;
   copyRawText(inputUrl.value, null, t('header.copiato'));
   showToast(t('msg.link_download_apk_copiato_negli'), 'success');
+}
+
+// =========================================================
+// PANNELLO WEB SUL TELEFONO (QR WEB): ANCHE PER IPHONE, SENZA APP
+// =========================================================
+let currentWebQrSource = 'lan'; // 'lan' or 'remote'
+
+function openWebQrModal() {
+  updateWebQrDisplay();
+  openModal('modal-web-qr');
+  // Indirizzi aggiornati (l'IP pubblico o di casa può essere cambiato da quando il pannello è aperto)
+  fetch('/api/network').then(r => r.json()).then(net => { updateNetworkInfo(net); updateWebQrDisplay(); }).catch(() => {});
+}
+
+function closeWebQrModal() {
+  closeModal('modal-web-qr');
+}
+
+function toggleWebQrSource(source) {
+  currentWebQrSource = source;
+  const btnLan = document.getElementById('btn-web-qr-lan');
+  const btnRemote = document.getElementById('btn-web-qr-remote');
+  if (btnLan) btnLan.className = source === 'lan' ? 'btn btn-xs btn-sapphire active' : 'btn btn-xs btn-secondary';
+  if (btnRemote) btnRemote.className = source === 'remote' ? 'btn btn-xs btn-sapphire active' : 'btn btn-xs btn-secondary';
+  updateWebQrDisplay();
+}
+
+function updateWebQrDisplay() {
+  const net = networkInfo || {};
+  const remote = net.remote || {};
+  let url = '';
+  let qr = '';
+  if (currentWebQrSource === 'remote') {
+    url = remote.url || '';
+    qr = remote.qr_code || '';
+  } else {
+    url = net.lan_url || '';
+    qr = net.qr_code || net.lan_qr || '';
+  }
+  const missing = !url;
+  const box = document.getElementById('web-qr-box');
+  const off = document.getElementById('web-qr-remote-off');
+  const note = document.getElementById('web-qr-remote-note');
+  const img = document.getElementById('web-qr-image');
+  const input = document.getElementById('web-url-input');
+  if (box) box.style.display = missing ? 'none' : 'flex';
+  if (off) off.style.display = (missing && currentWebQrSource === 'remote') ? 'block' : 'none';
+  if (note) note.style.display = currentWebQrSource === 'remote' ? 'block' : 'none';
+  // Il QR lo prepara il PC: l'indirizzo non va mandato a servizi esterni
+  if (img) img.src = qr;
+  if (input) input.value = url;
+}
+
+function copyWebUrl() {
+  const input = document.getElementById('web-url-input');
+  if (!input || !input.value) return;
+  copyRawText(input.value, null, t('header.copiato'));
+  showToast(t('web.indirizzo_copiato'), 'success');
+}
+
+function isIosClient() {
+  return /iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); // iPad recenti si presentano come Mac
+}
+
+// Sul telefono il QR per aprire il pannello non serve (lo si sta già usando); sull'iPhone l'APK non si installa:
+// al suo posto un suggerimento per aggiungere il pannello alla schermata Home, finché non lo si chiude
+function setupMobileWebClient() {
+  const isPhone = window.innerWidth <= 768 || /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) || isIosClient();
+  const webBtn = document.getElementById('btn-header-web-qr');
+  if (webBtn && isPhone) webBtn.style.display = 'none';
+  if (!isIosClient()) return;
+  const apkBtn = document.getElementById('btn-header-apk-qr');
+  if (apkBtn) apkBtn.style.display = 'none';
+  const standalone = window.navigator.standalone === true || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
+  let dismissed = false;
+  try { dismissed = localStorage.getItem('web_home_hint_closed') === '1'; } catch (_) {}
+  if (standalone || dismissed) return;
+  const bar = document.createElement('div');
+  bar.className = 'ios-home-hint';
+  const text = document.createElement('span');
+  text.textContent = t('web.suggerimento_iphone');
+  text.setAttribute('data-i18n', 'web.suggerimento_iphone');
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.textContent = '×';
+  close.title = t('stopdlg.chiudi');
+  close.onclick = () => {
+    bar.remove();
+    try { localStorage.setItem('web_home_hint_closed', '1'); } catch (_) {}
+  };
+  bar.append(text, close);
+  document.body.appendChild(bar);
 }
 
 // =========================================================

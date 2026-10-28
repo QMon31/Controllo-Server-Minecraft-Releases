@@ -30,9 +30,9 @@ https://gitlab.com/fdroid/fdroiddata/-/merge_requests/54519 (ramo `com.minecraft
 
 ## Versioni successive
 
-Dopo ogni versione dell'app pubblicata (OTA) e copiata nel codice pubblico con `publish_source.py --push`, mettere
-il tag `android-v<versione>-b<versionCode>` sul commit del repository pubblico: F-Droid lo trova da solo
-(`UpdateCheckMode: Tags ^android-v`) e compila la nuova versione.
+Il tag `android-v<versione>-b<versionCode>` sul commit del repository pubblico non è più obbligatorio a ogni
+versione (deciso dall'utente il 28/10/2026). La ricetta usa `UpdateCheckMode: Tags ^android-v`: senza un tag nuovo
+F-Droid resta alla versione dell'ultimo tag (`android-v4.12.5-b102`); per mandargli una versione basta aggiungerlo.
 
 ## Da sapere
 

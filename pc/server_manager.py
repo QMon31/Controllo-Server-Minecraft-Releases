@@ -610,15 +610,22 @@ class ServerManager:
 
     def broadcast_network_sync(self, remote_url: str, local_url: str, fingerprint: str = ""):
         """Invia a telefono e PC Remoti l'indirizzo da internet, quello di casa e l'impronta del certificato HTTPS,
-        firmati con push_secret (HMAC-SHA256 su "url|lan|fp"): chi legge il topic non può falsificarli."""
+        firmati con push_secret (HMAC-SHA256 su "url|lan|fp"): chi legge il topic non può falsificarli.
+        sig2 firma anche l'ora (ts): l'app dalla 4.13.0 accetta solo messaggi più recenti dell'ultimo accettato, così un
+        messaggio vecchio (con un IP pubblico che intanto è passato a qualcun altro) non si può rimandare. sig resta per
+        le app e i PC Remoti più vecchi."""
         self.current_remote_url = remote_url
         self.current_local_url = local_url
         self.current_cert_fingerprint = fingerprint
         import hmac
         import hashlib
         push_sec = self.config.get("push_secret") or str(self.config.get("admin_pin", "1234"))
-        sig = hmac.new(push_sec.encode("utf-8"), f"{remote_url}|{local_url}|{fingerprint}".encode("utf-8"), hashlib.sha256).hexdigest()
-        message = f"Nuovo indirizzo remoto: {remote_url} | Rete LAN: {local_url} | fp={fingerprint} | sig={sig}"
+        key = push_sec.encode("utf-8")
+        sig = hmac.new(key, f"{remote_url}|{local_url}|{fingerprint}".encode("utf-8"), hashlib.sha256).hexdigest()
+        ts = int(time.time())
+        sig2 = hmac.new(key, f"{remote_url}|{local_url}|{fingerprint}|{ts}".encode("utf-8"), hashlib.sha256).hexdigest()
+        message = (f"Nuovo indirizzo remoto: {remote_url} | Rete LAN: {local_url} | fp={fingerprint} | sig={sig}"
+                   f" | ts={ts} | sig2={sig2}")
         self.send_push_notification(
             title="network_sync",
             message=message,

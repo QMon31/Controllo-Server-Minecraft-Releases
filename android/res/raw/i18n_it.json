@@ -182,6 +182,7 @@
 "app.wi_fi_auto": "Wi-Fi (auto)",
 "app.accesso_internet_bloccato_sul_pc_host": "Accesso da internet bloccato: sul PC Host il PIN è ancora 1234. Cambialo nelle Impostazioni del pannello sul PC (in casa funziona).",
 "app.pin_salvato_nell_app_non_piu_quello_pc": "Il PIN salvato nell'app non è più quello del PC: scrivi quello nuovo in Backup e connessione.",
+"app.pc_casa_non_riconosciuto": "All'indirizzo di casa risponde un altro dispositivo, non il tuo PC: per sicurezza l'app non gli manda né token né PIN.",
 "app.sincronizzazione_indirizzi_corso": "Sincronizzazione indirizzi in corso...",
 "app.indirizzo_lan_sincronizzato_dal_pc": "Indirizzo LAN sincronizzato dal PC:\n{0}",
 "app.indirizzo_aggiornato_ntfy_lan_remoto": "Indirizzo aggiornato da ntfy:\nLAN: {0}\nRemoto: {1}",
@@ -585,6 +586,8 @@
 "pc.backup_server_deve_essere_spento": "Il server Minecraft deve essere COMPLETAMENTE SPENTO per effettuare il backup sicuro.",
 "ui.correzione_v4_12_4_testi_non_tradotti": "Correzione (v4.12.4): i testi non tradotti (cronologia vecchia, nomi, messaggi) non vengono più modificati per sbaglio nelle altre lingue.",
 "ui.v4_12_4_build_96_testi_non_tradotti": "• v4.12.4 (Build 96):\nI testi non tradotti non vengono più modificati per sbaglio nelle altre lingue.",
+"ui.novita_v4_13_0_piu_server": "Novità (v4.13.0): più server dal telefono (se sul PC ce ne sono almeno due si sceglie quello attivo dalla Dashboard; nome e versione nel sottotitolo e nel menu); un backup per ogni server; \"Teletrasporta allo spawn\" porta allo spawn del mondo. Sicurezza: su un Wi-Fi che non è quello di casa token e PIN vanno solo al tuo PC; i comandi del widget non possono arrivare da altre app; da internet il PC è riconosciuto solo dall'impronta del suo certificato; i dati dell'app non finiscono nel backup di Google.",
+"ui.v4_13_0_build_105_server": "• v4.13.0 (Build 105):\nPiù server dal telefono; un backup per ogni server; teletrasporto allo spawn del mondo; più sicurezza su Wi-Fi esterni, nel widget e nel collegamento da internet.",
 "ui.novita_v4_12_5_icona": "Novità (v4.12.5): nuova icona di Voxarium, anche nelle notifiche (prima nella barra compariva un quadrato bianco); titolo intero nell'intestazione di ogni sezione; finestre del PIN e Info più leggibili; l'aggiornamento scaricato non resta più in tre copie sul telefono.",
 "ui.v4_12_5_build_102_icona": "• v4.12.5 (Build 102):\nNuova icona; titoli interi nell'intestazione; finestre del PIN e Info più leggibili; aggiornamento scaricato in una sola copia."
 }

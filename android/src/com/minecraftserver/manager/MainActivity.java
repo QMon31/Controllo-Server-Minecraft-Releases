@@ -58,8 +58,8 @@ import java.util.regex.Pattern;
 
 public class MainActivity extends Activity implements View.OnClickListener {
 
-    public static final int CURRENT_VERSION_CODE = 103;
-    public static final String CURRENT_VERSION_NAME = "4.13.0-beta.1";
+    public static final int CURRENT_VERSION_CODE = 105;
+    public static final String CURRENT_VERSION_NAME = "4.13.0";
 
     private int dpToPx(int dp) {
         return Math.round(dp * getResources().getDisplayMetrics().density);
@@ -1107,6 +1107,45 @@ public class MainActivity extends Activity implements View.OnClickListener {
         return mIsUsingRemote ? mRemoteUrl : mLocalUrl;
     }
 
+    /** Identificativo pubblico del PC (host_id) ricevuto al login: all'indirizzo di casa deve rispondere lui. */
+    static final String PREF_PC_HOST_ID = "pc_host_id";
+    // Indirizzo di casa già riconosciuto come il nostro PC su questa rete (si azzera quando cambia la rete)
+    private volatile String mLocalVerifiedUrl = "";
+    private Network mLastNetwork = null;
+
+    /**
+     * Prima di mandare token o PIN in chiaro all'indirizzo di casa (http://192.168...) si controlla che risponda il
+     * nostro PC: su un Wi-Fi esterno (bar, amici) allo stesso indirizzo può esserci un altro dispositivo.
+     * Se risponde un altro: in automatico si passa all'indirizzo da internet, in "Solo Wi-Fi" si rinuncia (refuse).
+     */
+    private void withVerifiedBase(final Runnable go, final Runnable refuse) {
+        final String base = getEffectiveBaseUrl();
+        if (base == null || base.isEmpty() || !base.equals(mLocalUrl) || base.startsWith("https://")
+                || base.equals(mLocalVerifiedUrl)) {
+            go.run();
+            return;
+        }
+        String hostId = getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getString(PREF_PC_HOST_ID, "");
+        ApiClient.checkHost(base, hostId, 1500, new ApiClient.HostCallback() {
+            @Override
+            public void onResult(int result) {
+                if (result == ApiClient.HOST_SAME) {
+                    mLocalVerifiedUrl = base;
+                    go.run();
+                } else if (result == ApiClient.HOST_UNREACHABLE) {
+                    go.run();   // non risponde nessuno: la richiesta fallisce da sola e scatta il passaggio a internet
+                } else if (mConnMode == 0 && mRemoteUrl != null && !mRemoteUrl.isEmpty()) {
+                    mIsUsingRemote = true;
+                    savePreferences();
+                    updateRoutePillUI();
+                    go.run();
+                } else {
+                    refuse.run();
+                }
+            }
+        });
+    }
+
     private void updateRoutePillUI() {
         if (pillRouteStatus != null) {
             if (mConnMode == 1) {
@@ -1167,6 +1206,10 @@ public class MainActivity extends Activity implements View.OnClickListener {
     }
 
     private void ensureAuthToken(final Runnable onReady) {
+        ensureAuthToken(onReady, false);
+    }
+
+    private void ensureAuthToken(final Runnable onReady, final boolean hostChecked) {
         // Con un token valido si rifà comunque il login una volta per apertura, per rileggere topic e segreto ntfy dal PC
         if (mAuthToken != null && !mAuthToken.isEmpty() && mPushConfigSynced) {
             if (onReady != null) onReady.run();
@@ -1185,6 +1228,23 @@ public class MainActivity extends Activity implements View.OnClickListener {
         }
         if (mAuthInFlight) {   // accesso già in corso: si aspetta il suo esito
             if (onReady != null) mAuthWaiters.add(onReady);
+            return;
+        }
+        if (!hostChecked) {
+            // Il PIN passa in chiaro sull'indirizzo di casa: prima si controlla che lì risponda il nostro PC
+            Runnable retry = new Runnable() {
+                @Override
+                public void run() {
+                    ensureAuthToken(onReady, true);
+                }
+            };
+            withVerifiedBase(retry, new Runnable() {
+                @Override
+                public void run() {
+                    I18n.makeText(MainActivity.this, I18n.t("app.pc_casa_non_riconosciuto"), Toast.LENGTH_LONG).show();
+                    if (onReady != null) onReady.run();
+                }
+            });
             return;
         }
         mAuthInFlight = true;
@@ -1212,6 +1272,9 @@ public class MainActivity extends Activity implements View.OnClickListener {
                     SharedPreferences.Editor ed = prefs.edit();
                     if (!mAuthToken.isEmpty()) ed.putString(PREF_AUTH_TOKEN, mAuthToken);
                     if (!pushSecret.isEmpty()) ed.putString(PREF_PUSH_SECRET, pushSecret);
+                    // Il PC che ha accettato il PIN: da ora all'indirizzo di casa deve rispondere lui
+                    String hostId = obj.optString("host_id", "");
+                    if (!mAuthToken.isEmpty() && hostId.matches("[0-9a-f]{16}")) ed.putString(PREF_PC_HOST_ID, hostId);
                     boolean topicChanged = false;
                     if (pushTopic.matches("[A-Za-z0-9_-]{1,64}")
                             && !pushTopic.equals(prefs.getString(ServerMonitorService.PREF_PUSH_TOPIC, ""))) {
@@ -1276,6 +1339,20 @@ public class MainActivity extends Activity implements View.OnClickListener {
     }
 
     private void executeApiCallInternal(final String endpoint, final String method, final String jsonBody, final boolean isRetry, final ApiClient.ApiCallback callback) {
+        withVerifiedBase(new Runnable() {
+            @Override
+            public void run() {
+                executeApiCallChecked(endpoint, method, jsonBody, isRetry, callback);
+            }
+        }, new Runnable() {
+            @Override
+            public void run() {
+                callback.onError(I18n.t("app.pc_casa_non_riconosciuto"));
+            }
+        });
+    }
+
+    private void executeApiCallChecked(final String endpoint, final String method, final String jsonBody, final boolean isRetry, final ApiClient.ApiCallback callback) {
         final String base = getEffectiveBaseUrl();
         ApiClient.call(base + endpoint, method, jsonBody, mAuthToken, new ApiClient.ApiCallback() {
             @Override
@@ -1341,8 +1418,9 @@ public class MainActivity extends Activity implements View.OnClickListener {
                             });
                         }
                     });
-                } else if (mConnMode == 0 && mIsUsingRemote && !mLocalUrl.isEmpty()) {
-                    // Remote fallito: prova fallback su LAN locale
+                } else if (mConnMode == 0 && mIsUsingRemote && !mLocalUrl.isEmpty() && mLocalUrl.equals(mLocalVerifiedUrl)) {
+                    // Remote fallito: prova fallback su LAN locale (solo se lì risponde il nostro PC: il token passa in chiaro;
+                    // altrimenti ci pensa il controllo della rete, testLocalReachabilityQuick, a riconoscerlo e tornarci)
                     ApiClient.call(mLocalUrl + endpoint, method, jsonBody, mAuthToken, new ApiClient.ApiCallback() {
                         @Override
                         public void onSuccess(String resp) {
@@ -1401,17 +1479,19 @@ public class MainActivity extends Activity implements View.OnClickListener {
             @Override
             public void onReceive(Context context, Intent intent) {
                 if ("com.minecraftserver.manager.URL_UPDATED".equals(intent.getAction())) {
+                    // Gli indirizzi si rileggono da quelli salvati dal servizio (dopo il controllo della firma), mai dal
+                    // messaggio: fino ad Android 12 questo avviso lo può mandare qualunque app del telefono
+                    SharedPreferences saved = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
                     boolean updated = false;
-                    if (intent.hasExtra("remote_url")) {
-                        String newRemote = intent.getStringExtra("remote_url");
-                        if (newRemote != null && !newRemote.trim().isEmpty() && !newRemote.equalsIgnoreCase(mRemoteUrl)) {
-                            mRemoteUrl = newRemote.trim();
-                            if (edtRemoteUrl != null) edtRemoteUrl.setText(mRemoteUrl);
-                            updated = true;
-                        }
+                    String newRemote = saved.getString("remote_url", "");
+                    if (newRemote != null && !newRemote.trim().isEmpty() && !newRemote.equalsIgnoreCase(mRemoteUrl)
+                            && PcTls.REMOTE_URL_PATTERN.matcher(newRemote.trim()).matches()) {
+                        mRemoteUrl = newRemote.trim();
+                        if (edtRemoteUrl != null) edtRemoteUrl.setText(mRemoteUrl);
+                        updated = true;
                     }
-                    if (intent.hasExtra("local_url")) {
-                        String newLocal = intent.getStringExtra("local_url");
+                    {
+                        String newLocal = saved.getString("local_url", "");
                         if (newLocal != null && !newLocal.trim().isEmpty() && !newLocal.equalsIgnoreCase(mLocalUrl)) {
                             mLocalUrl = newLocal.trim();
                             if (edtLocalUrl != null) edtLocalUrl.setText(mLocalUrl);
@@ -1444,10 +1524,18 @@ public class MainActivity extends Activity implements View.OnClickListener {
             mNetworkCallback = new ConnectivityManager.NetworkCallback() {
                 @Override
                 public void onCapabilitiesChanged(Network network, NetworkCapabilities caps) {
+                    // Arriva spesso anche senza cambiare rete (es. velocità del Wi-Fi): il PC di casa va riconosciuto
+                    // di nuovo solo su una rete diversa
+                    if (!network.equals(mLastNetwork)) {
+                        mLastNetwork = network;
+                        mLocalVerifiedUrl = "";
+                    }
                     evaluateNetworkRoute(caps);
                 }
                 @Override
                 public void onLost(Network network) {
+                    mLastNetwork = null;
+                    mLocalVerifiedUrl = "";
                     runOnUiThread(new Runnable() {
                         @Override
                         public void run() {
@@ -1492,35 +1580,22 @@ public class MainActivity extends Activity implements View.OnClickListener {
 
     private void testLocalReachabilityQuick() {
         if (mConnMode != 0 || mLocalUrl == null || mLocalUrl.isEmpty()) return;
-        ApiClient.get(mLocalUrl + "/api/status", mAuthToken, 1500, new ApiClient.ApiCallback() {
+        final String local = mLocalUrl;
+        // Senza token: su un Wi-Fi esterno allo stesso indirizzo può rispondere un altro dispositivo
+        String hostId = getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getString(PREF_PC_HOST_ID, "");
+        ApiClient.checkHost(local, hostId, 1500, new ApiClient.HostCallback() {
             @Override
-            public void onSuccess(String response) {
-                runOnUiThread(new Runnable() {
-                    @Override
-                    public void run() {
-                        if (mIsUsingRemote) {
-                            mIsUsingRemote = false;
-                            savePreferences();
-                            updateRoutePillUI();
-                            fetchStatus();
-                        }
-                    }
-                });
-            }
-            @Override
-            public void onError(String error) {
-                // Wi-Fi esterno (non domestico): usa l'indirizzo da internet
-                runOnUiThread(new Runnable() {
-                    @Override
-                    public void run() {
-                        if (!mIsUsingRemote) {
-                            mIsUsingRemote = true;
-                            savePreferences();
-                            updateRoutePillUI();
-                            fetchStatus();
-                        }
-                    }
-                });
+            public void onResult(int result) {
+                boolean home = result == ApiClient.HOST_SAME;
+                if (home) mLocalVerifiedUrl = local;
+                else if (local.equals(mLocalVerifiedUrl)) mLocalVerifiedUrl = "";
+                // Wi-Fi esterno (non domestico) o altro dispositivo all'indirizzo di casa: usa l'indirizzo da internet
+                if (home == mIsUsingRemote) {
+                    mIsUsingRemote = !home;
+                    savePreferences();
+                    updateRoutePillUI();
+                    fetchStatus();
+                }
             }
         });
     }
@@ -1540,10 +1615,21 @@ public class MainActivity extends Activity implements View.OnClickListener {
 
         // 1. Tenta la sincronizzazione diretta con il server attivo tramite /api/network
         // (chiamata diretta, non executeApiCall: il suo errore richiamerebbe questa funzione all'infinito)
-        ApiClient.call(getEffectiveBaseUrl() + "/api/network", "GET", null, mAuthToken, new ApiClient.ApiCallback() {
+        // Token solo se l'indirizzo è HTTPS o è stato riconosciuto come il nostro PC (dalla rete di casa non serve)
+        String syncBase = getEffectiveBaseUrl();
+        boolean unverifiedLocal = syncBase != null && syncBase.equals(mLocalUrl) && !syncBase.startsWith("https://")
+            && !syncBase.equals(mLocalVerifiedUrl);
+        // Indirizzi e impronta del certificato si accettano solo dal PC riconosciuto: in HTTPS (impronta già verificata)
+        // o all'indirizzo di casa con lo stesso identificativo del login. Prima li poteva cambiare chiunque rispondesse
+        // in chiaro all'indirizzo di casa (es. su un Wi-Fi esterno), e l'app si sarebbe poi fidata del suo certificato
+        final boolean trustedSource = syncBase != null && (syncBase.startsWith("https://")
+            || (syncBase.equals(mLocalVerifiedUrl)
+                && !getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getString(PREF_PC_HOST_ID, "").isEmpty()));
+        ApiClient.call(syncBase + "/api/network", "GET", null, unverifiedLocal ? "" : mAuthToken, new ApiClient.ApiCallback() {
             @Override
             public void onSuccess(final String netResp) {
                 try {
+                    if (!trustedSource) throw new IllegalStateException("PC non riconosciuto");   // si passa a ntfy
                     JSONObject netObj = new JSONObject(netResp);
                     String lanUrl = netObj.optString("lan_url", "");
                     if (lanUrl.isEmpty()) {
@@ -1655,12 +1741,10 @@ public class MainActivity extends Activity implements View.OnClickListener {
                                 if (mFp.find()) fp = mFp.group(1);
 
                                 String secret = getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getString(PREF_PUSH_SECRET, "");
-                                if (secret.isEmpty() || sig.isEmpty()) {
-                                    continue; // nessun segreto o messaggio non firmato: scartato
-                                }
-                                String expectedSig = hmacSha256Hex(secret, directRemote + "|" + directLocal + "|" + fp);
-                                if (!java.security.MessageDigest.isEqual(sig.getBytes(StandardCharsets.UTF_8), expectedSig.getBytes(StandardCharsets.UTF_8))) {
-                                    continue; // firma HMAC non valida: scartato
+                                // Nessun segreto, messaggio non firmato, firma errata o più vecchio dell'ultimo accettato: scartato
+                                if (!ServerMonitorService.acceptAddressMessage(MainActivity.this, secret, directRemote,
+                                        directLocal, fp, sig, combined)) {
+                                    continue;
                                 }
                                 if (!directLocal.isEmpty()) {
                                     discoveredLocal = directLocal.replaceAll("/+$", "");
@@ -4910,19 +4994,6 @@ public class MainActivity extends Activity implements View.OnClickListener {
         });
     }
 
-    private static String hmacSha256Hex(String key, String data) {
-        try {
-            javax.crypto.Mac mac = javax.crypto.Mac.getInstance("HmacSHA256");
-            mac.init(new javax.crypto.spec.SecretKeySpec(key.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
-            byte[] h = mac.doFinal(data.getBytes(StandardCharsets.UTF_8));
-            StringBuilder sb = new StringBuilder();
-            for (byte b : h) sb.append(String.format("%02x", b));
-            return sb.toString();
-        } catch (Exception e) {
-            return "";
-        }
-    }
-
     private void actionSaveSettings() {
         vibrate(30);
         String typedLocal = edtLocalUrl.getText().toString().trim();
@@ -4931,6 +5002,7 @@ public class MainActivity extends Activity implements View.OnClickListener {
             I18n.makeText(this, I18n.t("app.inserisci_almeno_indirizzo_pc_casa_o"), Toast.LENGTH_LONG).show();
             return;
         }
+        final String oldLocal = mLocalUrl != null ? mLocalUrl : "";
         mLocalUrl = typedLocal;
         mRemoteUrl = typedRemote;
         Matcher mIp = PcTls.REMOTE_URL_PATTERN.matcher(mRemoteUrl);
@@ -4945,6 +5017,11 @@ public class MainActivity extends Activity implements View.OnClickListener {
         }
         edtLocalUrl.setText(mLocalUrl);
         edtRemoteUrl.setText(mRemoteUrl);
+        if (!mLocalUrl.equalsIgnoreCase(oldLocal)) {
+            // Indirizzo di casa cambiato a mano (magari un altro PC): si riconosce di nuovo al prossimo accesso col PIN
+            getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit().remove(PREF_PC_HOST_ID).apply();
+            mLocalVerifiedUrl = "";
+        }
         if (edtAdminPin != null) {
             String newPin = edtAdminPin.getText().toString().trim();
             if (!newPin.isEmpty() && !newPin.equals(mAdminPin)) {
@@ -4991,7 +5068,9 @@ public class MainActivity extends Activity implements View.OnClickListener {
              .putString(PREF_ADMIN_PIN, mAdminPin)
              .putBoolean(PREF_FIRST_RUN, true)
              .putBoolean(PREF_BIOMETRIC, true)
+             .remove(PREF_PC_HOST_ID)   // configurazione nuova: il PC si riconosce al primo accesso col PIN
              .apply();
+        mLocalVerifiedUrl = "";
 
         // Anche la schermata Connessione deve mostrare i valori appena salvati: con i campi vuoti,
         // "Salva impostazioni connessione" cancellava gli indirizzi

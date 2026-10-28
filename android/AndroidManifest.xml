@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Il package (com.minecraftserver.manager) e' in build.gradle (namespace) e in build_apk.py (PACKAGE) -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    android:versionCode="103"
-    android:versionName="4.13.0-beta.1">
+    android:versionCode="105"
+    android:versionName="4.13.0">
 
     <uses-sdk
         android:minSdkVersion="26"
@@ -33,7 +33,7 @@
     </queries>
 
     <application
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:icon="@drawable/ic_app_icon"
         android:label="@string/app_name"
         android:roundIcon="@drawable/ic_app_icon"
@@ -88,14 +88,15 @@
             android:label="Voxarium">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-                <action android:name="com.minecraftserver.manager.WIDGET_START" />
-                <action android:name="com.minecraftserver.manager.WIDGET_RESTART" />
-                <action android:name="com.minecraftserver.manager.WIDGET_STOP" />
-                <action android:name="com.minecraftserver.manager.WIDGET_UPDATE_STATE" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/server_widget_info" />
         </receiver>
+
+        <!-- Pulsanti Avvia/Riavvia/Ferma del widget: non esportato, le altre app non possono comandare il server -->
+        <receiver
+            android:name=".WidgetActionReceiver"
+            android:exported="false" />
     </application>
 </manifest>

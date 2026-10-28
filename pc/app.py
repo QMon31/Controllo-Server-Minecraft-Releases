@@ -1041,6 +1041,9 @@ def verify_pin(req: VerifyPinRequest, request: Request):
             "push_topic": manager.config.get("push_topic"),
             "cert_fingerprint": remote_access.fingerprint,
             "remote_url": remote_access.url,
+            # L'app lo ricorda e, prima di mandare token o PIN in chiaro all'indirizzo di casa, controlla che lì
+            # risponda questo PC (su un Wi-Fi esterno allo stesso indirizzo può esserci un altro dispositivo)
+            "host_id": _host_id(),
             "message": "Accesso autorizzato."
         }
 
