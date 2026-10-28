@@ -58,8 +58,8 @@ import java.util.regex.Pattern;
 
 public class MainActivity extends Activity implements View.OnClickListener {
 
-    public static final int CURRENT_VERSION_CODE = 107;
-    public static final String CURRENT_VERSION_NAME = "4.13.1";
+    public static final int CURRENT_VERSION_CODE = 108;
+    public static final String CURRENT_VERSION_NAME = "4.13.2";
 
     private int dpToPx(int dp) {
         return Math.round(dp * getResources().getDisplayMetrics().density);
@@ -927,7 +927,8 @@ public class MainActivity extends Activity implements View.OnClickListener {
                 || id == R.id.btnRuleDaylight || id == R.id.btnRuleFireTick || id == R.id.btnRuleWeatherCycle
                 || id == R.id.btnRuleShowDeath) {
 
-            if (!"ONLINE".equalsIgnoreCase(mServerState)) {
+            // PvP è in server.properties: si cambia anche a server spento
+            if (id != R.id.btnRulePvP && !"ONLINE".equalsIgnoreCase(mServerState)) {
                 vibrate(30);
                 I18n.makeText(this, I18n.t("app.server_deve_essere_online_modificare"), Toast.LENGTH_SHORT).show();
                 return;
@@ -1598,6 +1599,25 @@ public class MainActivity extends Activity implements View.OnClickListener {
                 }
             }
         });
+    }
+
+    private long mLastHomeRouteCheck = 0;
+
+    /**
+     * Passata a internet perché una richiesta all'indirizzo di casa non ha risposto (es. PC occupato un momento), l'app
+     * ci restava finché il telefono non cambiava rete. Sul Wi-Fi ogni 30 s si riprova l'indirizzo di casa.
+     */
+    private void recheckHomeRouteIfNeeded() {
+        if (mConnMode != 0 || !mIsUsingRemote) return;
+        long now = System.currentTimeMillis();
+        if (now - mLastHomeRouteCheck < 30000L) return;
+        mLastHomeRouteCheck = now;
+        try {
+            ConnectivityManager cm = (ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
+            Network net = cm != null ? cm.getActiveNetwork() : null;
+            NetworkCapabilities caps = net != null ? cm.getNetworkCapabilities(net) : null;
+            if (caps != null && caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) testLocalReachabilityQuick();
+        } catch (Exception ignored) {}
     }
 
     private void testNetworkFailoverAuto() {
@@ -2430,12 +2450,14 @@ public class MainActivity extends Activity implements View.OnClickListener {
     // ================= PROPERTIES EDITOR =================
 
     private void fetchGameRulesFromServer() {
+        fetchPvpFromProperties();
         if (!"ONLINE".equalsIgnoreCase(mServerState)) {
             updateGameRuleButtonsUI();
             return;
         }
+        // "pvp" non è una gamerule (in Minecraft fino alla 1.21.8 è solo in server.properties): si legge a parte
         final String[] rules = new String[] {
-            "keepInventory", "mobGriefing", "pvp", "doDaylightCycle", "doFireTick", "doWeatherCycle", "showDeathMessages"
+            "keepInventory", "mobGriefing", "doDaylightCycle", "doFireTick", "doWeatherCycle", "showDeathMessages"
         };
         for (final String rule : rules) {
             String body = "{\"command\":\"gamerule " + rule + "\"}";
@@ -2463,7 +2485,89 @@ public class MainActivity extends Activity implements View.OnClickListener {
         }
     }
 
+    /** PvP da server.properties (vale anche a server spento). */
+    private void fetchPvpFromProperties() {
+        executeApiCall("/api/server/properties", "GET", null, new ApiClient.ApiCallback() {
+            @Override
+            public void onSuccess(String response) {
+                try {
+                    JSONObject props = new JSONObject(response).optJSONObject("properties");
+                    if (props == null || !props.has("pvp")) return;
+                    final boolean val = !"false".equalsIgnoreCase(props.optString("pvp", "true").trim());
+                    setRuleVariable("pvp", val);
+                    saveGameRulePref("pvp", val);
+                    runOnUiThread(new Runnable() {
+                        @Override public void run() { updateGameRuleButtonsUI(); }
+                    });
+                } catch (Exception ignored) {}
+            }
+            @Override public void onError(String error) {}
+        });
+    }
+
+    /** PvP si cambia in server.properties (il comando "gamerule pvp" non esiste) e vale dal prossimo avvio del server. */
+    private void togglePvpProperty(final boolean targetValue, final Button btn) {
+        btn.setEnabled(false);
+        String body;
+        try {
+            JSONObject p = new JSONObject();
+            p.put("pvp", String.valueOf(targetValue));
+            body = new JSONObject().put("properties", p).toString();
+        } catch (Exception e) {
+            btn.setEnabled(true);
+            return;
+        }
+        executeApiCall("/api/server/properties", "POST", body, new ApiClient.ApiCallback() {
+            @Override
+            public void onSuccess(String response) {
+                boolean needsRestart = false;
+                try {
+                    needsRestart = new JSONObject(response).optBoolean("needs_restart", false);
+                } catch (Exception ignored) {}
+                final boolean restartRequired = needsRestart;
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        btn.setEnabled(true);
+                        setRuleVariable("pvp", targetValue);
+                        saveGameRulePref("pvp", targetValue);
+                        updateGameRuleButtonsUI();
+                        if (restartRequired) {
+                            new I18n.Builder(MainActivity.this)
+                                .setTitle(I18n.t("app.proprieta_salvate"))
+                                .setMessage(I18n.t("app.modifiche_server_properties_sono_state"))
+                                .setPositiveButton(I18n.t("app.riavvia_ora"), new DialogInterface.OnClickListener() {
+                                    @Override
+                                    public void onClick(DialogInterface dialog, int which) {
+                                        confirmRestartServer();
+                                    }
+                                })
+                                .setNegativeButton(I18n.t("app.riavvia_piu_tardi"), null)
+                                .show();
+                        } else {
+                            I18n.makeText(MainActivity.this, I18n.t("app.proprieta_salvate_successo"), Toast.LENGTH_SHORT).show();
+                        }
+                    }
+                });
+            }
+            @Override
+            public void onError(final String error) {
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        btn.setEnabled(true);
+                        I18n.makeText(MainActivity.this, I18n.t("app.errore_modifica", "pvp", error), Toast.LENGTH_LONG).show();
+                    }
+                });
+            }
+        });
+    }
+
     private void toggleGameRule(final String ruleName, final boolean targetValue, final Button btn) {
+        if ("pvp".equals(ruleName)) {
+            togglePvpProperty(targetValue, btn);
+            return;
+        }
         if (!"ONLINE".equalsIgnoreCase(mServerState)) {
             vibrate(30);
             I18n.makeText(this, I18n.t("app.server_deve_essere_online_modificare_2"), Toast.LENGTH_SHORT).show();
@@ -4787,6 +4891,7 @@ public class MainActivity extends Activity implements View.OnClickListener {
                 } else if (viewSettings.getVisibility() == View.VISIBLE) {
                     fetchBackupStatus();
                 }
+                recheckHomeRouteIfNeeded();
             }
             mPollHandler.postDelayed(this, 2500);
         }

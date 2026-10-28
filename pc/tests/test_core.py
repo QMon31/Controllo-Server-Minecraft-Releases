@@ -185,6 +185,12 @@ class ServerManagerConfigTest(unittest.TestCase):
             sm, m, _ = self._manager({"server_dir": srv})
             self.assertEqual(m.get_configured_max_players(), 25)
             self.assertIn('else self.get_configured_max_players()', open(sm.__file__, encoding="utf-8").read())
+            # Appena acceso, prima che il ping risponda (server_info con il 20 di default): sempre server.properties
+            m.state = "ONLINE"
+            m.server_info = {"online": False, "players_max": 20}
+            self.assertEqual(m.get_full_status()["players"]["max"], 25)
+            m.server_info = {"online": True, "players_max": 30}
+            self.assertEqual(m.get_full_status()["players"]["max"], 30)
         finally:
             shutil.rmtree(srv, ignore_errors=True)
 

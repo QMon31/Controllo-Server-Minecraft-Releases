@@ -83,14 +83,23 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Novità per telefono (v4.13.1)"
-                android:tag="t:ui.novita_telefono|v4.13.1"
+                android:text="Novità per telefono (v4.13.2)"
+                android:tag="t:ui.novita_telefono|v4.13.2"
                 android:textColor="#f4f4f5"
                 android:textSize="14sp"
                 android:textStyle="bold"
                 android:layout_marginBottom="8dp" />
 
             <!-- CONTENUTO NOVITÀ TELEFONO -->
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Novità (v4.13.2): il pulsante PvP nelle Regole di gioco cambia davvero il PvP del server (in server.properties, vale dal prossimo avvio; prima mandava un comando che Minecraft 1.20.1 non conosce) e mostra il valore salvato sul PC anche a server spento; sul Wi-Fi di casa l'app torna da sola all'indirizzo di casa se era passata a internet per un momento."
+                    android:tag="t:ui.novita_v4_13_2_pvp"
+                    android:textColor="#c4c4c8"
+                    android:textSize="12sp"
+                    android:layout_marginBottom="6dp" />
+
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -211,6 +220,16 @@
                 android:background="#0f0f11"
                 android:padding="12dp"
                 android:layout_marginBottom="8dp">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="• v4.13.2 (Build 108):
+Pulsante PvP funzionante (server.properties); ritorno automatico al Wi-Fi di casa."
+                    android:tag="t:ui.v4_13_2_build_108_pvp"
+                    android:textColor="#c4c4c8"
+                    android:textSize="12sp"
+                    android:layout_marginBottom="4dp" />
 
                 <TextView
                     android:layout_width="match_parent"

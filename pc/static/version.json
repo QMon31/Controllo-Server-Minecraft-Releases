@@ -1,8 +1,8 @@
 {
-  "version_code": 107,
-  "version_name": "4.13.1",
+  "version_code": 108,
+  "version_name": "4.13.2",
   "download_url": "/static/Controllo_Server_Minecraft.apk",
-  "release_notes": "Correzioni: il widget mostra lo stato giusto del server appena ha finito di accendersi o spegnersi (prima restava su STARTING o STOPPING) e si aggiorna anche agli avvisi del PC; nella sezione Errori si legge di nuovo il testo di ogni errore; le regole di gioco mostrano il valore del server quando il PC lo riceve.",
+  "release_notes": "Correzioni: il pulsante PvP nelle Regole di gioco cambia davvero il PvP del server (in server.properties, vale dal prossimo avvio) e funziona anche a server spento; sul Wi-Fi di casa l'app torna da sola all'indirizzo di casa se era passata a internet per un momento.",
   "min_sdk": 26,
   "target_sdk": 35
 }
