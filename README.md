@@ -14,10 +14,10 @@ Choose the version for your system:
 <!-- download:start -->
 | | **Windows 10 / 11** | **Linux** (Ubuntu / Debian) |
 |---|---|---|
-| **Download** | [⬇ Setup_Voxarium.exe](https://github.com/QMon31/Voxarium/releases/latest/download/Setup_Voxarium.exe) | [⬇ voxarium-linux.tar.gz](https://github.com/QMon31/Voxarium/releases/download/linux-v4.22.3-b105/voxarium-linux.tar.gz) |
-| **Version** | always the latest | v4.22.3 (Build 105) |
+| **Download** | [⬇ Setup_Voxarium.exe](https://github.com/QMon31/Voxarium/releases/latest/download/Setup_Voxarium.exe) | [⬇ voxarium-linux.tar.gz](https://github.com/QMon31/Voxarium/releases/download/linux-v4.22.4-b106/voxarium-linux.tar.gz) |
+| **Version** | always the latest | v4.22.4 (Build 106) |
 | **Install** | open the file and follow the steps | `tar xzf voxarium-linux.tar.gz` then `sh voxarium/install.sh` (as your normal user) |
-| **Release notes** | [Windows release](https://github.com/QMon31/Voxarium/releases/latest) | [Linux release](https://github.com/QMon31/Voxarium/releases/tag/linux-v4.22.3-b105) |
+| **Release notes** | [Windows release](https://github.com/QMon31/Voxarium/releases/latest) | [Linux release](https://github.com/QMon31/Voxarium/releases/tag/linux-v4.22.4-b106) |
 
 Both versions have the same control panel, work with the same Android app and update themselves from the panel.
 <!-- download:end -->
