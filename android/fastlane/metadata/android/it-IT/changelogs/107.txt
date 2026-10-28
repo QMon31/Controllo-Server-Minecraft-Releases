@@ -1,0 +1,1 @@
+Widget con lo stato del server aggiornato; testo degli errori di nuovo visibile; regole di gioco lette dal server.

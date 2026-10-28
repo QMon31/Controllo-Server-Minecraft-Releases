@@ -1,8 +1,8 @@
 {
-  "version_code": 105,
-  "version_name": "4.13.0",
+  "version_code": 107,
+  "version_name": "4.13.1",
   "download_url": "/static/Controllo_Server_Minecraft.apk",
-  "release_notes": "Più server dal telefono (scelta del server attivo dalla Dashboard); un backup per ogni server; il teletrasporto porta allo spawn del mondo. Sicurezza: su un Wi-Fi che non è quello di casa token e PIN vanno solo al tuo PC; i comandi del widget non possono arrivare da altre app; da internet il PC è riconosciuto solo dall'impronta del suo certificato; i dati dell'app non vanno nel backup di Google.",
+  "release_notes": "Correzioni: il widget mostra lo stato giusto del server appena ha finito di accendersi o spegnersi (prima restava su STARTING o STOPPING) e si aggiorna anche agli avvisi del PC; nella sezione Errori si legge di nuovo il testo di ogni errore; le regole di gioco mostrano il valore del server quando il PC lo riceve.",
   "min_sdk": 26,
   "target_sdk": 35
 }

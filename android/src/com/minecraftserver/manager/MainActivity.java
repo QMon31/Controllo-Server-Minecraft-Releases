@@ -58,8 +58,8 @@ import java.util.regex.Pattern;
 
 public class MainActivity extends Activity implements View.OnClickListener {
 
-    public static final int CURRENT_VERSION_CODE = 105;
-    public static final String CURRENT_VERSION_NAME = "4.13.0";
+    public static final int CURRENT_VERSION_CODE = 107;
+    public static final String CURRENT_VERSION_NAME = "4.13.1";
 
     private int dpToPx(int dp) {
         return Math.round(dp * getResources().getDisplayMetrics().density);
@@ -2444,7 +2444,8 @@ public class MainActivity extends Activity implements View.OnClickListener {
                 public void onSuccess(String response) {
                     try {
                         JSONObject obj = new JSONObject(response);
-                        String out = obj.optString("output", "").toLowerCase();
+                        // La risposta di Minecraft (via RCON) arriva in "message"
+                        String out = obj.optString("output", obj.optString("message", "")).toLowerCase();
                         boolean isTrue = out.contains("true") || out.contains("is currently set to: true");
                         boolean isFalse = out.contains("false") || out.contains("is currently set to: false");
                         if (isTrue || isFalse) {
@@ -3011,8 +3012,9 @@ public class MainActivity extends Activity implements View.OnClickListener {
                         sb.append(I18n.t("app.errori_esecuzione")).append(errors.length()).append("):\n");
                         for (int i = 0; i < errors.length(); i++) {
                             JSONObject err = errors.getJSONObject(i);
+                            // Il PC manda il testo in "message" ("text" c'è solo in alcuni avvisi di crash)
                             sb.append("• [").append(err.optString("time", "")).append("] ")
-                              .append(err.optString("text", "")).append("\n\n");
+                              .append(err.optString("message", err.optString("text", ""))).append("\n\n");
                         }
                     }
 

@@ -2054,6 +2054,7 @@ window.I18N_DICTS.it = {
   'notes.sicurezza_app_pc': "Sicurezza dell'app ({0})",
   'notes.sicurezza_app_host_id_ora': ": al login il PC manda all'app il suo identificativo, così l'app 4.13.0 manda token e PIN solo al tuo PC anche su un Wi-Fi che non è quello di casa; gli avvisi con il nuovo indirizzo portano l'ora firmata, così non si possono rimandare quelli vecchi.",
   'notes.piu_server_sicurezza_app': "Più server e sicurezza ({0})",
+  'notes.widget_errori_app_4131': ": il widget mostra lo stato giusto del server appena ha finito di accendersi o spegnersi (prima restava su STARTING o STOPPING) e si aggiorna anche agli avvisi del PC; nella sezione Errori si legge di nuovo il testo di ogni errore; le regole di gioco mostrano il valore del server quando il PC lo riceve.",
   'notes.piu_server_sicurezza_app_4130': ": se sul PC ci sono almeno due server si sceglie quello attivo dalla Dashboard; un backup per ogni server; il teletrasporto porta allo spawn del mondo; su un Wi-Fi esterno token e PIN vanno solo al tuo PC; i comandi del widget non possono arrivare da altre app; da internet il PC è riconosciuto solo dall'impronta del suo certificato; i dati dell'app non vanno nel backup di Google.",
   'notes.backup_ogni_server': "Backup per ogni server ({0})",
   'notes.backup_ogni_server_ripristino': ": ogni server ha il suo backup (Backup_NomeServer.zip sul Desktop e su Google Drive) invece di un unico file che ogni server sovrascriveva; il ripristino di un backup nel server sbagliato chiede conferma.",

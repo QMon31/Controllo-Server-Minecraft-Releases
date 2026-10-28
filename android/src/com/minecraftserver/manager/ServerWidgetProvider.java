@@ -199,58 +199,75 @@ public class ServerWidgetProvider extends AppWidgetProvider {
         new Thread(new Runnable() {
             @Override
             public void run() {
-                try {
-                    String baseUrl = getBaseUrl(context);
-                    if (baseUrl.isEmpty()) return;
-                    URL url = new URL(baseUrl + "/api/status");
-                    HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-                    conn.setRequestMethod("GET");
-                    conn.setConnectTimeout(4000);
-                    conn.setReadTimeout(4000);
-
-                    String token = getOrFetchAuthToken(context, baseUrl);
-                    if (token != null && !token.isEmpty()) {
-                        conn.setRequestProperty("X-Admin-Token", token);
-                    }
-
-                    int respCode = conn.getResponseCode();
-                    if (respCode == 401 || respCode == 403) {
-                        // Invalida il token scaduto e riprova
-                        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit().remove(PREF_AUTH_TOKEN).apply();
-                    } else if (respCode == 200) {
-                        InputStream is = conn.getInputStream();
-                        BufferedReader reader = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8));
-                        StringBuilder sb = new StringBuilder();
-                        String line;
-                        while ((line = reader.readLine()) != null) sb.append(line);
-                        reader.close();
-
-                        JSONObject json = new JSONObject(sb.toString());
-                        String state = json.optString("state", "OFFLINE");
-                        JSONObject playersObj = json.optJSONObject("players");
-                        int playersOnline = 0;
-                        int maxPlayers = 20;
-                        if (playersObj != null) {
-                            playersOnline = playersObj.optInt("count", 0);
-                            maxPlayers = playersObj.optInt("max", 20);
-                        } else {
-                            playersOnline = json.optInt("players_online", 0);
-                            maxPlayers = json.optInt("players_max", 20);
-                        }
-
-                        JSONObject metrics = json.optJSONObject("metrics");
-                        double ramGb = 0.0;
-                        if (metrics != null) {
-                            ramGb = metrics.optDouble("mc_ram_gb", 0.0);
-                        }
-                        double tps = json.optDouble("tps", 20.0);
-
-                        updateWidgetUI(context, state, playersOnline, maxPlayers, ramGb, tps);
-                    }
-                    conn.disconnect();
-                } catch (Exception ignored) {}
+                fetchServerStatus(context);
             }
         }).start();
+    }
+
+    /** Avviso dal PC (server acceso, spento, crash...): il widget rilegge subito lo stato, se è sulla schermata Home. */
+    static void refreshStatusAsync(Context context) {
+        int[] ids = AppWidgetManager.getInstance(context).getAppWidgetIds(new ComponentName(context, ServerWidgetProvider.class));
+        if (ids != null && ids.length > 0) fetchServerStatusAsync(context);
+    }
+
+    /** Legge lo stato dal PC e aggiorna il widget (da un thread in background). Restituisce lo stato, o null se non risponde. */
+    private static String fetchServerStatus(final Context context) {
+        String state = null;
+        try {
+            String baseUrl = getBaseUrl(context);
+            if (baseUrl.isEmpty()) return null;
+            URL url = new URL(baseUrl + "/api/status");
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("GET");
+            conn.setConnectTimeout(4000);
+            conn.setReadTimeout(4000);
+
+            String token = getOrFetchAuthToken(context, baseUrl);
+            if (token != null && !token.isEmpty()) {
+                conn.setRequestProperty("X-Admin-Token", token);
+            }
+
+            int respCode = conn.getResponseCode();
+            if (respCode == 401 || respCode == 403) {
+                // Invalida il token scaduto e riprova
+                context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit().remove(PREF_AUTH_TOKEN).apply();
+            } else if (respCode == 200) {
+                InputStream is = conn.getInputStream();
+                BufferedReader reader = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8));
+                StringBuilder sb = new StringBuilder();
+                String line;
+                while ((line = reader.readLine()) != null) sb.append(line);
+                reader.close();
+
+                JSONObject json = new JSONObject(sb.toString());
+                state = json.optString("state", "OFFLINE");
+                JSONObject playersObj = json.optJSONObject("players");
+                int playersOnline = 0;
+                int maxPlayers = 20;
+                if (playersObj != null) {
+                    playersOnline = playersObj.optInt("count", 0);
+                    maxPlayers = playersObj.optInt("max", 20);
+                } else {
+                    playersOnline = json.optInt("players_online", 0);
+                    maxPlayers = json.optInt("players_max", 20);
+                }
+
+                JSONObject metrics = json.optJSONObject("metrics");
+                double ramGb = 0.0;
+                if (metrics != null) {
+                    ramGb = metrics.optDouble("mc_ram_gb", 0.0);
+                }
+                double tps = json.optDouble("tps", 20.0);
+
+                updateWidgetUI(context, state, playersOnline, maxPlayers, ramGb, tps);
+            }
+            conn.disconnect();
+        } catch (Exception ignored) {}
+        return state;
+    }
+
+    private static boolean isTransitionState(String state) {
+        return "STARTING".equalsIgnoreCase(state) || "STOPPING".equalsIgnoreCase(state) || "RESTARTING".equalsIgnoreCase(state);
     }
 
     static void sendServerActionAsync(final Context context, final String endpoint, final String method, final String jsonBody) {
@@ -305,8 +322,20 @@ public class ServerWidgetProvider extends AppWidgetProvider {
                         retryConn.disconnect();
                     }
 
-                    Thread.sleep(1000);
-                    fetchServerStatusAsync(context);
+                    // Il server impiega da qualche secondo a qualche minuto ad accendersi o spegnersi: lo stato si rilegge
+                    // ogni 3 s finché non è definitivo (per al massimo 3 minuti), così il widget non resta su STARTING/STOPPING.
+                    // Nei primi 10 s uno stato definitivo può essere ancora quello di prima del comando: si continua.
+                    long started = System.currentTimeMillis();
+                    boolean seenTransition = false;
+                    while (System.currentTimeMillis() - started < 180000L) {
+                        Thread.sleep(3000);
+                        String state = fetchServerStatus(context);
+                        if (isTransitionState(state)) {
+                            seenTransition = true;
+                        } else if (state != null && (seenTransition || System.currentTimeMillis() - started > 10000L)) {
+                            break;
+                        }
+                    }
                 } catch (Exception ignored) {}
             }
         }).start();

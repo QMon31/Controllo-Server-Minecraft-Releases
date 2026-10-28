@@ -2049,6 +2049,7 @@ window.I18N_DICTS.en = {
   'notes.sicurezza_app_pc': "App security ({0})",
   'notes.sicurezza_app_host_id_ora': ": at login the PC sends the app its identifier, so app 4.13.0 sends the token and PIN only to your PC even on a Wi-Fi that is not your home one; new-address alerts carry a signed time, so old ones cannot be sent again.",
   'notes.piu_server_sicurezza_app': "Several servers and security ({0})",
+  'notes.widget_errori_app_4131': ": the widget shows the right server state as soon as it has finished starting or stopping (before it stayed on STARTING or STOPPING) and also refreshes on the PC's alerts; in the Errors section the text of each error is visible again; game rules show the server's value when the PC receives it.",
   'notes.piu_server_sicurezza_app_4130': ": if the PC has at least two servers, choose the active one from the Dashboard; a backup for each server; teleport goes to the world spawn; on another Wi-Fi the token and PIN go only to your PC; widget commands cannot come from other apps; from the internet the PC is recognized only by its certificate fingerprint; app data is not included in the Google backup.",
   'notes.backup_ogni_server': "A backup for each server ({0})",
   'notes.backup_ogni_server_ripristino': ": each server has its own backup (Backup_ServerName.zip on the Desktop and on Google Drive) instead of a single file that every server overwrote; restoring a backup into the wrong server asks for confirmation.",

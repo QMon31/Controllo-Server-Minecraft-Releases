@@ -2049,6 +2049,7 @@ window.I18N_DICTS.de = {
   'notes.sicurezza_app_pc': "Sicherheit der App ({0})",
   'notes.sicurezza_app_host_id_ora': ": beim Login sendet der PC der App seine Kennung, so sendet die App 4.13.0 Token und PIN nur an deinen PC, auch in einem fremden WLAN; Hinweise mit der neuen Adresse tragen eine signierte Uhrzeit, alte können nicht erneut gesendet werden.",
   'notes.piu_server_sicurezza_app': "Mehrere Server und Sicherheit ({0})",
+  'notes.widget_errori_app_4131': ": Das Widget zeigt den richtigen Serverstatus, sobald der Server fertig gestartet oder gestoppt ist (vorher blieb es auf STARTING oder STOPPING), und aktualisiert sich auch bei Meldungen des PCs; im Bereich Fehler ist der Text jedes Fehlers wieder sichtbar; die Spielregeln zeigen den Wert des Servers, sobald der PC ihn erhält.",
   'notes.piu_server_sicurezza_app_4130': ": hat der PC mindestens zwei Server, wählt man den aktiven im Dashboard; ein Backup für jeden Server; der Teleport führt zum Welt-Spawn; in einem fremden WLAN gehen Token und PIN nur an deinen PC; Widget-Befehle können nicht von anderen Apps kommen; aus dem Internet wird der PC nur am Fingerabdruck seines Zertifikats erkannt; App-Daten landen nicht im Google-Backup.",
   'notes.backup_ogni_server': "Ein Backup für jeden Server ({0})",
   'notes.backup_ogni_server_ripristino': ": jeder Server hat sein eigenes Backup (Backup_ServerName.zip auf dem Desktop und in Google Drive) statt einer einzigen Datei, die jeder Server überschrieb; das Wiederherstellen eines Backups im falschen Server fragt nach Bestätigung.",

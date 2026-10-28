@@ -2050,8 +2050,10 @@ class ServerManager:
                 "start_time_str": datetime.fromtimestamp(self.start_time).strftime("%d/%m/%Y %H:%M:%S") if self.start_time else None,
                 "players": {
                     "count": total_players_online,
-                    # A server acceso il valore vero arriva dal ping; spento, da server.properties (prima: sempre 20)
-                    "max": self.server_info.get("players_max", 20) if self.state == "ONLINE" else self.get_configured_max_players(),
+                    # A server acceso il valore vero arriva dal ping; spento, o finché il ping non ha ancora risposto
+                    # (appena acceso il ping vale 20 per default), da server.properties
+                    "max": self.server_info.get("players_max", 20) if self.state == "ONLINE" and self.server_info.get("online")
+                           else self.get_configured_max_players(),
                     "list": player_list
                 },
                 "slp": {

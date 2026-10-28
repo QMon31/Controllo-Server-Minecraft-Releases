@@ -1,0 +1,1 @@
+Widget with up-to-date server state; error text visible again; game rules read from the server.

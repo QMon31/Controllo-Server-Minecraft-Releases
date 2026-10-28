@@ -325,6 +325,7 @@ public class ServerMonitorService extends Service {
                                         // Tutti gli altri messaggi (avvio/arresto server, giocatori, notifica di prova...) non vanno persi
                                         triggerGeneralAlertNotification(title, message);
                                     }
+                                    if (!isNetworkSync) ServerWidgetProvider.refreshStatusAsync(ServerMonitorService.this);
                                 }
                             } catch (Exception ignored) {}
                         }

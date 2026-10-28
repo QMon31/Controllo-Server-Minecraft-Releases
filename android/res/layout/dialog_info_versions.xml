@@ -83,14 +83,23 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Novità per telefono (v4.13.0)"
-                android:tag="t:ui.novita_telefono|v4.13.0"
+                android:text="Novità per telefono (v4.13.1)"
+                android:tag="t:ui.novita_telefono|v4.13.1"
                 android:textColor="#f4f4f5"
                 android:textSize="14sp"
                 android:textStyle="bold"
                 android:layout_marginBottom="8dp" />
 
             <!-- CONTENUTO NOVITÀ TELEFONO -->
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Novità (v4.13.1): il widget mostra lo stato giusto del server appena ha finito di accendersi o spegnersi (prima restava su STARTING o STOPPING) e si aggiorna anche quando il PC manda un avviso; nella sezione Errori si legge di nuovo il testo di ogni errore (prima solo l'ora); le regole di gioco mostrano il valore del server quando il PC lo riceve."
+                    android:tag="t:ui.novita_v4_13_1_widget"
+                    android:textColor="#c4c4c8"
+                    android:textSize="12sp"
+                    android:layout_marginBottom="6dp" />
+
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -202,6 +211,16 @@
                 android:background="#0f0f11"
                 android:padding="12dp"
                 android:layout_marginBottom="8dp">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="• v4.13.1 (Build 107):
+Widget con lo stato del server aggiornato; testo degli errori di nuovo visibile; regole di gioco lette dal server."
+                    android:tag="t:ui.v4_13_1_build_107_widget"
+                    android:textColor="#c4c4c8"
+                    android:textSize="12sp"
+                    android:layout_marginBottom="4dp" />
 
                 <TextView
                     android:layout_width="match_parent"

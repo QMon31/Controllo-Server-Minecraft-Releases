@@ -2049,6 +2049,7 @@ window.I18N_DICTS.pt = {
   'notes.sicurezza_app_pc': "Segurança da app ({0})",
   'notes.sicurezza_app_host_id_ora': ": no login o PC envia à app o seu identificador, assim a app 4.13.0 envia o token e o PIN só para o teu PC mesmo numa rede Wi-Fi que não é a de casa; os avisos com o novo endereço têm a hora assinada, assim os antigos não podem ser reenviados.",
   'notes.piu_server_sicurezza_app': "Vários servidores e segurança ({0})",
+  'notes.widget_errori_app_4131': ": o widget mostra o estado certo do servidor assim que ele termina de ligar ou desligar (antes ficava em STARTING ou STOPPING) e também se atualiza com os avisos do PC; na seção Erros o texto de cada erro aparece de novo; as regras do jogo mostram o valor do servidor quando o PC o recebe.",
   'notes.piu_server_sicurezza_app_4130': ": se o PC tiver pelo menos dois servidores, escolhe-se o ativo no Painel; um backup para cada servidor; o teletransporte leva ao spawn do mundo; noutra rede Wi-Fi o token e o PIN vão só para o teu PC; os comandos do widget não podem vir de outras apps; pela internet o PC é reconhecido só pela impressão digital do seu certificado; os dados da app não vão para o backup do Google.",
   'notes.backup_ogni_server': "Uma cópia de segurança para cada servidor ({0})",
   'notes.backup_ogni_server_ripristino': ": cada servidor tem a sua cópia de segurança (Backup_NomeServidor.zip no Ambiente de trabalho e no Google Drive) em vez de um único ficheiro que cada servidor substituía; restaurar uma cópia no servidor errado pede confirmação.",
