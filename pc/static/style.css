@@ -746,7 +746,7 @@ body {
 .toggle-switch-slider {
   width: 38px;
   height: 20px;
-  background: #212023;
+  background: var(--control, #3a3a3e); /* da spento il binario deve vedersi sulla scheda (prima si vedeva solo il pallino) */
   border-radius: 999px;
   position: relative;
   transition: background 0.25s ease;
@@ -822,7 +822,7 @@ body {
   font-weight: 700;
   border-radius: 8px;
   background: #212023;
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--control, #3a3a3e);
   color: #e7e7e9;
   cursor: pointer;
   transition: all 0.15s ease-in-out;
@@ -1744,9 +1744,11 @@ canvas#resourceCanvas { width: 100%; height: 125px; display: block; }
   align-items: center;
   justify-content: center;
   gap: 10px;
+  flex-wrap: wrap; /* sul telefono indirizzo e pulsanti vanno a capo invece di uscire dalla finestra */
 }
 
 .url-copy-row code {
+  overflow-wrap: anywhere;
   font-family: var(--font-mono);
   font-size: 0.95rem;
   color: #93c5fd;
@@ -1874,6 +1876,7 @@ body.modal-open {
   padding: 4px 0 12px 0;
   margin-bottom: 16px;
   overflow-x: auto;
+  flex-shrink: 0; /* sul telefono la finestra la schiacciava: linguette alte 18 px con il bordo sopra il testo */
 }
 
 .modal-tab-btn {
@@ -1924,6 +1927,16 @@ body.modal-open {
   font-size: 1rem;
   color: #fff;
   margin-bottom: 4px;
+}
+
+/* Sul telefono i badge (porta, stato) vanno sotto il testo: prima lo schiacciavano in una colonna stretta */
+@media (max-width: 600px) {
+  .tunnel-header {
+    flex-wrap: wrap;
+  }
+  .tunnel-header > div:first-child {
+    flex: 1 1 100%;
+  }
 }
 
 
@@ -2084,6 +2097,7 @@ body.modal-open {
   font-family: var(--font-mono);
   font-size: 0.82rem;
   border: 1px solid #1f2937;
+  overflow-wrap: anywhere; /* nome del file lungo: va a capo invece di far scorrere di lato la finestra sul telefono */
 }
 .backup-note {
   font-size: 0.82rem;
@@ -2920,7 +2934,7 @@ body.modal-open {
 
   .sched-actions-row {
     display: grid !important;
-    grid-template-columns: repeat(2, 1fr) !important;
+    grid-template-columns: repeat(3, 1fr) !important; /* +30m, +1h e Reset su una riga (prima Reset restava da solo) */
     gap: 8px !important;
     width: 100% !important;
   }
@@ -3491,7 +3505,7 @@ body.modal-open {
     grid-column: 1 / -1 !important;
   }
   .sched-actions-row {
-    grid-template-columns: 1fr 1fr !important;
+    grid-template-columns: repeat(3, 1fr) !important;
   }
 }
 
@@ -4057,6 +4071,10 @@ body.modal-open {
 
 @media (max-width: 768px) {
   .pc-only-tab {
+    display: none !important;
+  }
+  /* Sul telefono i file si gestiscono come nell'app: i backup si creano e si ripristinano, non si scaricano né si eliminano */
+  .pc-only-action {
     display: none !important;
   }
   .mods-pc-content {
@@ -5689,6 +5707,11 @@ body.drawer-open {
   height: 22px;
   overflow: hidden;
 }
+/* Con l'avviso di aggiornamento (lungo) le etichette passano alla seconda riga invece di sparire */
+.store-card-tags-row:has(> .badge) {
+  height: auto;
+  max-height: 48px;
+}
 .store-badge-tag {
   font-size: 0.68rem;
   padding: 1px 7px;
@@ -5830,7 +5853,7 @@ body.drawer-open {
 .note-accent { border-left: 3px solid #8db6e8; padding-left: 10px; }
 .note-neutral { border-left: 3px solid #8a8c92; padding-left: 10px; }
 .row-between { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
-.row-center { display: flex; align-items: center; gap: 8px; }
+.row-center { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; } /* sul telefono va a capo invece di uscire (es. Info) */
 
 /* Versione di Java: testo lungo senza spazi, va a capo invece di uscire dal riquadro */
 #sys-java-info, #forge-java-status, #forge-java-badge {

@@ -1405,7 +1405,8 @@ function switchMainTab(tabId) {
       clearInterval(metrics24hAutoRefreshTimer);
       metrics24hAutoRefreshTimer = null;
     }
-    loadDirectoryFiles(currentFileManagerPath || '');
+    // Sul telefono il File Manager non c'è (come nell'app): niente elenco dei file
+    if (window.innerWidth > 768) loadDirectoryFiles(currentFileManagerPath || '');
   } else if (tabId === 'tab-store') {
     if (typeof metrics24hAutoRefreshTimer !== 'undefined' && metrics24hAutoRefreshTimer) {
       clearInterval(metrics24hAutoRefreshTimer);
@@ -7649,13 +7650,13 @@ async function loadAvailableBackups() {
             <span class="badge ${isCloud ? 'badge-sapphire' : 'badge-emerald'}" style="font-size: 0.72rem; font-weight: 700; padding: 4px 8px;">
               ${isCloud ? 'Drive' : 'Desktop'}
             </span>
-            <button class="btn btn-xs btn-sapphire" onclick="downloadBackupItem('${escapeJsAttr(b.id || b.filename)}', '${escapeJsAttr(b.filename)}')">
+            <button class="btn btn-xs btn-sapphire pc-only-action" onclick="downloadBackupItem('${escapeJsAttr(b.id || b.filename)}', '${escapeJsAttr(b.filename)}')">
               ${th('ui.scarica')}
             </button>
             <button class="btn btn-xs btn-amber" onclick="confirmRestoreBackup('${escapeJsAttr(b.path)}', '${escapeJsAttr(b.filename)}')">
               ${th('msg.ripristina')}
             </button>
-            <button class="btn btn-xs btn-ruby" onclick="deleteBackupItem('${escapeJsAttr(b.id || b.path)}', '${escapeJsAttr(b.filename)}')">
+            <button class="btn btn-xs btn-ruby pc-only-action" onclick="deleteBackupItem('${escapeJsAttr(b.id || b.path)}', '${escapeJsAttr(b.filename)}')">
               ${th('msg.elimina')}
             </button>
           </div>

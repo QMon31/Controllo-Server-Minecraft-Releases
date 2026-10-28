@@ -86,7 +86,7 @@
         <span class="snav-badge snav-badge-home" style="background: rgba(124,179,66,0.25); color: #9ccc65;">1-Click</span>
       </button>
 
-      <button class="sidebar-nav-item" id="snav-tab-files" onclick="selectSidebarNav('tab-files')">
+      <button class="sidebar-nav-item pc-only-tab" id="snav-tab-files" onclick="selectSidebarNav('tab-files')">
         <span class="snav-icon"></span>
         <span class="snav-label" data-i18n="menu.file_manager_web">File Manager Web</span>
       </button>
@@ -136,7 +136,7 @@
 
       <button class="sidebar-nav-item" id="snav-changelog" onclick="toggleSidebarDrawer(false); openChangelogModal();">
         <span class="snav-icon info-circle-nav-icon">i</span>
-        <span class="snav-label">Info &amp; Versioni (v4.22.0)</span>
+        <span class="snav-label">Info &amp; Versioni (v4.22.1)</span>
       </button>
 
       <button class="sidebar-nav-item" id="snav-settings" onclick="toggleSidebarDrawer(false); openSettingsModal();">
@@ -1397,8 +1397,14 @@
       </div>
 
       <!-- TAB 10: WEB FILE MANAGER -->
-      <div id="tab-files" class="tab-pane">
-        <div class="files-layout">
+      <div id="tab-files" class="tab-pane pc-only-tab-pane">
+        <!-- Sul telefono i file si gestiscono come nell'app: editor dei file di configurazione, backup, pulizia -->
+        <div class="mods-mobile-notice">
+          <div class="mobile-notice-icon"></div>
+          <h3 data-i18n="ui.funzione_esclusiva_pc">Funzione Esclusiva per PC</h3>
+          <p data-i18n="ui.file_manager_solo_pc">Sul telefono, come nell'app, i file si gestiscono da «Editor File Config & Mod», «Backup & Rollback» e «Spazio Disco & Pulizia». Il File Manager completo è disponibile sul PC.</p>
+        </div>
+        <div class="files-layout mods-pc-content">
           <div class="section-header">
             <div>
               <h3 data-i18n="ui.file_manager_web_esplora_file">File Manager Web (Esplora File Server)</h3>
@@ -2205,7 +2211,7 @@
             </div>
 
             <!-- EXISTING BACKUP DIRECT DOWNLOAD CARD -->
-            <div id="backup-existing-download-card" style="display: none; margin-top: 10px; padding: 12px 14px; background: rgba(74, 138, 214, 0.1); border: 1px solid rgba(74, 138, 214, 0.25); border-radius: 8px; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+            <div id="backup-existing-download-card" class="pc-only-action" style="display: none; margin-top: 10px; padding: 12px 14px; background: rgba(74, 138, 214, 0.1); border: 1px solid rgba(74, 138, 214, 0.25); border-radius: 8px; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
               <div style="display: flex; align-items: center; gap: 10px;">
                 <span style="font-size: 1.4rem;"></span>
                 <div>
@@ -2299,7 +2305,7 @@
               </div>
 
               <!-- BACKUP COMPLETED: DIRECT DOWNLOAD ROW -->
-              <div id="backup-download-action-row" style="display: none; margin-top: 14px; padding: 14px; background: rgba(124, 179, 66, 0.12); border: 1px solid #7cb342; border-radius: 8px; text-align: center;">
+              <div id="backup-download-action-row" class="pc-only-action" style="display: none; margin-top: 14px; padding: 14px; background: rgba(124, 179, 66, 0.12); border: 1px solid #7cb342; border-radius: 8px; text-align: center;">
                 <p style="margin: 0 0 10px; font-size: 0.88rem; color: #f4f4f5; font-weight: 600;" data-i18n="ui.backup_completato_pronto_puoi_scaricare">
                   Backup completato e pronto! Puoi scaricare l'archivio ZIP sul tuo dispositivo:
                 </p>
@@ -2749,7 +2755,7 @@
           <div class="modal-info-circle-badge">i</div>
           <div>
             <h3 style="margin: 0; font-size: 1.15rem; color: #f4f4f5;" data-i18n="ui.informazioni_novita_cronologia_versioni">Informazioni, Novità &amp; Cronologia Versioni</h3>
-            <span id="changelog-header-badge" style="font-size: 0.75rem; color: #8db6e8; font-weight: 600;">Release Ufficiale v4.22.0 (Build 102) &bull; Attiva</span>
+            <span id="changelog-header-badge" style="font-size: 0.75rem; color: #8db6e8; font-weight: 600;">Release Ufficiale v4.22.1 (Build 103) &bull; Attiva</span>
           </div>
         </div>
         <div style="display: flex; gap: 8px; align-items: center;">
@@ -2765,7 +2771,7 @@
             <div class="row-center">
               <span style="font-size: 1.1rem;"></span>
               <span style="font-size: 0.92rem; font-weight: 700; color: #f4f4f5;" data-i18n="ui.diagnostica_specifiche_sistema">Diagnostica &amp; Specifiche di Sistema</span>
-              <span id="sys-release-badge" class="badge badge-emerald" style="font-size: 0.7rem;">v4.22.0 (Build 102)</span>
+              <span id="sys-release-badge" class="badge badge-emerald" style="font-size: 0.7rem;">v4.22.1 (Build 103)</span>
               <button class="btn btn-xs btn-secondary" onclick="checkPcUpdate(true)" title="Verifica la disponibilità di una nuova versione del programma PC" data-i18n-title="ui.verifica_disponibilita_nuova_versione_programma" data-i18n="ui.controlla_aggiornamenti_programma">Controlla aggiornamenti programma</button>
             </div>
             <div style="display: flex; gap: 6px;">
@@ -2818,7 +2824,7 @@
         <!-- SEZIONE 1: ULTIME NOVITÀ -->
         <h4 style="margin: 0 0 10px; color: #f4f4f5; font-size: 1rem; display: flex; align-items: center; gap: 8px;">
           <span></span>
-          <span>Novità Ultimo Aggiornamento (PC v4.22.0 - Build 102 &bull; App v4.13.0 - Build 105):</span>
+          <span>Novità Ultimo Aggiornamento (PC v4.22.1 - Build 103 &bull; App v4.13.0 - Build 105):</span>
         </h4>
 
         <!-- SOTTOSEZIONE: PC (Visibile solo su PC o in modalità Tutti) -->
@@ -2828,6 +2834,7 @@
             <span data-i18n="ui.novita_pc_server_pannello_desktop">NOVITÀ PER PC (Server &amp; Pannello Desktop):</span>
           </h5>
           <ul style="margin: 0; padding-left: 20px; font-size: 0.85rem; color: #e7e7e9; display: flex; flex-direction: column; gap: 8px;">
+            <li><b>Pannello web sul telefono più comodo (v4.22.1)</b><span data-i18n="notes.pannello_web_telefono_come_app">: sul telefono il pannello fa come l'app (File Manager nascosto con un avviso che rimanda a Editor file config, Backup e Spazio disco; nei backup niente Scarica ed Elimina); finestre, linguette e pulsanti non escono più dallo schermo; interruttori spenti visibili; nello Store le etichette delle mod restano anche con l'avviso di aggiornamento. Sul PC nulla cambia.</span></li>
             <li><b>Pannello web sul telefono (v4.22.0)</b><span data-i18n="notes.pannello_web_telefono_qr_home">: il pulsante QR Web, accanto a QR APK, apre il pannello dal telefono (anche iPhone) con l'indirizzo di casa o da internet; il pannello si può aggiungere alla schermata Home con l'icona di Voxarium; dopo Annulla o un PIN sbagliato il PIN non viene più richiesto all'infinito.</span></li>
             <li><b>Sicurezza dell'app (v4.22.0)</b><span data-i18n="notes.sicurezza_app_host_id_ora">: al login il PC manda all'app il suo identificativo, così l'app 4.13.0 manda token e PIN solo al tuo PC anche su un Wi-Fi che non è quello di casa; gli avvisi con il nuovo indirizzo portano l'ora firmata, così non si possono rimandare quelli vecchi.</span></li>
             <li><b>Backup per ogni server (v4.21.0)</b><span data-i18n="notes.backup_ogni_server_ripristino">: ogni server ha il suo backup (Backup_NomeServer.zip sul Desktop e su Google Drive) invece di un unico file che ogni server sovrascriveva; il ripristino di un backup nel server sbagliato chiede conferma.</span></li>
