@@ -8,6 +8,24 @@ import urllib.parse
 from datetime import datetime
 from typing import Dict, Any, List, Optional, Tuple
 
+from platform_utils import download_file, write_json_atomic
+
+
+def _safe_jar_name(name: Optional[str]) -> str:
+    """Solo il nome del file (niente cartelle: "../config.json" diventerebbe un file fuori da mods/), e solo .jar
+    o .jar.disabled. "" se il nome non va bene."""
+    base = os.path.basename((name or "").replace("\\", "/"))
+    low = base.lower()
+    if not base or base.startswith(".") or not (low.endswith(".jar") or low.endswith(".jar.disabled")):
+        return ""
+    return base
+
+
+def _modrinth_url_ok(url: Optional[str]) -> bool:
+    """I file delle mod si scaricano solo da Modrinth (https)."""
+    host = urllib.parse.urlparse(url or "").hostname or ""
+    return (url or "").startswith("https://") and (host == "modrinth.com" or host.endswith(".modrinth.com"))
+
 CACHE_STORE: Dict[str, Any] = {}
 CACHE_TTL = 300  # 5 minutes cache
 
@@ -110,8 +128,7 @@ def save_installed_projects(server_dir: str, installed: Dict[str, Any]) -> None:
         return
     ledger_path = get_store_installed_file(server_dir)
     try:
-        with open(ledger_path, "w", encoding="utf-8") as f:
-            json.dump(installed, f, indent=2, ensure_ascii=False)
+        write_json_atomic(ledger_path, installed)
     except Exception as e:
         print(f"[Store] Impossibile salvare l'elenco delle mod installate ({ledger_path}): {e}")
 
@@ -323,6 +340,7 @@ def check_installed_mods_updates(
                                     "version_number": v_num,
                                     "version_name": ver_info.get("name", ""),
                                     "download_url": dl_url,
+                                    "new_sha1": new_sha1,
                                     "new_size": new_size,
                                     "new_size_formatted": format_file_size(new_size),
                                     "date_published": ver_info.get("date_published", ""),
@@ -540,17 +558,17 @@ def install_modrinth_project(
         return {"success": False, "error": "Nessun file .jar trovato nella release di questo progetto."}
 
     dl_url = chosen_file.get("url")
-    filename = chosen_file.get("filename")
+    filename = _safe_jar_name(chosen_file.get("filename"))
+    if not filename or not _modrinth_url_ok(dl_url):
+        return {"success": False, "error": "File della mod non valido nella risposta di Modrinth."}
     target_file_path = os.path.join(dest_folder, filename)
+    file_hashes = chosen_file.get("hashes") or {}
 
     try:
-        dl_req = urllib.request.Request(dl_url, headers={"User-Agent": USER_AGENT})
-        with urllib.request.urlopen(dl_req, timeout=30) as resp, open(target_file_path, "wb") as out_f:
-            while True:
-                chunk = resp.read(65536)
-                if not chunk:
-                    break
-                out_f.write(chunk)
+        # Prima <file>.part, poi controllo dell'impronta e del .jar: un download interrotto non lascia più un .jar
+        # rotto nella cartella mods (il server poi non partiva)
+        download_file(dl_url, target_file_path, USER_AGENT, timeout=30,
+                      hashes={"sha512": file_hashes.get("sha512"), "sha1": file_hashes.get("sha1")})
 
         file_size = os.path.getsize(target_file_path)
         from file_manager import format_file_size
@@ -776,19 +794,25 @@ def update_mod_file(
     if not download_url or not new_filename:
         return {"success": False, "error": f"Nessun aggiornamento disponibile o URL non trovato per '{current_filename}'."}
 
+    current_filename = _safe_jar_name(current_filename)
+    new_filename = _safe_jar_name(new_filename)
+    if not current_filename or not new_filename or not _modrinth_url_ok(download_url):
+        return {"success": False, "error": "Nome del file o indirizzo dell'aggiornamento non valido."}
+
     old_file_path = os.path.join(dest_folder, current_filename)
     new_file_path = os.path.join(dest_folder, new_filename)
-    tmp_file_path = os.path.join(dest_folder, f".tmp_update_{new_filename}")
+    # Il file temporaneo non finisce in .jar: se il PC si spegne a metà, Forge non prova a caricarlo come mod
+    tmp_file_path = os.path.join(dest_folder, f".tmp_update_{new_filename}.download")
+    expected_sha1 = None
+    cached = MOD_UPDATES_CACHE.get(server_dir, {}).get("data", {})
+    upd_known = cached.get("updates_by_file", {}).get(current_filename)
+    if upd_known and upd_known.get("download_url") == download_url:
+        expected_sha1 = upd_known.get("new_sha1")
 
     # 1. Download to temporary file
     try:
-        req = urllib.request.Request(download_url, headers={"User-Agent": USER_AGENT})
-        with urllib.request.urlopen(req, timeout=35) as resp, open(tmp_file_path, "wb") as out_f:
-            while True:
-                chunk = resp.read(65536)
-                if not chunk:
-                    break
-                out_f.write(chunk)
+        download_file(download_url, tmp_file_path, USER_AGENT, timeout=35, hashes={"sha1": expected_sha1},
+                      require_zip=True)
         new_file_size = os.path.getsize(tmp_file_path)
     except Exception as e:
         if os.path.exists(tmp_file_path):
@@ -823,7 +847,7 @@ def update_mod_file(
                 os.remove(new_file_path)
             except Exception:
                 pass
-        os.rename(tmp_file_path, new_file_path)
+        os.replace(tmp_file_path, new_file_path)
     except Exception as e:
         return {"success": False, "error": f"Errore posizionamento file aggiornato '{new_filename}': {e}"}
 

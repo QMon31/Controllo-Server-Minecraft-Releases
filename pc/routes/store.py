@@ -68,7 +68,11 @@ def api_store_uninstall(req: UninstallStoreRequest, request: Request):
         filename=req.filename
     )
     if not res.get("success"):
-        raise HTTPException(status_code=400, detail=res.get("error"))
+        err = str(res.get("error") or "")
+        if "[WinError 32]" in err or "used by another process" in err.lower():
+            # Prima arrivava il messaggio tecnico di Windows: stesso testo dell'eliminazione dalla lista delle mod
+            raise HTTPException(status_code=409, detail="Impossibile eliminare la mod: il server Minecraft è in esecuzione e blocca il file. Spegni il server prima di eliminare le mod.")
+        raise HTTPException(status_code=400, detail=err)
     return res
 
 @router.get("/api/store/project")

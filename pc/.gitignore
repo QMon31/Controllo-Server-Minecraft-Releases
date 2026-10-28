@@ -2,6 +2,11 @@
 config.json
 instances.json
 launcher_config.json
+# Copie di sicurezza di config.json e instances.json (salvataggio precedente, file rovinati): stessi segreti
+config.json.bak
+config.json.corrotto
+instances.json.bak
+instances.json.corrotto
 .env
 *.token
 .controllo_mc_github_token

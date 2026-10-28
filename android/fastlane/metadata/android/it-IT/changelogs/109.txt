@@ -1,0 +1,1 @@
+Backup dopo lo spegnimento; stato aggiornato in tutte le sezioni; errori della whitelist visibili; regole di gioco vere anche su Minecraft 1.21.11+.

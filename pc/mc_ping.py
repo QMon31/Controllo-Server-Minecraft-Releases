@@ -82,7 +82,11 @@ def query_server_status(host: str = "127.0.0.1", port: int = 25565, timeout: flo
             
         latency = round((time.perf_counter() - start_time) * 1000, 1)
         res_json = json.loads(data.decode('utf-8', errors='replace'))
-        
+        # Forge mentre si avvia risponde con un messaggio di disconnessione ({"text": "Server is still
+        # starting!..."}) con lo stesso numero di pacchetto: prima veniva preso per "server acceso"
+        if not isinstance(res_json, dict) or not ("version" in res_json or "players" in res_json):
+            raise ValueError("server in avvio (risposta senza stato)")
+
         players_data = res_json.get("players", {})
         online_count = players_data.get("online", 0)
         max_count = players_data.get("max", 20)

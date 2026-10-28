@@ -16,8 +16,11 @@ import threading
 
 # Java e gli installer Forge/NeoForge senza finestra cmd (il pannello gira senza console)
 NO_WINDOW = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
-from typing import Dict, Any, Optional, List
-from platform_utils import LAUNCH_SCRIPT, FORGE_ARGS_FILE, write_launch_script
+from typing import Callable, Dict, Any, Optional, List
+from platform_utils import (LAUNCH_SCRIPT, FORGE_ARGS_FILE, download_file, read_json_with_backup, write_json_atomic,
+                            write_launch_script)
+
+USER_AGENT = "Voxarium (+https://github.com/QMon31/Voxarium)"
 
 FORGE_PROMOTIONS_URL = "https://files.minecraftforge.net/net/minecraftforge/forge/promotions_slim.json"
 NEOFORGE_MAVEN_URL = "https://maven.neoforged.net/releases/net/neoforged/neoforge/maven-metadata.xml"
@@ -50,8 +53,8 @@ FALLBACK_FORGE_VERSIONS = [
 ]
 
 FALLBACK_VANILLA_VERSIONS = [
-    {"mc": "26.3", "label": "26.3 [Ultima Release Ufficiale Mojang]", "url": "https://piston-data.mojang.com/v1/objects/4707d00eb834b446575d89a61a11b5d548d8c001/server.jar"},
-    {"mc": "26.1.2", "label": "26.1.2 (Release Ufficiale Mojang)", "url": "https://piston-data.mojang.com/v1/objects/45810d238246d90e811d896f87b14695b7fb6839/server.jar"},
+    {"mc": "26.3", "label": "26.3 [Ultima Release Ufficiale Mojang]", "url": "https://piston-data.mojang.com/v1/objects/33680f5f2ac32864d6d7cf5e56a705fdb3e05f4c/server.jar"},
+    {"mc": "26.1.2", "label": "26.1.2 (Release Ufficiale Mojang)", "url": "https://piston-data.mojang.com/v1/objects/97ccd4c0ed3f81bbb7bfacddd1090b0c56f9bc51/server.jar"},
     {"mc": "1.21.4", "label": "1.21.4 ⭐ [Release Mojang 1.21]", "url": "https://piston-data.mojang.com/v1/objects/4707d00eb834b446575d89a61a11b5d548d8c001/server.jar"},
     {"mc": "1.21.1", "label": "1.21.1 [Recente Stabile / Consigliata]", "url": "https://piston-data.mojang.com/v1/objects/59353fb40c36d304f2035d51e7d6e6baa98dc05c/server.jar"},
     {"mc": "1.20.4", "label": "1.20.4 (Stabile)", "url": "https://piston-data.mojang.com/v1/objects/8dd1a28015f51b1803213892b50b7b4fc76e594d/server.jar"},
@@ -132,6 +135,8 @@ class ForgeServerInstaller:
         self.selected_forge_version = ""
         self.selected_neoforge_version = ""
         self.lock = threading.Lock()
+        # Chiamata con la cartella del nuovo server quando diventa quello attivo (il programma allinea i backup)
+        self.on_server_ready: Optional[Callable[[str], None]] = None
         self._thread: Optional[threading.Thread] = None
         self._watcher_thread: Optional[threading.Thread] = None
         self._watcher_running: bool = False
@@ -516,6 +521,98 @@ class ForgeServerInstaller:
         self._cache_timestamps["fabric"] = now
         return fallback
 
+    # ---- Download e controlli comuni ----
+    def _download(self, url: str, dest: str, pct_from: int, pct_to: int, hashes: Optional[Dict[str, str]] = None,
+                  timeout: int = 40):
+        """Download con file .part, impronta (se nota) e controllo del .jar: mai un file rotto nella cartella."""
+        def _progress(done: int, total: int):
+            if total:
+                with self.lock:
+                    self.progress_pct = min(pct_to, pct_from + int(done * (pct_to - pct_from) / total))
+        download_file(url, dest, USER_AGENT, timeout=timeout, hashes=hashes, progress=_progress)
+
+    def _maven_hashes(self, url: str) -> Optional[Dict[str, str]]:
+        """SHA-1 pubblicato accanto al file su Maven (Forge, NeoForge); None se non si trova."""
+        try:
+            req = urllib.request.Request(url + ".sha1", headers={"User-Agent": USER_AGENT})
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                sha1 = (resp.read(200).decode("ascii", "ignore").strip().split() or [""])[0].lower()
+            return {"sha1": sha1} if re.fullmatch(r"[0-9a-f]{40}", sha1) else None
+        except Exception:
+            return None
+
+    def _fabric_installer_version(self) -> str:
+        try:
+            req = urllib.request.Request("https://meta.fabricmc.net/v2/versions/installer", headers={"User-Agent": USER_AGENT})
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+            stable = [i for i in data if i.get("stable")] or data
+            if stable and stable[0].get("version"):
+                return stable[0]["version"]
+        except Exception as e:
+            self._append_log(f"[INFO] Avviso recupero installer Fabric: {e}")
+        return "1.0.1"
+
+    def _mojang_version_info(self, mc_version: str) -> Optional[Dict[str, Any]]:
+        """Dal manifest ufficiale di Mojang: indirizzo e SHA-1 del server.jar e Java richiesta. None se non si trova."""
+        cache = getattr(self, "_mojang_info_cache", None)
+        if cache is None:
+            cache = self._mojang_info_cache = {}
+        if mc_version in cache:
+            return cache[mc_version]
+        try:
+            req = urllib.request.Request(MOJANG_MANIFEST_URL, headers={"User-Agent": USER_AGENT})
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                mdata = json.loads(resp.read().decode("utf-8"))
+            entry = next((v for v in mdata.get("versions", []) if v.get("id") == mc_version), None)
+            if not entry or not entry.get("url"):
+                return None
+            req = urllib.request.Request(entry["url"], headers={"User-Agent": USER_AGENT})
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                pkg = json.loads(resp.read().decode("utf-8"))
+            server = (pkg.get("downloads") or {}).get("server") or {}
+            info = {"server_url": server.get("url"), "server_sha1": server.get("sha1"),
+                    "java": (pkg.get("javaVersion") or {}).get("majorVersion")}
+            cache[mc_version] = info
+            return info
+        except Exception as e:
+            self._append_log(f"[INFO] Elenco versioni Mojang non raggiungibile: {e}")
+            return None
+
+    def required_java(self, mc_version: str) -> int:
+        """Versione di Java che serve per questa versione di Minecraft (dal manifest Mojang; se non risponde, la
+        regola nota: 26.x -> 25, da 1.20.5 -> 21, da 1.18 -> 17, 1.17 -> 16, prima -> 8)."""
+        info = self._mojang_version_info(mc_version)
+        if info and isinstance(info.get("java"), int):
+            return info["java"]
+        parsed = parse_mc_version(mc_version)
+        v = tuple(parsed[0]) if parsed and isinstance(parsed[0], list) else ()
+        if v and v[0] >= 26:
+            return 25
+        if v >= (1, 20, 5):
+            return 21
+        if v >= (1, 18):
+            return 17
+        if v >= (1, 17):
+            return 16
+        return 8
+
+    @staticmethod
+    def java_major(java_cmd: Optional[str] = None) -> Optional[int]:
+        """Versione principale della Java del PC (8, 17, 21, 25...); None se non c'è o non si legge."""
+        java_cmd = java_cmd or shutil.which("java")
+        if not java_cmd:
+            return None
+        try:
+            res = subprocess.run([java_cmd, "-version"], capture_output=True, text=True, timeout=10, creationflags=NO_WINDOW)
+            m = re.search(r'version "(\d+)(?:\.(\d+))?', (res.stderr or "") + (res.stdout or ""))
+            if not m:
+                return None
+            major = int(m.group(1))
+            return int(m.group(2) or 0) if major == 1 else major   # "1.8.0_401" = Java 8
+        except Exception:
+            return None
+
     def check_prerequisites(self, force_refresh: bool = False) -> Dict[str, Any]:
         """Checks Java installation, version, suggests a default path, and returns version lists for all types."""
         java_cmd = shutil.which("java")
@@ -541,6 +638,7 @@ class ForgeServerInstaller:
 
         return {
             "java_installed": bool(java_cmd),
+            "java_major": self.java_major(java_cmd) if java_cmd else None,
             "java_ok": java_ok,
             "java_available": java_ok,
             "java_version": java_ver_str,
@@ -736,6 +834,18 @@ class ForgeServerInstaller:
         server_manager
     ):
         try:
+            # Java giusta prima di scaricare: prima l'installazione riusciva e poi il server non partiva
+            # (UnsupportedClassVersionError), senza un messaggio chiaro
+            with self.lock:
+                self.step_text = "Controllo della versione di Java..."
+            need = self.required_java(mc_version)
+            have = self.java_major()
+            if have is None:
+                raise RuntimeError(f"Java non trovata sul PC: installa Java {need} (per esempio da adoptium.net) e riprova.")
+            if have < need:
+                raise RuntimeError(f"Minecraft {mc_version} richiede Java {need}, ma sul PC c'è Java {have}: "
+                                   "installa la versione richiesta (per esempio da adoptium.net) e riprova.")
+            self._append_log(f"[OK] Java {have} (richiesta Java {need} o più recente).")
             if server_type == "fabric":
                 self._install_fabric(target_dir, mc_version, ram_gb, port, server_manager)
             elif server_type == "paper":
@@ -774,33 +884,23 @@ class ForgeServerInstaller:
             self.step_text = f"Risoluzione download ufficiale Mojang per {mc_version}..."
             self.progress_pct = 15
 
-        server_jar_url = None
-        # Check fallback list first
-        for fb in FALLBACK_VANILLA_VERSIONS:
-            if fb["mc"] == mc_version and fb.get("url"):
-                server_jar_url = fb["url"]
-                break
-
-        # If not in fallback or dynamic check preferred, query Mojang manifest
+        # Prima l'elenco ufficiale di Mojang (indirizzo e impronta sempre giusti); l'elenco interno solo se Mojang
+        # non risponde. Prima si usava subito l'elenco interno, che per 26.3 e 26.1.2 puntava a file di altre versioni.
+        info = self._mojang_version_info(mc_version)
+        jar_hashes = None
+        if info and info.get("server_url"):
+            server_jar_url = info["server_url"]
+            jar_hashes = {"sha1": info.get("server_sha1")}
+        else:
+            server_jar_url = next((fb["url"] for fb in FALLBACK_VANILLA_VERSIONS if fb["mc"] == mc_version and fb.get("url")), None)
+            if server_jar_url:
+                self._append_log("[INFO] Elenco Mojang non raggiungibile: uso l'indirizzo salvato nel programma.")
+                m_sha = re.search(r"/objects/([0-9a-f]{40})/", server_jar_url)
+                jar_hashes = {"sha1": m_sha.group(1)} if m_sha else None
         if not server_jar_url:
-            try:
-                req = urllib.request.Request(MOJANG_MANIFEST_URL, headers={"User-Agent": "ControlloServerMinecraft/5.0"})
-                with urllib.request.urlopen(req, timeout=6) as resp:
-                    mdata = json.loads(resp.read().decode("utf-8"))
-                    for v in mdata.get("versions", []):
-                        if v.get("id") == mc_version:
-                            v_pkg_url = v.get("url")
-                            if v_pkg_url:
-                                with urllib.request.urlopen(v_pkg_url, timeout=6) as v_resp:
-                                    v_pkg = json.loads(v_resp.read().decode("utf-8"))
-                                    server_jar_url = v_pkg.get("downloads", {}).get("server", {}).get("url")
-                            break
-            except Exception as e:
-                self._append_log(f"[INFO] Notice manifest Mojang: {e}")
-
-        if not server_jar_url:
-            server_jar_url = "https://piston-data.mojang.com/v1/objects/84194a2f286ef7c14ed7ce0090dba59902951553/server.jar"
-            self._append_log("[INFO] Utilizzo server JAR standard Mojang 1.20.1 di fallback.")
+            # Prima si installava in silenzio la 1.20.1 al posto della versione scelta
+            raise RuntimeError(f"Minecraft {mc_version} non trovato nell'elenco ufficiale di Mojang (o Mojang non "
+                               "raggiungibile): controlla la connessione e riprova.")
 
         # Step 3: Download server.jar
         with self.lock:
@@ -810,19 +910,7 @@ class ForgeServerInstaller:
         target_jar = os.path.join(target_dir, "server.jar")
         self._append_log(f"Download da: {server_jar_url}")
         
-        req = urllib.request.Request(server_jar_url, headers={"User-Agent": "ControlloServerMinecraft/5.0"})
-        with urllib.request.urlopen(req, timeout=30) as resp, open(target_jar, "wb") as out_f:
-            total_size = int(resp.headers.get("Content-Length", 45000000))
-            downloaded = 0
-            while True:
-                chunk = resp.read(64 * 1024)
-                if not chunk:
-                    break
-                out_f.write(chunk)
-                downloaded += len(chunk)
-                pct = 25 + int((downloaded / total_size) * 35)
-                with self.lock:
-                    self.progress_pct = min(pct, 60)
+        self._download(server_jar_url, target_jar, 25, 60, hashes=jar_hashes, timeout=30)
 
         self._append_log(f"[OK] Download completato ({os.path.getsize(target_jar)} bytes).")
 
@@ -907,6 +995,7 @@ class ForgeServerInstaller:
         server_jar_url = None
         build_id = None
         jar_name = f"paper-{mc_version}.jar"
+        jar_hashes = None
 
         try:
             api_url = f"https://fill.papermc.io/v3/projects/paper/versions/{mc_version}/builds"
@@ -919,6 +1008,7 @@ class ForgeServerInstaller:
                     build_id = target_build.get("id")
                     dl_info = target_build.get("downloads", {}).get("server:default", {})
                     server_jar_url = dl_info.get("url")
+                    jar_hashes = {"sha256": (dl_info.get("checksums") or {}).get("sha256")}
                     if dl_info.get("name"):
                         jar_name = dl_info.get("name")
                     self._append_log(f"[INFO] Trovata build Paper #{build_id} (Canale: {target_build.get('channel', 'STABLE')}).")
@@ -941,19 +1031,7 @@ class ForgeServerInstaller:
         target_jar = os.path.join(target_dir, "paper.jar")
         self._append_log(f"Download in corso da: {server_jar_url}")
 
-        req = urllib.request.Request(server_jar_url, headers={"User-Agent": "Voxarium (+https://github.com/QMon31/Voxarium)"})
-        with urllib.request.urlopen(req, timeout=40) as resp, open(target_jar, "wb") as out_f:
-            total_size = int(resp.headers.get("Content-Length", 45000000))
-            downloaded = 0
-            while True:
-                chunk = resp.read(64 * 1024)
-                if not chunk:
-                    break
-                out_f.write(chunk)
-                downloaded += len(chunk)
-                pct = 25 + int((downloaded / total_size) * 35)
-                with self.lock:
-                    self.progress_pct = min(pct, 60)
+        self._download(server_jar_url, target_jar, 25, 60, hashes=jar_hashes, timeout=40)
 
         # Also create a copy as server.jar for universal compatibility
         try:
@@ -1048,7 +1126,9 @@ class ForgeServerInstaller:
             with urllib.request.urlopen(req_l, timeout=5) as lresp:
                 loaders_data = json.loads(lresp.read().decode("utf-8"))
                 if isinstance(loaders_data, list) and len(loaders_data) > 0:
-                    loader_ver = loaders_data[0].get("version", loader_ver)
+                    # Il primo dell'elenco può essere una versione di prova: si prende il primo stabile
+                    stable = [l for l in loaders_data if l.get("stable")]
+                    loader_ver = (stable or loaders_data)[0].get("version", loader_ver)
             self._append_log(f"[INFO] Trovato Fabric Loader v{loader_ver}.")
         except Exception as e:
             self._append_log(f"[INFO] Avviso recupero Fabric loader: {e}")
@@ -1058,23 +1138,13 @@ class ForgeServerInstaller:
             self.step_text = f"Download Fabric Server {mc_version} (Loader {loader_ver})..."
             self.progress_pct = 25
 
-        server_jar_url = f"https://meta.fabricmc.net/v2/versions/loader/{mc_version}/{loader_ver}/1.0.1/server/jar"
+        installer_ver = self._fabric_installer_version()
+        server_jar_url = f"https://meta.fabricmc.net/v2/versions/loader/{mc_version}/{loader_ver}/{installer_ver}/server/jar"
+        jar_hashes = None  # Fabric non pubblica l'impronta di questo file: si controlla che sia un .jar valido
         target_jar = os.path.join(target_dir, "fabric-server-launch.jar")
         self._append_log(f"Download da: {server_jar_url}")
 
-        req = urllib.request.Request(server_jar_url, headers={"User-Agent": "Voxarium (+https://github.com/QMon31/Voxarium)"})
-        with urllib.request.urlopen(req, timeout=40) as resp, open(target_jar, "wb") as out_f:
-            total_size = int(resp.headers.get("Content-Length", 50000000))
-            downloaded = 0
-            while True:
-                chunk = resp.read(64 * 1024)
-                if not chunk:
-                    break
-                out_f.write(chunk)
-                downloaded += len(chunk)
-                pct = 25 + int((downloaded / total_size) * 35)
-                with self.lock:
-                    self.progress_pct = min(pct, 60)
+        self._download(server_jar_url, target_jar, 25, 60, hashes=jar_hashes, timeout=40)
 
         # Also copy as server.jar for universal compatibility
         try:
@@ -1180,19 +1250,7 @@ class ForgeServerInstaller:
         installer_jar = os.path.join(target_dir, installer_filename)
         self._append_log(f"Download da: {installer_url}")
         
-        req = urllib.request.Request(installer_url, headers={"User-Agent": "ControlloServerMinecraft/5.0"})
-        with urllib.request.urlopen(req, timeout=30) as resp, open(installer_jar, "wb") as out_f:
-            total_size = int(resp.headers.get("Content-Length", 6078000))
-            downloaded = 0
-            while True:
-                chunk = resp.read(64 * 1024)
-                if not chunk:
-                    break
-                out_f.write(chunk)
-                downloaded += len(chunk)
-                pct = 15 + int((downloaded / total_size) * 15)
-                with self.lock:
-                    self.progress_pct = min(pct, 30)
+        self._download(installer_url, installer_jar, 15, 30, hashes=self._maven_hashes(installer_url), timeout=30)
 
         self._append_log(f"[OK] Download completato ({os.path.getsize(installer_jar)} bytes).")
 
@@ -1373,19 +1431,7 @@ class ForgeServerInstaller:
         installer_jar = os.path.join(target_dir, installer_filename)
         self._append_log(f"Download da: {installer_url}")
 
-        req = urllib.request.Request(installer_url, headers={"User-Agent": "ControlloServerMinecraft/5.0"})
-        with urllib.request.urlopen(req, timeout=30) as resp, open(installer_jar, "wb") as out_f:
-            total_size = int(resp.headers.get("Content-Length", 7000000))
-            downloaded = 0
-            while True:
-                chunk = resp.read(64 * 1024)
-                if not chunk:
-                    break
-                out_f.write(chunk)
-                downloaded += len(chunk)
-                pct = 15 + int((downloaded / total_size) * 15)
-                with self.lock:
-                    self.progress_pct = min(pct, 30)
+        self._download(installer_url, installer_jar, 15, 30, hashes=self._maven_hashes(installer_url), timeout=30)
 
         self._append_log(f"[OK] Download completato ({os.path.getsize(installer_jar)} bytes).")
 
@@ -1515,29 +1561,33 @@ class ForgeServerInstaller:
             self.progress_pct = 95
             self.step_text = "Salvataggio configurazione del pannello..."
 
-        cfg = {}
-        if os.path.exists(self.config_path):
-            try:
-                with open(self.config_path, "r", encoding="utf-8") as f:
-                    cfg = json.load(f)
-            except Exception as e:
-                # Senza questo si riscriverebbe config.json da zero, perdendo PIN e chiavi
-                self._append_log(f"[AVVISO] config.json non leggibile ({e}): uso la configurazione in memoria del pannello.")
-                if server_manager is not None:
-                    cfg = dict(getattr(server_manager, "config", {}) or {})
+        # Con il pannello acceso si parte dalla sua configurazione in memoria e si salva da lì: un solo punto che
+        # scrive config.json (due copie diverse si cancellavano a vicenda le modifiche)
+        if server_manager is not None:
+            cfg = server_manager.config
+        else:
+            cfg = {}
+            if os.path.exists(self.config_path):
+                try:
+                    cfg = read_json_with_backup(self.config_path)
+                except Exception as e:
+                    # Senza questo si riscriverebbe config.json da zero, perdendo PIN e chiavi
+                    self._append_log(f"[AVVISO] config.json non leggibile ({e}): non viene modificato.")
+                    cfg = None
 
-        cfg["server_dir"] = target_dir
-        cfg["server_run_bat"] = run_bat_path
-        cfg["server_command"] = launch_cmd
-        cfg["server_port"] = port
-
-        with open(self.config_path, "w", encoding="utf-8") as f:
-            json.dump(cfg, f, indent=4)
-        self._append_log("[OK] config.json aggiornato con successo.")
+        if cfg is not None:
+            cfg["server_dir"] = target_dir
+            cfg["server_run_bat"] = run_bat_path
+            cfg["server_command"] = launch_cmd
+            cfg["server_port"] = port
+            if server_manager is not None:
+                server_manager.save_config()
+            else:
+                write_json_atomic(self.config_path, cfg, keep_backup=True)
+            self._append_log("[OK] config.json aggiornato con successo.")
 
         if server_manager:
             try:
-                server_manager.config = cfg
                 server_manager.server_dir = target_dir
                 server_manager.run_bat = run_bat_path
                 self._append_log("[OK] Gestore server sincronizzato con il nuovo percorso.")
@@ -1562,4 +1612,11 @@ class ForgeServerInstaller:
             self._append_log(f"[OK] Istanza '{inst_name}' registrata con successo nel Gestore Multi-Server.")
         except Exception as ex_inst:
             self._append_log(f"Notice instance registration: {ex_inst}")
+
+        if self.on_server_ready:
+            # Prima backup e ripristino restavano sul server precedente fino al riavvio del programma
+            try:
+                self.on_server_ready(target_dir)
+            except Exception as ex_ready:
+                self._append_log(f"Notice sync: {ex_ready}")
 

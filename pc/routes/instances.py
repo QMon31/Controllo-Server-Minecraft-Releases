@@ -111,7 +111,7 @@ def api_add_instance(req: AddInstanceRequest, request: Request):
 @router.post("/api/instances/update")
 def api_update_instance(req: UpdateInstanceRequest, request: Request):
     verify_admin_access(request)
-    updates = {k: v for k, v in req.dict().items() if v is not None and k != "instance_id"}
+    updates = {k: v for k, v in req.model_dump().items() if v is not None and k != "instance_id"}
     if "run_bat" in updates and "server_run_bat" not in updates:
         updates["server_run_bat"] = updates.pop("run_bat")
     if "launch_cmd" in updates and "server_command" not in updates:

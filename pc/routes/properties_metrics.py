@@ -4,6 +4,7 @@ from fastapi import Request
 import os
 import re
 from fastapi import APIRouter
+from platform_utils import write_text_atomic
 
 from app import CloudSyncRequest, PropertiesUpdateRequest, backup_mgr, manager, verify_admin_access
 
@@ -110,8 +111,7 @@ def api_save_server_properties(req: PropertiesUpdateRequest, request: Request):
             if os.path.isfile(props_path):
                 import shutil
                 shutil.copy2(props_path, props_path + ".bak")
-            with open(props_path, "w", encoding="utf-8") as f:
-                f.write(write_content)
+            write_text_atomic(props_path, write_content)
             manager.add_log("[Pannello] File server.properties modificato direttamente in modalità testo (creato backup server.properties.bak).")
             return {"status": "ok", "message": "File salvato con successo!", "needs_restart": manager.state == "ONLINE"}
         except Exception as e:

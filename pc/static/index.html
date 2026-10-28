@@ -136,7 +136,7 @@
 
       <button class="sidebar-nav-item" id="snav-changelog" onclick="toggleSidebarDrawer(false); openChangelogModal();">
         <span class="snav-icon info-circle-nav-icon">i</span>
-        <span class="snav-label">Info &amp; Versioni (v4.22.2)</span>
+        <span class="snav-label">Info &amp; Versioni (v4.22.3)</span>
       </button>
 
       <button class="sidebar-nav-item" id="snav-settings" onclick="toggleSidebarDrawer(false); openSettingsModal();">
@@ -530,7 +530,7 @@
 
             <div class="res-bar-box" style="cursor: pointer;" onclick="openStorageModal()" title="Clicca per visualizzare la suddivisione dello spazio e pulire i log vecchi" data-i18n-title="resources.clicca_visualizzare_suddivisione_dello_spazio">
               <div class="res-bar-header">
-                <span class="res-bar-title" data-i18n="resources.spazio_disco_c">Spazio Disco (C:) </span>
+                <span class="res-bar-title" data-i18n="resources.spazio_disco_c">Spazio Disco </span>
                 <span id="disk-val" class="res-bar-val">0%</span>
               </div>
               <div class="res-meter">
@@ -2755,7 +2755,7 @@
           <div class="modal-info-circle-badge">i</div>
           <div>
             <h3 style="margin: 0; font-size: 1.15rem; color: #f4f4f5;" data-i18n="ui.informazioni_novita_cronologia_versioni">Informazioni, Novità &amp; Cronologia Versioni</h3>
-            <span id="changelog-header-badge" style="font-size: 0.75rem; color: #8db6e8; font-weight: 600;">Release Ufficiale v4.22.2 (Build 104) &bull; Attiva</span>
+            <span id="changelog-header-badge" style="font-size: 0.75rem; color: #8db6e8; font-weight: 600;">Release Ufficiale v4.22.3 (Build 105) &bull; Attiva</span>
           </div>
         </div>
         <div style="display: flex; gap: 8px; align-items: center;">
@@ -2771,7 +2771,7 @@
             <div class="row-center">
               <span style="font-size: 1.1rem;"></span>
               <span style="font-size: 0.92rem; font-weight: 700; color: #f4f4f5;" data-i18n="ui.diagnostica_specifiche_sistema">Diagnostica &amp; Specifiche di Sistema</span>
-              <span id="sys-release-badge" class="badge badge-emerald" style="font-size: 0.7rem;">v4.22.2 (Build 104)</span>
+              <span id="sys-release-badge" class="badge badge-emerald" style="font-size: 0.7rem;">v4.22.3 (Build 105)</span>
               <button class="btn btn-xs btn-secondary" onclick="checkPcUpdate(true)" title="Verifica la disponibilità di una nuova versione del programma PC" data-i18n-title="ui.verifica_disponibilita_nuova_versione_programma" data-i18n="ui.controlla_aggiornamenti_programma">Controlla aggiornamenti programma</button>
             </div>
             <div style="display: flex; gap: 6px;">
@@ -2824,7 +2824,7 @@
         <!-- SEZIONE 1: ULTIME NOVITÀ -->
         <h4 style="margin: 0 0 10px; color: #f4f4f5; font-size: 1rem; display: flex; align-items: center; gap: 8px;">
           <span></span>
-          <span>Novità Ultimo Aggiornamento (PC v4.22.2 - Build 104 &bull; App v4.13.2 - Build 108):</span>
+          <span>Novità Ultimo Aggiornamento (PC v4.22.3 - Build 105 &bull; App v4.13.3 - Build 109):</span>
         </h4>
 
         <!-- SOTTOSEZIONE: PC (Visibile solo su PC o in modalità Tutti) -->
@@ -2834,6 +2834,8 @@
             <span data-i18n="ui.novita_pc_server_pannello_desktop">NOVITÀ PER PC (Server &amp; Pannello Desktop):</span>
           </h5>
           <ul style="margin: 0; padding-left: 20px; font-size: 0.85rem; color: #e7e7e9; display: flex; flex-direction: column; gap: 8px;">
+            <li><b><span data-i18n="notes.correzioni">Correzioni</span> (v4.22.3)</b><span data-i18n="notes.test_server_correzioni_pc_4223">: i ban e la whitelist fatti a server spento non fanno più perdere a Minecraft 1.21 l'elenco dei ban; dopo aver creato un server dal pannello backup e ripristino lavorano subito sul nuovo server; Forge non risulta più acceso mentre si sta ancora avviando; server.properties si salva anche con Paper acceso; con Paper giocatori e chat vengono riconosciuti; le regole di gioco funzionano anche con Minecraft 1.21.11 e successivi; messaggi chiari per nomi di giocatori che non esistono.</span></li>
+            <li><b><span data-i18n="notes.correzioni">Correzioni</span> (v4.13.3)</b><span data-i18n="notes.backup_regole_app_4133">: «Spegni server e fai backup» apre il backup appena il server è spento; lo stato del server si aggiorna in tutte le sezioni; errori della whitelist visibili; le Regole di gioco mostrano i valori veri del server, anche con Minecraft 1.21.11 e successivi.</span></li>
             <li><b><span data-i18n="notes.correzioni">Correzioni</span> (v4.22.2)</b><span data-i18n="notes.max_giocatori_pc_4222">: a server appena acceso il massimo dei giocatori arriva subito da server.properties (prima per qualche secondo risultava 20, anche nel widget del telefono).</span></li>
             <li><b>Pannello web sul telefono più comodo (v4.22.1)</b><span data-i18n="notes.pannello_web_telefono_come_app">: sul telefono il pannello fa come l'app (File Manager nascosto con un avviso che rimanda a Editor file config, Backup e Spazio disco; nei backup niente Scarica ed Elimina); finestre, linguette e pulsanti non escono più dallo schermo; interruttori spenti visibili; nello Store le etichette delle mod restano anche con l'avviso di aggiornamento. Sul PC nulla cambia.</span></li>
             <li><b>Pannello web sul telefono (v4.22.0)</b><span data-i18n="notes.pannello_web_telefono_qr_home">: il pulsante QR Web, accanto a QR APK, apre il pannello dal telefono (anche iPhone) con l'indirizzo di casa o da internet; il pannello si può aggiungere alla schermata Home con l'icona di Voxarium; dopo Annulla o un PIN sbagliato il PIN non viene più richiesto all'infinito.</span></li>

@@ -1,8 +1,8 @@
 {
-  "version_code": 108,
-  "version_name": "4.13.2",
+  "version_code": 109,
+  "version_name": "4.13.3",
   "download_url": "/static/Controllo_Server_Minecraft.apk",
-  "release_notes": "Correzioni: il pulsante PvP nelle Regole di gioco cambia davvero il PvP del server (in server.properties, vale dal prossimo avvio) e funziona anche a server spento; sul Wi-Fi di casa l'app torna da sola all'indirizzo di casa se era passata a internet per un momento.",
+  "release_notes": "Spegni server e fai backup ora fa davvero il backup; stato del server aggiornato in tutte le sezioni; errori della whitelist visibili; regole di gioco con i valori veri, anche su Minecraft 1.21.11 e successivi.",
   "min_sdk": 26,
   "target_sdk": 35
 }

@@ -80,6 +80,7 @@ FILES_TO_SYNC = [
     "InstallerI18n.cs",
     "create_package.py",
     "requirements.txt",
+    "requirements-lock.txt",
     "build_runtime.py",
     "pc_version.py",
     "pc_updater.py",
@@ -110,7 +111,7 @@ FILES_TO_SYNC = [
 
 # File che servono solo a sviluppare: vanno nelle copie del progetto, non nella cartella installata del programma
 DEV_ONLY_FILES = {"PROJECT_CONTEXT.md", "Launcher.cs", "Installer.cs", "InstallerI18n.cs", "create_package.py", "requirements.txt",
-                  "build_runtime.py", "publish_release.py", "publish_source.py", "build_deploy.py", "BUGFIX_PER_CHAT_PC.md"}
+                  "requirements-lock.txt", "build_runtime.py", "publish_release.py", "publish_source.py", "build_deploy.py", "BUGFIX_PER_CHAT_PC.md"}
 
 # config.json e instances.json (PIN, push_secret, elenco server) non sono in FILES_TO_SYNC: l'unica copia valida è
 # quella del programma installato, modificata dal pannello. Copiarli da qui sovrascriveva le modifiche fatte dal pannello

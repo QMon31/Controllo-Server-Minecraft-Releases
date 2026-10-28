@@ -13,7 +13,9 @@ import zipfile
 import threading
 import ctypes
 import stat
+import sys
 import json
+import re
 from datetime import datetime
 from typing import Optional, Dict, Any, Callable, List
 
@@ -32,11 +34,26 @@ def _make_writable(path: str):
             pass
     return None
 
+def _remove_tree(path: str):
+    """Cancella una cartella anche con file in sola lettura (Windows)."""
+    def _retry(fn, p, *_):
+        _make_writable(p)
+        fn(p)
+    if sys.version_info >= (3, 12):
+        shutil.rmtree(path, onexc=_retry)
+    else:
+        shutil.rmtree(path, onerror=_retry)
+
 BACKUP_INFO_NAME = "__backup_info.json"
 BACKUP_IGNORED_DIRS = {"backups", ".git", "crash-reports", ".cache"}
 BACKUP_IGNORED_FILES = {"desktop.ini", "thumbs.db", ".ds_store", "session.lock", "backup_server_mc.zip"}
 # Nome dell'unico backup delle versioni fino alla 4.20.2, uguale per tutti i server
 LEGACY_BACKUP_FILENAME = "Backup_Server_Mc.zip"
+# Backup precedenti tenuti oltre all'ultimo (Backup_<Server>_<data>.zip): se il mondo si rovina e poi parte un
+# backup, prima si perdeva l'unica copia buona
+KEEP_OLD_BACKUPS = 2
+# Cartella accanto a quella del server dove il ripristino sposta i file che sostituisce o toglie
+RESTORE_SAFETY_SUFFIX = "_prima_del_ripristino"
 
 
 def _norm_dir(path: Optional[str]) -> str:
@@ -184,6 +201,53 @@ class BackupManager:
     @property
     def target_path(self) -> str:
         return self._job_target or os.path.join(self.desktop_dir, self.target_filename)
+
+    @staticmethod
+    def old_copies(target: str) -> List[str]:
+        """Copie precedenti di un backup (Backup_<Server>_AAAA-MM-GG_HHMMSS.zip accanto a lui), dalla più recente."""
+        folder, name = os.path.split(target)
+        pattern = re.compile(re.escape(name[:-4]) + r"_\d{4}-\d{2}-\d{2}_\d{6}\.zip$", re.IGNORECASE)
+        try:
+            found = [f for f in os.listdir(folder) if pattern.match(f)]
+        except OSError:
+            return []
+        return [os.path.join(folder, f) for f in sorted(found, reverse=True)]
+
+    @classmethod
+    def _keep_previous(cls, target: str):
+        """Prima di mettere al suo posto il backup nuovo, quello vecchio prende la sua data nel nome; delle copie
+        vecchie si tengono le KEEP_OLD_BACKUPS più recenti."""
+        if os.path.isfile(target):
+            stamp = datetime.fromtimestamp(os.path.getmtime(target)).strftime("%Y-%m-%d_%H%M%S")
+            os.replace(target, f"{target[:-4]}_{stamp}.zip")
+        for old in cls.old_copies(target)[KEEP_OLD_BACKUPS:]:
+            try:
+                os.remove(old)
+            except OSError:
+                pass
+
+    def _make_room(self, needed_bytes: int):
+        """Spazio sul Desktop per il backup nuovo: si tolgono prima le copie vecchie (dalla più vecchia) e solo se
+        non basta ancora l'ultimo backup, come prima."""
+        def free():
+            try:
+                return shutil.disk_usage(self.desktop_dir).free
+            except OSError:
+                return None
+        for old in reversed(self.old_copies(self.target_path)):
+            f = free()
+            if f is None or f >= needed_bytes:
+                return
+            try:
+                os.remove(old)
+            except OSError:
+                pass
+        f = free()
+        if f is not None and f < needed_bytes and os.path.exists(self.target_path):
+            try:
+                os.remove(self.target_path)
+            except OSError:
+                pass
 
     def subscribe_progress(self, callback: Callable[[Dict[str, Any]], None]):
         with self.lock:
@@ -385,14 +449,8 @@ class BackupManager:
                 self.progress["status"] = f"Creazione archivio ZIP ({total_mb} MB in {total_files} file)..."
             self._notify_subscribers()
 
-            # Se lo spazio su disco non basta per conservare entrambi i backup, rimuovi preventivamente il vecchio
-            if os.path.exists(self.target_path):
-                try:
-                    free_space = shutil.disk_usage(self.desktop_dir).free
-                    if free_space < total_bytes * 1.05:
-                        os.remove(self.target_path)
-                except Exception:
-                    pass
+            # Se lo spazio su disco non basta per tenere anche i backup vecchi, si tolgono prima le copie più vecchie
+            self._make_room(int(total_bytes * 1.05))
 
             # 3. Step: Stream archive into ZIP using chunked streaming for ultra-responsiveness
             processed_bytes = 0
@@ -510,8 +568,12 @@ class BackupManager:
             if self.cancel_requested:
                 raise InterruptedError("Operazione annullata dall'utente.")
 
-            # 4. Step: Atomic rename from .tmp to final Backup_<NomeServer>.zip
+            # 4. Step: Atomic rename from .tmp to final Backup_<NomeServer>.zip (il precedente resta con la sua data)
             if os.path.exists(temp_zip_path):
+                try:
+                    self._keep_previous(self.target_path)
+                except OSError as ke:
+                    print(f"[Backup] Copia precedente non conservata: {ke}")
                 os.replace(temp_zip_path, self.target_path)
 
             elapsed = int(time.time() - start_time)
@@ -612,8 +674,9 @@ class BackupManager:
                     pass
         cloud_dir = self.cloud_sync_dir
         cloud_ok = bool(cloud_dir) and os.path.isdir(cloud_dir)
-        # Il backup vecchio viene sostituito: il suo spazio torna libero
-        old_desktop = os.path.getsize(self.target_path) if os.path.isfile(self.target_path) else 0
+        # Il backup vecchio e le sue copie precedenti si possono togliere se manca spazio: il loro spazio conta come libero
+        old_desktop = sum(os.path.getsize(p) for p in [self.target_path] + self.old_copies(self.target_path)
+                          if os.path.isfile(p))
         old_cloud = 0
         if cloud_ok:
             old = os.path.join(cloud_dir, self.target_filename)
@@ -787,9 +850,16 @@ class BackupManager:
                                     backups.append(entry)
             except Exception:
                 pass
-        # Prima il server attivo, poi i backup vecchi senza nome del server, poi gli altri server
+        # Prima il server attivo (il suo ultimo backup in cima, poi le copie precedenti dalla più recente), poi i
+        # backup vecchi senza nome del server, poi gli altri server
         order = {True: 0, None: 1, False: 2}
-        backups.sort(key=lambda b: (order[b["same_server"]], b["location"] != "desktop"))
+
+        def _mtime(b):
+            try:
+                return os.path.getmtime(b["path"])
+            except OSError:
+                return 0.0
+        backups.sort(key=lambda b: (order[b["same_server"]], b["location"] != "desktop", b["id"] != "desktop", -_mtime(b)))
         return backups
 
     def _resolve_known_backup(self, id_or_path: Optional[str]) -> Optional[str]:
@@ -923,6 +993,32 @@ class BackupManager:
                         self.progress["status"] = f"Avvio estrazione archivio ({total_mb} MB in {files_total} file)..."
                     self._notify_subscribers()
 
+                    # Il mondo di adesso non si cancella: i file sostituiti o tolti si spostano (sullo stesso disco
+                    # è immediato) in <server>_prima_del_ripristino accanto alla cartella del server. Si tiene solo
+                    # l'ultima: se si ripristina il backup sbagliato, il mondo di prima è ancora lì.
+                    safety_root = server_root + RESTORE_SAFETY_SUFFIX
+                    try:
+                        if os.path.isdir(safety_root):
+                            _remove_tree(safety_root)
+                        os.makedirs(safety_root)
+                    except OSError as se:
+                        print(f"[Ripristino] Cartella {safety_root} non creata ({se}): i file vecchi vengono sostituiti")
+                        safety_root = None
+
+                    def _set_aside(path: str):
+                        """Sposta un file del server nella cartella di sicurezza (copia se lo spostamento non riesce)."""
+                        if not safety_root:
+                            return
+                        dst = os.path.join(safety_root, os.path.relpath(path, server_root))
+                        try:
+                            os.makedirs(os.path.dirname(dst), exist_ok=True)
+                            try:
+                                os.replace(path, dst)
+                            except OSError:
+                                shutil.copy2(path, dst)
+                        except OSError as me:
+                            print(f"[Ripristino] {path} non messo da parte: {me}")
+
                     CHUNK_SIZE = 2 * 1024 * 1024  # 2 MB chunks
                     for info in infolist:
                         if self.cancel_requested:
@@ -940,6 +1036,8 @@ class BackupManager:
                         os.makedirs(os.path.dirname(dest), exist_ok=True)
                         old_attrs = _make_writable(dest)
                         try:
+                            if os.path.isfile(dest):
+                                _set_aside(dest)
                             with zf.open(info) as src_f, open(dest, "wb") as out_f:
                                 while True:
                                     if self.cancel_requested:
@@ -1013,7 +1111,9 @@ class BackupManager:
                             if norm_rel not in backup_file_set and norm_rel not in skipped_set:
                                 try:
                                     _make_writable(full_f)
-                                    os.remove(full_f)
+                                    _set_aside(full_f)
+                                    if os.path.exists(full_f):
+                                        os.remove(full_f)
                                 except Exception:
                                     pass
                         rel_root = os.path.relpath(root, server_root)
@@ -1030,6 +1130,8 @@ class BackupManager:
                     status_text = f"Ripristino completato con successo in {elapsed}s! Mondo ripristinato ({files_done} file, {final_mb} MB)."
                     if failed_files:
                         status_text += f" (Avviso: {len(failed_files)} file secondari saltati)"
+                    if safety_root:
+                        status_text += f" Il mondo di prima è nella cartella {os.path.basename(safety_root)}."
 
                     with self.lock:
                         self.is_running = False

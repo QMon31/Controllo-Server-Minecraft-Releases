@@ -29,11 +29,35 @@ def _cert_fingerprint(cert_pem: bytes) -> str:
     return hashlib.sha256(der).hexdigest()
 
 
+def _certificate_usable(key_path: str, crt_path: str) -> bool:
+    """True se chiave e certificato si leggono e vanno insieme."""
+    try:
+        from cryptography import x509
+        from cryptography.hazmat.primitives import serialization
+        with open(crt_path, "rb") as f:
+            cert = x509.load_pem_x509_certificate(f.read())
+        with open(key_path, "rb") as f:
+            key = serialization.load_pem_private_key(f.read(), password=None)
+        pub = serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo
+        return cert.public_key().public_bytes(*pub) == key.public_key().public_bytes(*pub)
+    except Exception:
+        return False
+
+
 def ensure_certificate(cert_dir: str) -> Dict[str, str]:
     """Crea chiave e certificato se mancano; restituisce i percorsi e l'impronta."""
     os.makedirs(cert_dir, exist_ok=True)
     key_path = os.path.join(cert_dir, "remote.key")
     crt_path = os.path.join(cert_dir, "remote.crt")
+    if os.path.isfile(key_path) and os.path.isfile(crt_path) and not _certificate_usable(key_path, crt_path):
+        # Chiave o certificato rovinati (es. disco o PC spento a metà): prima il programma non partiva più.
+        # Se ne crea uno nuovo; la nuova impronta arriva a telefono e PC Remoti con il messaggio firmato su ntfy.
+        for p in (key_path, crt_path):
+            try:
+                os.replace(p, p + ".rotto")
+            except OSError:
+                pass
+        print("[Accesso remoto] Certificato HTTPS illeggibile: ne creo uno nuovo (il vecchio è in certs/*.rotto)")
     if not (os.path.isfile(key_path) and os.path.isfile(crt_path)):
         from cryptography import x509
         from cryptography.hazmat.primitives import hashes, serialization
@@ -73,7 +97,10 @@ class RemoteAccess:
     def __init__(self, base_dir: str, port: int, upnp_mgr, get_public_ip: Callable[[bool], str],
                  external_port: Optional[int] = None, on_external_port: Optional[Callable[[int], None]] = None):
         self.port = int(port or DEFAULT_REMOTE_PORT)   # porta del PC (HTTPS in ascolto)
-        self.external_port = int(external_port or self.port)  # porta sul router (di solito la stessa)
+        try:
+            self.external_port = int(external_port or self.port)  # porta sul router (di solito la stessa)
+        except (TypeError, ValueError):
+            self.external_port = self.port
         self._on_external_port = on_external_port
         self.upnp = upnp_mgr
         self._get_public_ip = get_public_ip

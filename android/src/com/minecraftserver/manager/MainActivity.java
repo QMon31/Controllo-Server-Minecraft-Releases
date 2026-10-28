@@ -58,8 +58,8 @@ import java.util.regex.Pattern;
 
 public class MainActivity extends Activity implements View.OnClickListener {
 
-    public static final int CURRENT_VERSION_CODE = 108;
-    public static final String CURRENT_VERSION_NAME = "4.13.2";
+    public static final int CURRENT_VERSION_CODE = 109;
+    public static final String CURRENT_VERSION_NAME = "4.13.3";
 
     private int dpToPx(int dp) {
         return Math.round(dp * getResources().getDisplayMetrics().density);
@@ -221,6 +221,8 @@ public class MainActivity extends Activity implements View.OnClickListener {
     private boolean mIsWhitelistEnabled = false;
 
     private boolean mWasRunningBackup = false;
+    // "Spegni server e fai backup": il backup si apre appena il PC risponde che il server è spento
+    private boolean mBackupAfterStop = false;
     private boolean mWasRunningRestore = false;
     private static final String PREF_PUSH_SECRET = "push_secret";
     private String mLastNotifiedBackupDate = "";
@@ -1336,7 +1338,33 @@ public class MainActivity extends Activity implements View.OnClickListener {
     }
 
     private void executeApiCall(final String endpoint, final String method, final String jsonBody, final ApiClient.ApiCallback callback) {
-        executeApiCallInternal(endpoint, method, jsonBody, false, callback);
+        executeApiCallInternal(endpoint, method, jsonBody, false, uiSafe(callback));
+    }
+
+    /** Risposta del PC arrivata quando la schermata è già chiusa (app chiusa, tema chiaro/scuro cambiato durante una
+     *  richiesta): si ignora. Prima aprire una finestra in quel momento faceva chiudere l'app (BadTokenException). */
+    private ApiClient.ApiCallback uiSafe(final ApiClient.ApiCallback callback) {
+        return new ApiClient.ApiCallback() {
+            @Override
+            public void onSuccess(String response) {
+                if (isFinishing() || isDestroyed()) return;
+                try {
+                    callback.onSuccess(response);
+                } catch (android.view.WindowManager.BadTokenException e) {
+                    android.util.Log.w("MainActivity", "Finestra non mostrata: schermata chiusa", e);
+                }
+            }
+
+            @Override
+            public void onError(String error) {
+                if (isFinishing() || isDestroyed()) return;
+                try {
+                    callback.onError(error);
+                } catch (android.view.WindowManager.BadTokenException e) {
+                    android.util.Log.w("MainActivity", "Finestra non mostrata: schermata chiusa", e);
+                }
+            }
+        };
     }
 
     private void executeApiCallInternal(final String endpoint, final String method, final String jsonBody, final boolean isRetry, final ApiClient.ApiCallback callback) {
@@ -1837,6 +1865,12 @@ public class MainActivity extends Activity implements View.OnClickListener {
                     JSONObject obj = new JSONObject(response);
                     String state = obj.optString("state", "OFFLINE");
                     mServerState = state;
+                    if (mBackupAfterStop && ("STOPPED".equalsIgnoreCase(state) || "OFFLINE".equalsIgnoreCase(state))) {
+                        mBackupAfterStop = false;
+                        startBackupAction();
+                    } else if ("CRASHED".equalsIgnoreCase(state) || "ONLINE".equalsIgnoreCase(state)) {
+                        mBackupAfterStop = false;
+                    }
 
                     if ("ONLINE".equalsIgnoreCase(state)) {
                         pillServerStatus.setText("Online");
@@ -2422,7 +2456,9 @@ public class MainActivity extends Activity implements View.OnClickListener {
                     fetchPlayersAndWhitelist();
                 }
                 @Override public void onError(String error) {
-                    submitCommand("whitelist add " + playerName);
+                    // Prima l'errore del PC (nome inesistente, Mojang non raggiungibile) restava nascosto e si mandava
+                    // lo stesso comando in console
+                    I18n.makeText(MainActivity.this, error, Toast.LENGTH_LONG).show();
                     fetchPlayersAndWhitelist();
                 }
             });
@@ -2455,34 +2491,30 @@ public class MainActivity extends Activity implements View.OnClickListener {
             updateGameRuleButtonsUI();
             return;
         }
-        // "pvp" non è una gamerule (in Minecraft fino alla 1.21.8 è solo in server.properties): si legge a parte
-        final String[] rules = new String[] {
-            "keepInventory", "mobGriefing", "doDaylightCycle", "doFireTick", "doWeatherCycle", "showDeathMessages"
-        };
-        for (final String rule : rules) {
-            String body = "{\"command\":\"gamerule " + rule + "\"}";
-            executeApiCall("/api/server/command", "POST", body, new ApiClient.ApiCallback() {
-                @Override
-                public void onSuccess(String response) {
-                    try {
-                        JSONObject obj = new JSONObject(response);
-                        // La risposta di Minecraft (via RCON) arriva in "message"
-                        String out = obj.optString("output", obj.optString("message", "")).toLowerCase();
-                        boolean isTrue = out.contains("true") || out.contains("is currently set to: true");
-                        boolean isFalse = out.contains("false") || out.contains("is currently set to: false");
-                        if (isTrue || isFalse) {
-                            boolean val = isTrue;
-                            setRuleVariable(rule, val);
-                            saveGameRulePref(rule, val);
-                            runOnUiThread(new Runnable() {
-                                @Override public void run() { updateGameRuleButtonsUI(); }
-                            });
+        // Valori veri letti dal PC (che usa i nomi nuovi delle regole da Minecraft 1.21.11). Prima "gamerule X" via
+        // /api/server/command rispondeva solo "Comando inviato" e l'app mostrava i valori salvati sul telefono.
+        executeApiCall("/api/server/gamerules", "GET", null, new ApiClient.ApiCallback() {
+            @Override
+            public void onSuccess(String response) {
+                try {
+                    JSONObject rules = new JSONObject(response).optJSONObject("rules");
+                    if (rules == null) return;
+                    java.util.Iterator<String> it = rules.keys();
+                    while (it.hasNext()) {
+                        String rule = it.next();
+                        Object v = rules.opt(rule);
+                        if (v instanceof Boolean) {
+                            setRuleVariable(rule, (Boolean) v);
+                            saveGameRulePref(rule, (Boolean) v);
                         }
-                    } catch (Exception ignored) {}
-                }
-                @Override public void onError(String error) {}
-            });
-        }
+                    }
+                    runOnUiThread(new Runnable() {
+                        @Override public void run() { updateGameRuleButtonsUI(); }
+                    });
+                } catch (Exception ignored) {}
+            }
+            @Override public void onError(String error) {}
+        });
     }
 
     /** PvP da server.properties (vale anche a server spento). */
@@ -2614,11 +2646,11 @@ public class MainActivity extends Activity implements View.OnClickListener {
 
     private void loadGameRulesPrefs() {
         SharedPreferences prefs = getSharedPreferences("server_gamerules", MODE_PRIVATE);
-        mIsRuleKeepInventory = prefs.getBoolean("keepInventory", true);
-        mIsRuleMobGriefing = prefs.getBoolean("mobGriefing", false);
+        mIsRuleKeepInventory = prefs.getBoolean("keepInventory", false);
+        mIsRuleMobGriefing = prefs.getBoolean("mobGriefing", true);
         mIsRulePvP = prefs.getBoolean("pvp", true);
         mIsRuleDaylight = prefs.getBoolean("doDaylightCycle", true);
-        mIsRuleFireTick = prefs.getBoolean("doFireTick", false);
+        mIsRuleFireTick = prefs.getBoolean("doFireTick", true);
         mIsRuleWeatherCycle = prefs.getBoolean("doWeatherCycle", true);
         mIsRuleShowDeath = prefs.getBoolean("showDeathMessages", true);
     }
@@ -3444,7 +3476,8 @@ public class MainActivity extends Activity implements View.OnClickListener {
                 .setNeutralButton(I18n.t("app.spegni_server_fai_backup"), new DialogInterface.OnClickListener() {
                     @Override
                     public void onClick(DialogInterface dialog, int which) {
-                        confirmStopServer();
+                        // Prima il server si spegneva ma il backup non partiva mai
+                        confirmStopServer(true);
                     }
                 })
                 .setNegativeButton(I18n.t("app.annulla"), null)
@@ -4844,6 +4877,10 @@ public class MainActivity extends Activity implements View.OnClickListener {
     }
 
     private void confirmStopServer() {
+        confirmStopServer(false);
+    }
+
+    private void confirmStopServer(final boolean backupAfter) {
         new I18n.Builder(this)
             .setTitle(I18n.t("app.conferma_arresto"))
             .setMessage(I18n.t("app.vuoi_arrestare_server_minecraft"))
@@ -4853,6 +4890,7 @@ public class MainActivity extends Activity implements View.OnClickListener {
                     executeApiCall("/api/server/stop", "POST", "{\"force\":false,\"reason\":\"Arresto da App Android\"}", new ApiClient.ApiCallback() {
                         @Override
                         public void onSuccess(String response) {
+                            mBackupAfterStop = backupAfter;
                             I18n.makeText(MainActivity.this, I18n.t("app.arresto_server_inviato"), Toast.LENGTH_SHORT).show();
                             fetchStatus();
                         }
@@ -4874,6 +4912,12 @@ public class MainActivity extends Activity implements View.OnClickListener {
         mPollHandler.post(mPollRunnable);
     }
 
+    private int mPollTick = 0;
+
+    private static boolean isTransitionState(String state) {
+        return "STARTING".equalsIgnoreCase(state) || "STOPPING".equalsIgnoreCase(state) || "RESTARTING".equalsIgnoreCase(state);
+    }
+
     private final Runnable mPollRunnable = new Runnable() {
         @Override
         public void run() {
@@ -4890,6 +4934,12 @@ public class MainActivity extends Activity implements View.OnClickListener {
                     fetchChat();
                 } else if (viewSettings.getVisibility() == View.VISIBLE) {
                     fetchBackupStatus();
+                }
+                // Fuori dalla Home lo stato del server si rileggeva mai: l'intestazione restava su "Arresto..." e il
+                // backup credeva il server ancora acceso. Ogni 3 giri (7,5 s), o a ogni giro dopo un comando.
+                boolean otherView = viewDashboard.getVisibility() != View.VISIBLE && viewAutoRestart.getVisibility() != View.VISIBLE;
+                if (otherView && (++mPollTick % 3 == 0 || mBackupAfterStop || isTransitionState(mServerState))) {
+                    fetchStatus();
                 }
                 recheckHomeRouteIfNeeded();
             }

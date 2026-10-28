@@ -4,6 +4,8 @@ import zipfile
 from typing import Dict, Any, Optional
 from datetime import datetime
 
+from platform_utils import write_text_atomic
+
 
 def format_file_size(size_bytes: int) -> str:
     if size_bytes < 1024:
@@ -148,8 +150,7 @@ def save_text_file(base_dir: str, rel_path: str, content: str) -> Dict[str, Any]
                 pass
 
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
-        with open(file_path, "w", encoding="utf-8") as f:
-            f.write(content)
+        write_text_atomic(file_path, content)
 
         msg = "File salvato con successo (creato backup .bak)!" if bak_ok else "File salvato con successo (backup .bak non creato)."
         return {"success": True, "message": msg}

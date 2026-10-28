@@ -40,7 +40,8 @@ def main():
     os.makedirs(site_packages, exist_ok=True)
     subprocess.run(
         [sys.executable, "-m", "pip", "install", "--no-compile", "--target", site_packages,
-         "-r", os.path.join(BASE_DIR, "requirements.txt")],
+         # Versioni esatte (requirements-lock.txt): la stessa build dà sempre le stesse librerie
+         "-r", os.path.join(BASE_DIR, "requirements-lock.txt")],
         check=True,
     )
 

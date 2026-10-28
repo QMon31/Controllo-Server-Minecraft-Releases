@@ -1,8 +1,9 @@
 import os
 import json
-import shutil
 import uuid
 from typing import List, Dict, Any
+
+from platform_utils import read_json_with_backup, write_json_atomic
 
 INSTANCES_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "instances.json")
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
@@ -42,17 +43,13 @@ def load_instances_data() -> List[Dict[str, Any]]:
     """Loads instances from instances.json. If missing, initializes with current config.json."""
     if os.path.isfile(INSTANCES_FILE):
         try:
-            with open(INSTANCES_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                if isinstance(data, list) and len(data) > 0:
-                    return _drop_stale_default(data)
+            # File rovinato: copia in instances.json.corrotto e si usa instances.json.bak (salvataggio precedente)
+            data = read_json_with_backup(INSTANCES_FILE)
+            if isinstance(data, list) and len(data) > 0:
+                return _drop_stale_default(data)
         except Exception as e:
-            # Il file verrebbe poi sovrascritto con la sola istanza predefinita: se ne conserva una copia
+            # Il file verrebbe poi sovrascritto con la sola istanza predefinita: la copia resta in instances.json.corrotto
             print(f"[Istanze] instances.json non leggibile ({e}): copia salvata in instances.json.corrotto")
-            try:
-                shutil.copy2(INSTANCES_FILE, INSTANCES_FILE + ".corrotto")
-            except Exception:
-                pass
 
     # Initialize from config.json
     default_dir = ""
@@ -62,12 +59,11 @@ def load_instances_data() -> List[Dict[str, Any]]:
 
     if os.path.isfile(CONFIG_FILE):
         try:
-            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-                cfg = json.load(f)
-                default_dir = cfg.get("server_dir", default_dir)
-                default_bat = cfg.get("server_run_bat", default_bat)
-                default_cmd = cfg.get("server_command", default_cmd)
-                default_port = cfg.get("server_port", default_port)
+            cfg = read_json_with_backup(CONFIG_FILE)
+            default_dir = cfg.get("server_dir", default_dir)
+            default_bat = cfg.get("server_run_bat", default_bat)
+            default_cmd = cfg.get("server_command", default_cmd)
+            default_port = cfg.get("server_port", default_port)
         except Exception:
             pass
 
@@ -96,8 +92,7 @@ def load_instances_data() -> List[Dict[str, Any]]:
 
 def save_instances_data(instances: List[Dict[str, Any]]) -> bool:
     try:
-        with open(INSTANCES_FILE, "w", encoding="utf-8") as f:
-            json.dump(instances, f, indent=2, ensure_ascii=False)
+        write_json_atomic(INSTANCES_FILE, instances, keep_backup=True)
         return True
     except Exception as e:
         print(f"[InstanceManager] Errore salvataggio {INSTANCES_FILE}: {e}")
@@ -140,21 +135,22 @@ def switch_instance(instance_id: str, manager=None) -> Dict[str, Any]:
 
     # Sync to config.json
     try:
-        cfg = {}
-        if os.path.isfile(CONFIG_FILE):
-            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-                cfg = json.load(f)
+        if manager:
+            # Si parte dalla configurazione in memoria del pannello e si salva da lì: un solo punto che scrive
+            # config.json, così un file illeggibile non fa perdere PIN e chiavi
+            cfg = manager.config
+        else:
+            cfg = read_json_with_backup(CONFIG_FILE) if os.path.isfile(CONFIG_FILE) else {}
 
         cfg["server_dir"] = target.get("server_dir", cfg.get("server_dir"))
         cfg["server_run_bat"] = target.get("server_run_bat", cfg.get("server_run_bat"))
         cfg["server_command"] = target.get("server_command", cfg.get("server_command"))
         cfg["server_port"] = target.get("server_port", cfg.get("server_port"))
 
-        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-            json.dump(cfg, f, indent=2, ensure_ascii=False)
-
         if manager:
-            manager.config = cfg
+            manager.save_config()
+        else:
+            write_json_atomic(CONFIG_FILE, cfg, keep_backup=True)
     except Exception as e:
         return {"success": False, "error": f"Errore aggiornamento config.json: {e}"}
 
@@ -164,6 +160,16 @@ def switch_instance(instance_id: str, manager=None) -> Dict[str, Any]:
 def add_instance(name: str, server_dir: str, server_run_bat: str = "", server_command: str = "", server_port: int = 25565, server_type: str = "", mc_version: str = "", set_active: bool = False, manager=None) -> Dict[str, Any]:
     instances = load_instances_data()
     inst_id = "inst_" + uuid.uuid4().hex[:8]
+    # Stessa cartella già in elenco (es. il primo server creato: load_instances_data lo aggiunge già da
+    # config.json): si aggiorna quella voce invece di avere lo stesso server due volte
+    wanted = os.path.normcase(os.path.abspath(server_dir.strip())) if server_dir.strip() else None
+    same = next((i for i in instances if wanted and i.get("server_dir")
+                 and os.path.normcase(os.path.abspath(i["server_dir"])) == wanted), None)
+    pos = len(instances)
+    if same:
+        pos = instances.index(same)
+        instances.remove(same)
+        inst_id = same["id"]
 
     new_inst = {
         "id": inst_id,
@@ -174,12 +180,12 @@ def add_instance(name: str, server_dir: str, server_run_bat: str = "", server_co
         "server_port": int(server_port) if server_port else 25565,
         "server_type": server_type.strip().lower(),
         "mc_version": (mc_version or "").strip(),
-        "is_active": False
+        "is_active": bool(same and same.get("is_active"))
     }
 
     # Senza un server attivo (es. primo server collegato) il nuovo diventa quello attivo: prima restava attivo solo
     # in instances.json e config.json non aveva la cartella, così il file manager mostrava la cartella del programma
-    if not any(i.get("is_active") and i.get("server_dir") and os.path.isdir(i.get("server_dir")) for i in instances):
+    if not new_inst["is_active"] and not any(i.get("is_active") and i.get("server_dir") and os.path.isdir(i.get("server_dir")) for i in instances):
         set_active = True
 
     if set_active:
@@ -189,7 +195,7 @@ def add_instance(name: str, server_dir: str, server_run_bat: str = "", server_co
             inst["is_active"] = False
         new_inst["is_active"] = True
 
-    instances.append(new_inst)
+    instances.insert(pos, new_inst)
     save_instances_data(instances)
 
     if set_active:

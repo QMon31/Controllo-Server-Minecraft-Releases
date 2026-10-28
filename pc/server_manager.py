@@ -23,7 +23,8 @@ import shutil
 
 import psutil
 from mc_ping import query_server_status
-from platform_utils import IS_WINDOWS, LAUNCH_SCRIPT, LAUNCH_SCRIPT_CANDIDATES, split_java_line, script_fallback_command
+from platform_utils import (IS_WINDOWS, LAUNCH_SCRIPT, LAUNCH_SCRIPT_CANDIDATES, split_java_line, script_fallback_command,
+                            read_json_with_backup, write_json_atomic, write_text_atomic)
 
 # Processi figli (java, jcmd, run.bat) senza finestra: il pannello gira senza console, quindi ogni processo
 # avviato senza questo flag aprirebbe una propria finestra cmd
@@ -39,6 +40,25 @@ def is_legacy_topic(topic) -> bool:
     return bool(topic) and hashlib.sha256(str(topic).encode("utf-8")).hexdigest() in LEGACY_TOPIC_HASHES
 
 DEFAULT_CONFIG_PATH =os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
+
+# Regole di gioco rinominate in Minecraft 1.21.11 (nome fino alla 1.21.10 -> nome nuovo). doFireTick è diventata un
+# raggio in blocchi (0 = il fuoco non si propaga, 128 = valore di base).
+GAMERULE_NEW_NAMES = {
+    "keepInventory": "keep_inventory",
+    "mobGriefing": "mob_griefing",
+    "doDaylightCycle": "advance_time",
+    "doWeatherCycle": "advance_weather",
+    "showDeathMessages": "show_death_messages",
+    "doFireTick": "fire_spread_radius_around_player",
+    "playersSleepingPercentage": "players_sleeping_percentage",
+    "doMobSpawning": "spawn_mobs",
+    "randomTickSpeed": "random_tick_speed",
+    "naturalRegeneration": "natural_health_regeneration",
+    "fallDamage": "fall_damage",
+    "fireDamage": "fire_damage",
+    "drowningDamage": "drowning_damage",
+    "maxEntityCramming": "max_entity_cramming",
+}
 
 def _read_nbt(f, tag_type):
     """Valore di un tag NBT (formato dei file di Minecraft) letto dal file già aperto."""
@@ -98,14 +118,21 @@ class ServerManager:
     _RE_SERVER_READY = re.compile(r'Done \([0-9.]+s\)! For help, type "help"')
     _RE_SERVER_READY2 = re.compile(r'Time elapsed: [0-9.]+ ms')
     _RE_SERVER_READY3 = re.compile(r'Listening on \/0\.0\.0\.0:[0-9]+')
-    _RE_PLAYER_JOIN = re.compile(r'\[Server thread/INFO\].*?: (\w+) joined the game')
-    _RE_PLAYER_JOIN2 = re.compile(r'\[Server thread/INFO\].*?: (\w+)\[/[0-9.:]+\] logged in with entity id')
-    _RE_PLAYER_LEAVE = re.compile(r'\[Server thread/INFO\].*?: (\w+) left the game')
-    _RE_PLAYER_LEAVE2 = re.compile(r'\[Server thread/INFO\].*?: (\w+) lost connection')
+    # Intestazione di una riga INFO: "[...] [Server thread/INFO]" (Vanilla, Forge, Fabric) o "[14:15:16 INFO]" (console
+    # di Paper, dove prima giocatori e chat non venivano mai riconosciuti)
+    _INFO = r'(?:\[Server thread/INFO\]|^\[\d{1,2}:\d{2}:\d{2} INFO\])'
+    _RE_PLAYER_JOIN = re.compile(_INFO + r'.*?: (\w+) joined the game')
+    _RE_PLAYER_JOIN2 = re.compile(_INFO + r'.*?: (\w+)\[/[0-9.:]+\] logged in with entity id')
+    _RE_PLAYER_LEAVE = re.compile(_INFO + r'.*?: (\w+) left the game')
+    _RE_PLAYER_LEAVE2 = re.compile(_INFO + r'.*?: (\w+) lost connection')
     _RE_PLAYER_LEAVE3 = re.compile(r'Disconnecting (\w+)')
-    _RE_CHAT_MSG = re.compile(r'\[Server thread/INFO\].*?: (?:\[Not Secure\] )?<(\w+)>\s+(.*)')
-    # Livello scritto nell'intestazione della riga: "[14:15:16] [main/WARN] [mixin/]: ..." o "[...] [Server thread/ERROR]: ..."
-    _RE_LOG_LEVEL = re.compile(r'^\[[^\]]*\] \[[^\]]*/(TRACE|DEBUG|INFO|WARN|ERROR|FATAL)\]')
+    _RE_CHAT_MSG = re.compile(_INFO + r'.*?: (?:\[Not Secure\] )?<(\w+)>\s+(.*)')
+    # Livello scritto nell'intestazione della riga: "[14:15:16] [main/WARN] [mixin/]: ...", "[...] [Server thread/ERROR]: ..."
+    # o, con Paper, "[14:15:16 ERROR]: ..."
+    _RE_LOG_LEVEL = re.compile(r'^\[(?:[^\]]*\] \[[^\]]*/|\d{1,2}:\d{2}:\d{2} )(TRACE|DEBUG|INFO|WARN|ERROR|FATAL)\]')
+    # Codici colore del terminale (Paper colora la console): prima arrivavano a pannello e app come "[38;5;9m"
+    _RE_ANSI = re.compile(r'\x1b\[[0-9;?]*[A-Za-z]')
+    _RE_GAMERULE_VALUE = re.compile(r'Gamerule (\S+) is currently set to: (\S+)')
     # Righe marcate ERROR/FATAL che Forge scrive sempre e che non indicano un problema
     _HARMLESS_ERRORS = (
         "Could not determine mod trust worthiness",
@@ -113,6 +140,9 @@ class ServerManager:
     _RE_EXCEPTION = re.compile(r'(Exception in thread|java\.lang\.\w+Exception|java\.lang\.Error:)')
     _RE_XMX_G = re.compile(r'-Xmx(\d+)[Gg]')
     _RE_XMX_M = re.compile(r'-Xmx(\d+)[Mm]')
+
+    # Secondi concessi a Minecraft per salvare e chiudersi dopo "stop", prima della chiusura forzata
+    STOP_TIMEOUT_SECONDS = 180
 
     def __init__(self, config_path: str = DEFAULT_CONFIG_PATH):
         self.config_path = config_path
@@ -200,6 +230,7 @@ class ServerManager:
         
         # Mutex lock
         self.lock = threading.RLock()
+        self._gamerule_lock = threading.Lock()   # una lettura delle regole alla volta (le risposte vanno in console)
         self._last_ram_alert_time = 0.0
         self._last_disk_alert_time = 0.0
         
@@ -374,7 +405,7 @@ class ServerManager:
                     is_active = (self.psutil_proc and self.psutil_proc.is_running())
                     line = f.readline()
                     if line:
-                        s = line.rstrip("\r\n")
+                        s = self._RE_ANSI.sub('', line).rstrip("\r\n")
                         if s:
                             self.add_log(s)
                             self._parse_log_line(s)
@@ -456,15 +487,19 @@ class ServerManager:
             "require_pin_for_remote": True,
             "mc_connection_mode": "upnp"
         }
-        if os.path.exists(self.config_path):
+        if os.path.exists(self.config_path) or os.path.exists(self.config_path + ".bak"):
             try:
-                with open(self.config_path, "r", encoding="utf-8") as f:
-                    loaded = json.load(f)
-                    default_cfg.update(loaded)
-                    # Chiavi dei vecchi tunnel (Cloudflare con token, ngrok): non servono più e non vanno mostrate
-                    for old_key in ("tunnel_token", "tunnel_domain", "ngrok_token"):
-                        default_cfg.pop(old_key, None)
+                # File rovinato (PC spento durante un salvataggio): copia in config.json.corrotto e si usa config.json.bak
+                loaded = read_json_with_backup(self.config_path if os.path.exists(self.config_path)
+                                               else self.config_path + ".bak")
+                if not isinstance(loaded, dict):
+                    raise ValueError("config.json non contiene un oggetto")
+                default_cfg.update(loaded)
+                # Chiavi dei vecchi tunnel (Cloudflare con token, ngrok): non servono più e non vanno mostrate
+                for old_key in ("tunnel_token", "tunnel_domain", "ngrok_token"):
+                    default_cfg.pop(old_key, None)
             except Exception as e:
+                # Il file illeggibile resta in config.json.corrotto: PIN, chiavi e cartella del server si recuperano da lì
                 print(f"Errore nel caricamento del file di configurazione: {e}")
         else:
             self.save_config(default_cfg)
@@ -474,8 +509,8 @@ class ServerManager:
         if cfg:
             self.config = cfg
         try:
-            with open(self.config_path, "w", encoding="utf-8") as f:
-                json.dump(self.config, f, indent=2, ensure_ascii=False)
+            # Salvataggio sicuro (mai un file a metà) con la versione precedente in config.json.bak
+            write_json_atomic(self.config_path, self.config, keep_backup=True)
         except Exception as e:
             print(f"Errore nel salvataggio della configurazione: {e}")
 
@@ -604,9 +639,12 @@ class ServerManager:
         Un solo tentativo ogni 5 minuti per non allungare un eventuale blocco dell'IP da parte di ntfy."""
         while True:
             time.sleep(300)
-            if getattr(self, "_network_sync_pending", False) and getattr(self, "current_remote_url", None):
-                self.broadcast_network_sync(self.current_remote_url, getattr(self, "current_local_url", "") or "",
-                                            getattr(self, "current_cert_fingerprint", "") or "")
+            try:
+                if getattr(self, "_network_sync_pending", False) and getattr(self, "current_remote_url", None):
+                    self.broadcast_network_sync(self.current_remote_url, getattr(self, "current_local_url", "") or "",
+                                                getattr(self, "current_cert_fingerprint", "") or "")
+            except Exception as e:
+                print(f"[ntfy] Nuovo invio dell'indirizzo non riuscito: {e}")
 
     def broadcast_network_sync(self, remote_url: str, local_url: str, fingerprint: str = ""):
         """Invia a telefono e PC Remoti l'indirizzo da internet, quello di casa e l'impronta del certificato HTTPS,
@@ -699,8 +737,7 @@ class ServerManager:
                 if k not in existing_keys:
                     new_lines.append(f"{k}={v}\n")
 
-            with open(props_path, "w", encoding="utf-8") as f:
-                f.writelines(new_lines)
+            write_text_atomic(props_path, "".join(new_lines))
 
             self.add_log("[Pannello] Impostazioni di server.properties salvate con successo (creato backup server.properties.bak).")
             return {
@@ -725,7 +762,10 @@ class ServerManager:
                                 return int(val)
             except Exception:
                 pass
-        return int(self.config.get("server_port", 25565))
+        try:
+            return int(self.config.get("server_port") or 25565)
+        except (TypeError, ValueError):
+            return 25565  # valore non numerico in config.json
 
     @staticmethod
     def write_properties(server_dir: str, values: Dict[str, str]) -> bool:
@@ -743,8 +783,8 @@ class ServerManager:
             if not l.lstrip().startswith("#") and "=" in l and key in pending:
                 lines[i] = f"{key}={pending.pop(key)}"
         lines.extend(f"{k}={v}" for k, v in pending.items())
-        with open(props_path, "w", encoding="utf-8") as f:
-            f.write("\n".join(lines) + "\n")
+        # Mai un server.properties a metà: Minecraft lo rigenererebbe con i valori predefiniti (porta, mondo...)
+        write_text_atomic(props_path, "\n".join(lines) + "\n")
         return True
 
     @classmethod
@@ -959,6 +999,62 @@ class ServerManager:
                 self.add_log(f"[Pannello/ERRORE] Impossibile avviare il processo: {e}")
                 return {"status": "error", "message": str(e)}
 
+    def uses_new_gamerule_names(self) -> bool:
+        """Minecraft 1.21.11 e successive (anche 26.x): regole di gioco con i nomi nuovi (keep_inventory...)."""
+        m = re.search(r'(\d+)\.(\d+)(?:\.(\d+))?', str(self.server_info.get("version") or ""))
+        if not m:
+            return False
+        return (int(m.group(1)), int(m.group(2)), int(m.group(3) or 0)) >= (1, 21, 11)
+
+    def _translate_gamerule(self, cmd: str) -> str:
+        """Pannello, app e guida dei comandi usano i nomi delle regole fino alla 1.21.10 (keepInventory): sui server
+        più recenti si mandano quelli nuovi. Prima Minecraft rispondeva "Incorrect argument" e non cambiava nulla."""
+        parts = cmd.split()
+        if len(parts) < 2 or parts[0].lower() != "gamerule" or not self.uses_new_gamerule_names():
+            return cmd
+        new = GAMERULE_NEW_NAMES.get(parts[1])
+        if not new:
+            return cmd
+        parts[1] = new
+        if parts[1] == "fire_spread_radius_around_player" and len(parts) > 2 and parts[2].lower() in ("true", "false"):
+            parts[2] = "128" if parts[2].lower() == "true" else "0"
+        return " ".join(parts)
+
+    def read_gamerules(self, names: List[str], timeout: float = 2.5) -> Dict[str, Any]:
+        """Valori delle regole di gioco letti dalla console (nomi fino alla 1.21.10: si traducono da soli).
+        None per una regola che il server non ha risposto. La regola del fuoco nuova (raggio) diventa true/false."""
+        out: Dict[str, Any] = {}
+        with self._gamerule_lock:
+            for name in names:
+                seq = self.log_seq
+                res = self.send_command(f"gamerule {name}")
+                if res.get("status") != "success":
+                    out[name] = None
+                    continue
+                value = None
+                end = time.time() + timeout
+                while value is None and time.time() < end:
+                    for line in self.logs_since(seq).get("lines", []):
+                        m = self._RE_GAMERULE_VALUE.search(line)
+                        if m and m.group(1) in (name, GAMERULE_NEW_NAMES.get(name)):
+                            value = m.group(2)
+                            break
+                        if "Incorrect argument for command" in line or "Unknown or incomplete command" in line:
+                            value = ""
+                            break
+                    if value is None:
+                        time.sleep(0.1)
+                if not value:
+                    out[name] = None
+                elif value.lower() in ("true", "false"):
+                    out[name] = value.lower() == "true"
+                else:
+                    try:
+                        out[name] = int(value) > 0
+                    except ValueError:
+                        out[name] = value
+        return out
+
     def send_command(self, cmd: str) -> Dict[str, Any]:
         with self.lock:
             cmd_clean = re.sub(r'[\r\n\0]', '', cmd).strip()
@@ -972,6 +1068,7 @@ class ServerManager:
 
             if cmd_clean.startswith("/"):
                 cmd_clean = cmd_clean[1:]
+            cmd_clean = self._translate_gamerule(cmd_clean)
 
             is_proc_alive = (self.process and self.process.poll() is None)
             is_psutil_alive = (self.psutil_proc and self.psutil_proc.is_running())
@@ -1071,8 +1168,9 @@ class ServerManager:
             time.sleep(2)
             self.send_command("stop")
 
-            # Wait up to 25 seconds for the process to exit cleanly
-            for _ in range(25):
+            # Attesa fino a STOP_TIMEOUT_SECONDS: un server con molte mod o un mondo grande può metterci più di
+            # un minuto a salvare. Prima dopo 25 s si chiudeva a forza, anche a metà del salvataggio del mondo.
+            for _ in range(self.STOP_TIMEOUT_SECONDS):
                 is_alive = False
                 if self.process and self.process.poll() is None:
                     is_alive = True
@@ -1082,11 +1180,11 @@ class ServerManager:
                     break
                 time.sleep(1)
 
-            # If still alive after 25s, kill it
+            # Ancora acceso dopo STOP_TIMEOUT_SECONDS: chiusura forzata
             still_alive = (self.process and self.process.poll() is None) or \
                           (self.psutil_proc and self.psutil_proc.is_running())
             if still_alive:
-                self.add_log("[Pannello] Il server non ha risposto a 'stop' dopo 25s. Terminazione forzata...")
+                self.add_log(f"[Pannello] Il server non ha risposto a 'stop' dopo {self.STOP_TIMEOUT_SECONDS}s. Terminazione forzata...")
                 if self.psutil_proc and self.psutil_proc.is_running():
                     for child in self.psutil_proc.children(recursive=True):
                         try: child.kill()
@@ -1116,6 +1214,19 @@ class ServerManager:
                     threading.Thread(target=self._delayed_restart_worker, args=(3,), daemon=True).start()
         except Exception as e:
             self.add_log(f"[Pannello/ERRORE] Errore durante l'arresto: {e}")
+            with self.lock:
+                # Senza questo lo stato restava STOPPING per sempre e il server non si poteva più avviare dal pannello
+                alive = (self.process and self.process.poll() is None) or \
+                        (self.psutil_proc and self._proc_alive(self.psutil_proc))
+                if self.state == "STOPPING" and not alive:
+                    self.state = "STOPPED"
+
+    @staticmethod
+    def _proc_alive(p) -> bool:
+        try:
+            return p.is_running() and p.status() != psutil.STATUS_ZOMBIE
+        except Exception:
+            return False
 
     def restart_server(self, reason: str = "Riavvio manuale", warning_countdown: int = 0) -> Dict[str, Any]:
         with self.lock:
@@ -1348,14 +1459,30 @@ class ServerManager:
         if not proc or not proc.stdout:
             return
 
-        for line in iter(proc.stdout.readline, ''):
-            if not line:
-                break
-            line_str = line.strip()
-            self.add_log(line_str)
-            self._parse_log_line(line_str)
-
-        proc.stdout.close()
+        # La console va letta sempre fino alla fine: se questo ciclo si fermasse, il tubo della console si
+        # riempirebbe e Minecraft resterebbe bloccato a scrivere il log (server fermo ma processo acceso).
+        # Per questo un errore su una riga non deve mai interrompere la lettura.
+        last_error = ""
+        try:
+            for line in iter(proc.stdout.readline, ''):
+                if not line:
+                    break
+                try:
+                    line_str = self._RE_ANSI.sub('', line).strip()
+                    self.add_log(line_str)
+                    self._parse_log_line(line_str)
+                except Exception as e:
+                    err = f"{type(e).__name__}: {e}"
+                    if err != last_error:
+                        last_error = err
+                        print(f"[Console] Riga del log non elaborata ({err}): {line[:200]!r}")
+        except (OSError, ValueError) as e:
+            print(f"[Console] Lettura della console interrotta: {e}")
+        finally:
+            try:
+                proc.stdout.close()
+            except Exception:
+                pass
 
     def _parse_log_line(self, line: str):
         """Extracts status transitions, player connections, chat, and server errors."""
@@ -1462,6 +1589,17 @@ class ServerManager:
 
         if any(h in line for h in self._HARMLESS_ERRORS):
             pass
+        elif "UnsupportedClassVersionError" in line:
+            # Java del PC troppo vecchia per questo server: il server si chiude subito e il crash da solo non dice
+            # cosa fare. class file version 61 = Java 17, 65 = Java 21, 69 = Java 25 (versione - 44)
+            is_error = True
+            level = "CRITICAL"
+            m_cfv = re.search(r"class file version (\d+)", line)
+            need = int(m_cfv.group(1)) - 44 if m_cfv else None
+            err_msg = (f"Questo server richiede Java {need}: la Java del PC è più vecchia. Installa Java {need} "
+                       "(per esempio da adoptium.net) e riavvia il server." if need else
+                       "La Java del PC è troppo vecchia per questo server: installa una versione più recente.")
+            self.add_log(f"[Pannello/ERRORE] {err_msg}")
         elif log_level in ("ERROR", "FATAL"):
             is_error = True
             level = "ERROR"
@@ -1617,100 +1755,116 @@ class ServerManager:
             self.start_server()
 
     def _ticker_loop(self):
-        query_counter = 0
+        """Ogni secondo: riavvio programmato, Modalità Eco, Anti-Lag, ping del server e grafici. Un errore in un
+        giro non deve fermare il ciclo: prima un solo errore lo spegneva fino al riavvio del programma, senza avvisi."""
+        state = {"query_counter": 0}
+        last_error = ""
         while self.running:
             time.sleep(1)
-            with self.lock:
-                if self.state == "ONLINE" and self.scheduled_enabled:
-                    self.scheduled_remaining_seconds -= 1
-                    rem = self.scheduled_remaining_seconds
-                    
-                    if self.config.get("chat_warnings_enabled", True):
-                        if rem == 900 and "w15m" not in self.warning_sent_flags:
-                            self.warning_sent_flags.add("w15m")
-                            self.send_command("say §e[Server] Riavvio programmato per ottimizzare le risorse del PC tra 15 minuti!")
-                        elif rem == 600 and "w10m" not in self.warning_sent_flags:
-                            self.warning_sent_flags.add("w10m")
-                            self.send_command("say §e[Server] Riavvio programmato tra 10 minuti!")
-                        elif rem == 300 and "w5m" not in self.warning_sent_flags:
-                            self.warning_sent_flags.add("w5m")
-                            self.send_command("say §6[Server] ATTENZIONE: Riavvio programmato tra 5 minuti!")
-                        elif rem == 120 and "w2m" not in self.warning_sent_flags:
-                            self.warning_sent_flags.add("w2m")
-                            self.send_command("say §c[Server] ATTENZIONE: Riavvio programmato tra 2 minuti! Mettetevi al sicuro!")
-                        elif rem == 60 and "w1m" not in self.warning_sent_flags:
-                            self.warning_sent_flags.add("w1m")
-                            self.send_command("say §c[Server] Riavvio tra 60 secondi! Salvataggio mondo imminente!")
-                        elif rem == 30 and "w30s" not in self.warning_sent_flags:
-                            self.warning_sent_flags.add("w30s")
-                            self.send_command("say §c[Server] Riavvio tra 30 secondi...")
-                        elif rem in (10, 5, 4, 3, 2, 1):
-                            self.send_command(f"say §c[Server] Riavvio tra {rem}...")
+            try:
+                self._ticker_step(state)
+                last_error = ""
+            except Exception as e:
+                err = f"{type(e).__name__}: {e}"
+                if err != last_error:  # lo stesso errore ogni secondo si scrive una volta sola
+                    last_error = err
+                    try:
+                        self.add_log(f"[Pannello/WARN] Errore nel controllo periodico del server (continua a funzionare): {err}")
+                    except Exception:
+                        pass
 
-                    if rem <= 0:
-                        self.add_log("[Pannello] ⏱️ Timer 4 ore scaduto. Avvio riavvio programmato del server...")
-                        self.scheduled_restart_in_progress = True
-                        self.scheduled_remaining_seconds = self.scheduled_interval_seconds
-                        self.warning_sent_flags.clear()
-                        threading.Thread(target=self._graceful_stop_worker, args=("Riavvio programmato 4 ore per liberare RAM",), daemon=True).start()
+    def _ticker_step(self, state: Dict[str, int]):
+        with self.lock:
+            if self.state == "ONLINE" and self.scheduled_enabled:
+                self.scheduled_remaining_seconds -= 1
+                rem = self.scheduled_remaining_seconds
+                
+                if self.config.get("chat_warnings_enabled", True):
+                    if rem == 900 and "w15m" not in self.warning_sent_flags:
+                        self.warning_sent_flags.add("w15m")
+                        self.send_command("say §e[Server] Riavvio programmato per ottimizzare le risorse del PC tra 15 minuti!")
+                    elif rem == 600 and "w10m" not in self.warning_sent_flags:
+                        self.warning_sent_flags.add("w10m")
+                        self.send_command("say §e[Server] Riavvio programmato tra 10 minuti!")
+                    elif rem == 300 and "w5m" not in self.warning_sent_flags:
+                        self.warning_sent_flags.add("w5m")
+                        self.send_command("say §6[Server] ATTENZIONE: Riavvio programmato tra 5 minuti!")
+                    elif rem == 120 and "w2m" not in self.warning_sent_flags:
+                        self.warning_sent_flags.add("w2m")
+                        self.send_command("say §c[Server] ATTENZIONE: Riavvio programmato tra 2 minuti! Mettetevi al sicuro!")
+                    elif rem == 60 and "w1m" not in self.warning_sent_flags:
+                        self.warning_sent_flags.add("w1m")
+                        self.send_command("say §c[Server] Riavvio tra 60 secondi! Salvataggio mondo imminente!")
+                    elif rem == 30 and "w30s" not in self.warning_sent_flags:
+                        self.warning_sent_flags.add("w30s")
+                        self.send_command("say §c[Server] Riavvio tra 30 secondi...")
+                    elif rem in (10, 5, 4, 3, 2, 1):
+                        self.send_command(f"say §c[Server] Riavvio tra {rem}...")
 
-                # --- ECO MODE CHECK ---
-                if self.state == "ONLINE" and self.eco_mode_enabled:
-                    online_players = len(self.players)
-                    if online_players == 0:
-                        if self.server_empty_since is None:
-                            self.server_empty_since = time.time()
-                        elif (time.time() - self.server_empty_since) >= (self.eco_mode_minutes * 60):
-                            self.add_log(f"[Pannello] Modalità Eco: server vuoto da oltre {self.eco_mode_minutes} minuti. Spegnimento automatico per risparmiare RAM ed energia...")
-                            self.send_push_notification(
-                                title="Modalità Eco Attivata",
-                                message=f"Server vuoto da {self.eco_mode_minutes} min: arrestato automaticamente per liberare RAM. Puoi riavviarlo con 1 tocco quando vuoi!",
-                                priority="default",
-                                tags="zzz,battery"
-                            )
-                            self.server_empty_since = None
-                            threading.Thread(target=self._graceful_stop_worker, args=("Spegnimento automatico Modalità Eco",), daemon=True).start()
-                    else:
+                if rem <= 0:
+                    self.add_log("[Pannello] ⏱️ Timer 4 ore scaduto. Avvio riavvio programmato del server...")
+                    self.scheduled_restart_in_progress = True
+                    self.scheduled_remaining_seconds = self.scheduled_interval_seconds
+                    self.warning_sent_flags.clear()
+                    threading.Thread(target=self._graceful_stop_worker, args=("Riavvio programmato 4 ore per liberare RAM",), daemon=True).start()
+
+            # --- ECO MODE CHECK ---
+            if self.state == "ONLINE" and self.eco_mode_enabled:
+                online_players = len(self.players)
+                if online_players == 0:
+                    if self.server_empty_since is None:
+                        self.server_empty_since = time.time()
+                    elif (time.time() - self.server_empty_since) >= (self.eco_mode_minutes * 60):
+                        self.add_log(f"[Pannello] Modalità Eco: server vuoto da oltre {self.eco_mode_minutes} minuti. Spegnimento automatico per risparmiare RAM ed energia...")
+                        self.send_push_notification(
+                            title="Modalità Eco Attivata",
+                            message=f"Server vuoto da {self.eco_mode_minutes} min: arrestato automaticamente per liberare RAM. Puoi riavviarlo con 1 tocco quando vuoi!",
+                            priority="default",
+                            tags="zzz,battery"
+                        )
                         self.server_empty_since = None
+                        threading.Thread(target=self._graceful_stop_worker, args=("Spegnimento automatico Modalità Eco",), daemon=True).start()
                 else:
                     self.server_empty_since = None
+            else:
+                self.server_empty_since = None
 
-                # --- ANTI-LAG WATCHDOG CHECK ---
-                if self.state == "ONLINE" and self.anti_lag_enabled:
-                    current_tps = self.get_current_tps()
-                    if current_tps < 13.0:
-                        if self.low_tps_start_time is None:
-                            self.low_tps_start_time = time.time()
-                        elif (time.time() - self.low_tps_start_time) >= 60.0: # Persistent low TPS for 1 minute
-                            if (time.time() - self._last_lag_alert_time) > 300.0: # Alert at most once every 5 minutes
-                                self._last_lag_alert_time = time.time()
-                                self.add_log(f"[Pannello] Anti-Lag Watchdog: rilevato calo critico di prestazioni ({current_tps} TPS).")
-                                if self.anti_lag_auto_clean:
-                                    self.add_log("[Pannello] Esecuzione automatica pulizia entità a terra (/kill @e[type=item])...")
-                                    self.send_command("kill @e[type=item]")
-                                    self.send_push_notification(
-                                        title="Anti-Lag Watchdog",
-                                        message=f"Rilevato calo a {current_tps} TPS! Eseguita pulizia automatica drop a terra per ripristinare la fluidità.",
-                                        priority="high",
-                                        tags="warning,broom"
-                                    )
-                                else:
-                                    self.send_push_notification(
-                                        title="Allarme Lag Server",
-                                        message=f"Il server sta girando a {current_tps} TPS! Possibile sovraccarico entità o chunk.",
-                                        priority="high",
-                                        tags="warning,turtle"
-                                    )
-                    else:
-                        self.low_tps_start_time = None
+            # --- ANTI-LAG WATCHDOG CHECK ---
+            if self.state == "ONLINE" and self.anti_lag_enabled:
+                current_tps = self.get_current_tps()
+                if current_tps < 13.0:
+                    if self.low_tps_start_time is None:
+                        self.low_tps_start_time = time.time()
+                    elif (time.time() - self.low_tps_start_time) >= 60.0: # Persistent low TPS for 1 minute
+                        if (time.time() - self._last_lag_alert_time) > 300.0: # Alert at most once every 5 minutes
+                            self._last_lag_alert_time = time.time()
+                            self.add_log(f"[Pannello] Anti-Lag Watchdog: rilevato calo critico di prestazioni ({current_tps} TPS).")
+                            if self.anti_lag_auto_clean:
+                                self.add_log("[Pannello] Esecuzione automatica pulizia entità a terra (/kill @e[type=item])...")
+                                self.send_command("kill @e[type=item]")
+                                self.send_push_notification(
+                                    title="Anti-Lag Watchdog",
+                                    message=f"Rilevato calo a {current_tps} TPS! Eseguita pulizia automatica drop a terra per ripristinare la fluidità.",
+                                    priority="high",
+                                    tags="warning,broom"
+                                )
+                            else:
+                                self.send_push_notification(
+                                    title="Allarme Lag Server",
+                                    message=f"Il server sta girando a {current_tps} TPS! Possibile sovraccarico entità o chunk.",
+                                    priority="high",
+                                    tags="warning,turtle"
+                                )
+                else:
+                    self.low_tps_start_time = None
 
-                query_counter += 1
-                if query_counter >= 2:
-                    query_counter = 0
-                    port = self.get_server_port()
-                    threading.Thread(target=self._background_slp_query, args=(port,), daemon=True).start()
+            state["query_counter"] += 1
+            if state["query_counter"] >= 2:
+                state["query_counter"] = 0
+                port = self.get_server_port()
+                threading.Thread(target=self._background_slp_query, args=(port,), daemon=True).start()
 
-                self._record_metrics_snapshot()
+            self._record_metrics_snapshot()
 
     def _background_slp_query(self, port: int):
         res = query_server_status(host="127.0.0.1", port=port, timeout=1.0)
@@ -1888,6 +2042,17 @@ class ServerManager:
         self._cached_max_ram_val = (key, now, val)
         return val
 
+    @staticmethod
+    def _disk_name(path: str) -> str:
+        """Nome del disco da mostrare negli avvisi: "D:" su Windows, il punto di montaggio su Linux ("/", "/home")."""
+        drive = os.path.splitdrive(os.path.abspath(path))[0]
+        if drive:
+            return drive
+        p = os.path.abspath(path)
+        while not os.path.ismount(p) and os.path.dirname(p) != p:
+            p = os.path.dirname(p)
+        return p
+
     def _record_metrics_snapshot(self):
         try:
             host_cpu = psutil.cpu_percent(interval=None)
@@ -1925,17 +2090,26 @@ class ServerManager:
             # Cache disk usage every 30 seconds to avoid constant disk drive wakeups
             now = time.time()
             if self._cached_disk_tuple is None or (now - self._last_disk_check_time) > 30.0:
-                try:
-                    disk = psutil.disk_usage("C:\\")
-                    self._cached_disk_tuple = (
-                        round(disk.free / (1024**3), 1),
-                        round(disk.total / (1024**3), 1),
-                        disk.percent
-                    )
-                    self._last_disk_check_time = now
-                except Exception:
-                    if not self._cached_disk_tuple:
-                        self._cached_disk_tuple = (100.0, 500.0, 50.0)
+                # Il disco del server (prima sempre C:, anche con il server su un altro disco; su Linux C: non
+                # esiste e si mostravano valori inventati). Senza server: il disco del programma.
+                server_dir = self.config.get("server_dir") or ""
+                for path in (server_dir, os.path.dirname(os.path.abspath(__file__))):
+                    if not path or not os.path.isdir(path):
+                        continue
+                    try:
+                        disk = psutil.disk_usage(path)
+                        self._cached_disk_tuple = (
+                            round(disk.free / (1024**3), 1),
+                            round(disk.total / (1024**3), 1),
+                            disk.percent
+                        )
+                        self._disk_label = self._disk_name(path)
+                        break
+                    except Exception:
+                        continue
+                self._last_disk_check_time = now
+                if not self._cached_disk_tuple:
+                    self._cached_disk_tuple = (0.0, 0.0, 0.0)  # disco non leggibile: nessun valore inventato
 
             disk_free_gb, disk_total_gb, disk_percent = self._cached_disk_tuple
             mc_ram_pct = min(100.0, round((mc_ram_gb / max_mc_ram) * 100, 1)) if (max_mc_ram and max_mc_ram > 0) else 0.0
@@ -1984,12 +2158,12 @@ class ServerManager:
                         tags="warning,fire"
                     )
 
-            if disk_free_gb < 10.0:
+            if disk_total_gb > 0 and disk_free_gb < 10.0:
                 if (now - self._last_disk_alert_time) > 3600: # 1 hour cooldown
                     self._last_disk_alert_time = now
                     self.send_push_notification(
                         title="Spazio Disco Critico",
-                        message=f"Spazio libero su disco C: inferiore a 10 GB ({disk_free_gb} GB rimanenti)! I backup potrebbero non andare a buon fine.",
+                        message=f"Spazio libero su disco {getattr(self, '_disk_label', 'C:')} inferiore a 10 GB ({disk_free_gb} GB rimanenti)! I backup potrebbero non andare a buon fine.",
                         priority="high",
                         tags="floppy_disk,warning"
                     )
@@ -2437,8 +2611,7 @@ class ServerManager:
                             changed = True
                             break
                     if changed:
-                        with open(bat, "w", encoding="utf-8") as f:
-                            f.write("\n".join(bat_lines) + "\n")
+                        write_text_atomic(bat, "\n".join(bat_lines) + "\n")
                         written = os.path.basename(bat)
                 cmd = (self.config.get("server_command") or "").strip()
                 if cmd.startswith("java "):
@@ -2539,10 +2712,21 @@ class ServerManager:
         result.sort(key=lambda x: (cat_order.get(x["category"], 9), x["name"].lower()))
         return {"status": "success", "files": result}
 
+    @staticmethod
+    def _inside_dir(base: str, path: str) -> bool:
+        """True se path è dentro base. commonpath e non startswith: "D:/Server2/..." inizia come "D:/Server"
+        ma è fuori dalla cartella."""
+        if not base:
+            return False
+        try:
+            return os.path.commonpath([os.path.abspath(base), os.path.abspath(path)]) == os.path.abspath(base)
+        except ValueError:  # dischi diversi su Windows
+            return False
+
     def read_config_file(self, rel_path: str) -> Dict[str, Any]:
         s_dir = self.config.get("server_dir", "")
         safe_path = os.path.normpath(os.path.join(s_dir, rel_path))
-        if not safe_path.startswith(os.path.normpath(s_dir)):
+        if not self._inside_dir(s_dir, safe_path):
             return {"status": "error", "message": "Accesso non autorizzato fuori dalla cartella server"}
         if not os.path.isfile(safe_path):
             return {"status": "error", "message": f"File non trovato: {rel_path}"}
@@ -2565,15 +2749,14 @@ class ServerManager:
     def save_config_file(self, rel_path: str, content: str) -> Dict[str, Any]:
         s_dir = self.config.get("server_dir", "")
         safe_path = os.path.normpath(os.path.join(s_dir, rel_path))
-        if not safe_path.startswith(os.path.normpath(s_dir)):
+        if not self._inside_dir(s_dir, safe_path):
             return {"status": "error", "message": "Accesso non autorizzato fuori dalla cartella server"}
         try:
             # Create a safety backup (.bak) if the file already exists
             if os.path.isfile(safe_path):
                 bak_path = safe_path + ".bak"
                 shutil.copy2(safe_path, bak_path)
-            with open(safe_path, "w", encoding="utf-8") as f:
-                f.write(content)
+            write_text_atomic(safe_path, content)
             self.add_log(f"[Pannello] File salvato: {rel_path} (backup di sicurezza .bak creato)")
             return {"status": "success", "rel_path": rel_path, "backup_created": True}
         except Exception as e:
@@ -2582,7 +2765,7 @@ class ServerManager:
     def restore_config_file(self, rel_path: str) -> Dict[str, Any]:
         s_dir = self.config.get("server_dir", "")
         safe_path = os.path.normpath(os.path.join(s_dir, rel_path))
-        if not safe_path.startswith(os.path.normpath(s_dir)):
+        if not self._inside_dir(s_dir, safe_path):
             return {"status": "error", "message": "Accesso non autorizzato fuori dalla cartella server"}
         bak_path = safe_path + ".bak"
         if not os.path.isfile(bak_path):

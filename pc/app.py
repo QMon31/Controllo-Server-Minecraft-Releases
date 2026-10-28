@@ -87,6 +87,13 @@ def _backup_server_info(server_dir: str) -> Dict[str, Any]:
 
 
 backup_mgr.server_info_cb = _backup_server_info
+
+
+def _on_installed_server_ready(server_dir: str):
+    # Server appena creato dal pannello: diventa quello attivo anche per backup e ripristino
+    backup_mgr.server_dir = os.path.abspath(server_dir)
+    request_minecraft_port_sync()
+
 # Niente avvio del server mentre un backup o un ripristino lavora sui suoi file
 manager.start_blocker = backup_mgr.busy_message
 if manager.config.get("cloud_backup_dir"):
@@ -110,6 +117,7 @@ def _pc_update_loop():
 threading.Thread(target=_pc_update_loop, daemon=True).start()
 upnp_mgr = UPnPManager()
 forge_installer = ForgeServerInstaller(config_path=os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json"))
+forge_installer.on_server_ready = _on_installed_server_ready
 
 # Active WebSocket connections
 active_websockets: List[WebSocket] = []
@@ -216,7 +224,21 @@ manager.subscribe_chat(broadcast_chat_to_ws)
 manager.subscribe_errors(broadcast_error_to_ws)
 
 # Accesso da internet: HTTPS sull'IP pubblico (porta remote_port aperta sul router), al posto del tunnel
-REMOTE_PORT = int(manager.config.get("remote_port") or DEFAULT_REMOTE_PORT)
+try:
+    REMOTE_PORT = int(manager.config.get("remote_port") or DEFAULT_REMOTE_PORT)
+except (TypeError, ValueError):
+    REMOTE_PORT = DEFAULT_REMOTE_PORT   # valore non valido in config.json: prima il programma non partiva
+if not 1024 <= REMOTE_PORT <= 65535:
+    REMOTE_PORT = DEFAULT_REMOTE_PORT
+
+def _valid_web_port(value) -> int:
+    """Porta del pannello da config.json; 8080 se manca o non è valida (prima un valore sbagliato fermava l'avvio)."""
+    try:
+        port = int(value)
+    except (TypeError, ValueError):
+        return 8080
+    return port if 1024 <= port <= 65535 and port != REMOTE_PORT else 8080
+
 
 def _save_remote_external_port(port: int):
     # Porta concessa dal router (può essere diversa da REMOTE_PORT): ricordata perché l'indirizzo non cambi
@@ -235,7 +257,7 @@ def remote_status_payload() -> Dict[str, Any]:
 def on_remote_url_changed(url: str):
     global _cached_network_payload
     local_ip = get_local_ip()
-    local_url = f"http://{local_ip}:{manager.config.get('web_port', 8080)}"
+    local_url = f"http://{local_ip}:{_valid_web_port(manager.config.get('web_port', 8080))}"
     manager.current_local_url = local_url
     _cached_network_payload = None
     if loop and active_websockets:
@@ -454,7 +476,41 @@ class UpdateStoreRequest(BaseModel):
     download_url: Optional[str] = None
     version_number: Optional[str] = None
 
-valid_auth_tokens: set = set()
+class _TokenStore:
+    """Token di accesso dati dopo il PIN giusto. Prima non scadevano mai (fino al riavvio del programma) e
+    l'elenco cresceva a ogni accesso: ora un token non usato per TOKEN_IDLE_DAYS giorni scade (l'app e il
+    pannello chiedono di nuovo il PIN) e se ne tengono al massimo TOKEN_MAX, togliendo i meno usati."""
+    TOKEN_IDLE_DAYS = 30
+    TOKEN_MAX = 500
+
+    def __init__(self):
+        self._last_used: Dict[str, float] = {}
+        self._lock = threading.Lock()
+
+    def add(self, token: str):
+        with self._lock:
+            self._last_used[token] = time.time()
+            if len(self._last_used) > self.TOKEN_MAX:
+                for old in sorted(self._last_used, key=self._last_used.get)[:len(self._last_used) - self.TOKEN_MAX]:
+                    self._last_used.pop(old, None)
+
+    def __contains__(self, token) -> bool:
+        now = time.time()
+        with self._lock:
+            used = self._last_used.get(token)
+            if used is None:
+                return False
+            if now - used > self.TOKEN_IDLE_DAYS * 86400:
+                self._last_used.pop(token, None)
+                return False
+            self._last_used[token] = now
+            return True
+
+    def __len__(self) -> int:
+        return len(self._last_used)
+
+
+valid_auth_tokens = _TokenStore()
 
 FORBIDDEN_ROOTS = [
     os.path.normpath(os.environ.get("SystemRoot", r"C:\Windows")).lower(),
@@ -801,7 +857,7 @@ def build_network_payload() -> Dict[str, Any]:
     now = _time.time()
     local_ip = get_local_ip()
     pub_ip = get_public_ip()
-    web_port = manager.config.get("web_port", 8080)
+    web_port = _valid_web_port(manager.config.get("web_port", 8080))
     mc_port = manager.get_server_port()
     lan_url = f"http://{local_ip}:{web_port}"
 
@@ -1093,6 +1149,18 @@ def execute_command(req: CommandRequest, request: Request):
         raise HTTPException(status_code=400, detail="Comando vuoto")
     return manager.send_command(req.command)
 
+# Regole di gioco mostrate dall'app (nomi fino alla 1.21.10; sui server più recenti il PC usa quelli nuovi)
+APP_GAMERULES = ["keepInventory", "mobGriefing", "doDaylightCycle", "doFireTick", "doWeatherCycle", "showDeathMessages"]
+
+@app.get("/api/server/gamerules")
+def get_gamerules(request: Request):
+    """Valori veri letti dalla console: prima l'app riceveva solo "Comando inviato" e mostrava valori predefiniti."""
+    verify_admin_access(request)
+    if manager.state != "ONLINE":
+        raise HTTPException(status_code=409, detail="Il server deve essere online per leggere le regole di gioco.")
+    return {"status": "success", "rules": manager.read_gamerules(APP_GAMERULES),
+            "new_names": manager.uses_new_gamerule_names()}
+
 # Chat & Talk Routes ("PARLARCI DENTRO")
 @app.get("/api/chat")
 def get_chat(request: Request, format: Optional[str] = None):
@@ -1344,7 +1412,12 @@ def update_config(req: ConfigUpdateRequest, request: Request):
             if not is_safe_server_path(req.server_run_bat):
                 raise HTTPException(status_code=400, detail="Percorso file di avvio non consentito per la sicurezza del sistema.")
         current = manager.config
-        update_data = req.dict(exclude_none=True)
+        update_data = req.model_dump(exclude_none=True)
+        # La porta del pannello resta quella che il programma sul PC e l'app si aspettano (8080): con un'altra il
+        # pannello non si apriva più, e un valore non valido impediva al programma di ripartire
+        update_data.pop("web_port", None)
+        if "crash_retry_delay_seconds" in update_data:
+            update_data["crash_retry_delay_seconds"] = max(3, min(600, int(update_data["crash_retry_delay_seconds"])))
         # Se admin_pin è vuoto o composto solo da spazi, mantieni il PIN attuale invece di sovrascriverlo
         if "admin_pin" in update_data and not str(update_data["admin_pin"]).strip():
             update_data.pop("admin_pin", None)
@@ -1712,7 +1785,7 @@ def api_get_system_about(request: Request):
         "server_dir": s_dir,
         "program_dir": prog_dir,
         "server_port": mc_port,
-        "web_port": manager.config.get("web_port", 8080),
+        "web_port": _valid_web_port(manager.config.get("web_port", 8080)),
         "mods_count": mods_count,
         "server_state": manager.state,
         "remote_active": bool(remote_access.get_status().get("active")),
@@ -2144,7 +2217,7 @@ async def _serve_all(port: int):
         await https_task
 
 if __name__ == "__main__":
-    port = manager.config.get("web_port", 8080)
+    port = _valid_web_port(manager.config.get("web_port", 8080))
     print(f"Avvio Voxarium su porta {port} (HTTPS da internet su {REMOTE_PORT})...")
     try:
         asyncio.run(_serve_all(port))

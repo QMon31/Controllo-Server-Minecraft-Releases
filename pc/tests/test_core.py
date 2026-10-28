@@ -238,6 +238,8 @@ class ServerManagerConfigTest(unittest.TestCase):
         def fail(*a, **k): raise OSError("ntfy irraggiungibile")
         def ok(req, timeout=0): sent.append(json.loads(req.data)); return _Resp()
 
+        real_urlopen = sm.urllib.request.urlopen   # modulo condiviso: va rimesso a posto alla fine
+        self.addCleanup(setattr, sm.urllib.request, "urlopen", real_urlopen)
         sm.urllib.request.urlopen = fail
         m.broadcast_network_sync("https://81.0.0.1:8443", "http://192.168.1.50:8080", "f" * 64)
         time.sleep(0.5)
@@ -1865,6 +1867,8 @@ class StoreInstallVersionTest(unittest.TestCase):
             if "/version" in url:
                 return io.BytesIO(json.dumps(versions).encode())
             return io.BytesIO(b"jar")
+        # modulo condiviso con gli altri test: va rimesso a posto alla fine
+        self.addCleanup(setattr, self.ms.urllib.request, "urlopen", self.ms.urllib.request.urlopen)
         self.ms.urllib.request.urlopen = urlopen
 
     def test_no_compatible_version_installs_nothing(self):

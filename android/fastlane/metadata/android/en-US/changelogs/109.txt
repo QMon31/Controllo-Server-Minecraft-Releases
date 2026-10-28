@@ -1,0 +1,1 @@
+Backup after stopping; status updated in every section; whitelist errors shown; real game rules also on Minecraft 1.21.11+.

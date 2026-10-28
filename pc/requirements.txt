@@ -1,8 +1,11 @@
-fastapi
-uvicorn
-psutil
-pydantic
-qrcode
+# Librerie del pannello (Linux: install.sh le installa con il Python del PC, che può essere più vecchio di quello
+# dell'installer Windows, quindi qui solo un limite massimo contro i cambi di versione che rompono il codice).
+# L'installer Windows usa le versioni esatte di requirements-lock.txt.
+fastapi<1.0
+uvicorn<1.0
+psutil<8
+pydantic>=2,<3
+qrcode<9
 pillow
 cryptography
 websockets

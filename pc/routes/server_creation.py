@@ -46,8 +46,11 @@ def api_forge_install(req: ForgeInstallRequest, request: Request):
         raise HTTPException(status_code=400, detail="Scegli la cartella in cui installare il server.")
     if not is_safe_server_path(req.target_dir):
         raise HTTPException(status_code=400, detail="Percorso di installazione non consentito per motivi di sicurezza.")
-    if manager.state == "ONLINE":
+    # Prima si controllava solo ONLINE: durante avvio o spegnimento il nuovo server prendeva il posto di quello acceso
+    if manager.state not in ("STOPPED", "CRASHED"):
         raise HTTPException(status_code=409, detail="Il server Minecraft è attualmente in esecuzione. Spegni il server attivo prima di procedere con una nuova installazione.")
+    if core.backup_mgr.is_running:
+        raise HTTPException(status_code=409, detail="Attendi la fine del backup o del ripristino in corso.")
     success = forge_installer.start_installation(
         target_dir=req.target_dir,
         server_type=req.server_type,
