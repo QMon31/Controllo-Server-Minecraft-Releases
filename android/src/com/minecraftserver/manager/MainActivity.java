@@ -58,8 +58,8 @@ import java.util.regex.Pattern;
 
 public class MainActivity extends Activity implements View.OnClickListener {
 
-    public static final int CURRENT_VERSION_CODE = 102;
-    public static final String CURRENT_VERSION_NAME = "4.12.5";
+    public static final int CURRENT_VERSION_CODE = 103;
+    public static final String CURRENT_VERSION_NAME = "4.13.0-beta.1";
 
     private int dpToPx(int dp) {
         return Math.round(dp * getResources().getDisplayMetrics().density);
@@ -225,6 +225,14 @@ public class MainActivity extends Activity implements View.OnClickListener {
     private static final String PREF_PUSH_SECRET = "push_secret";
     private String mLastNotifiedBackupDate = "";
     private String mServerState = "OFFLINE";
+    // Server (istanze) configurati sul PC: con più di uno la Dashboard mostra quale è attivo e permette di cambiarlo
+    private JSONArray mInstances = new JSONArray();
+    private String mActiveInstanceName = "";
+    private String mActiveInstanceDetails = "";  // tipo e versione del server attivo (es. "Fabric 1.21.4")
+    private long mLastInstancesFetch = 0;
+    private int mInstancesFailures = 0;  // letture dei server non riuscite di fila
+    private Button btnServerSwitch;
+    private TextView txtDrawerServerName;
 
     private int mCurrentSectionIndex = 0;
     private final Handler mPollHandler = new Handler(Looper.getMainLooper());
@@ -400,6 +408,9 @@ public class MainActivity extends Activity implements View.OnClickListener {
         progBarRam = findViewById(R.id.progBarRam);
         progBarCpu = findViewById(R.id.progBarCpu);
         btnActionStart = findViewById(R.id.btnActionStart);
+        btnServerSwitch = findViewById(R.id.btnServerSwitch);
+        txtDrawerServerName = findViewById(R.id.txtDrawerServerName);
+        txtDrawerServerName.setText(I18n.t("ui.server_principale"));
         btnActionRestart = findViewById(R.id.btnActionRestart);
         btnActionStop = findViewById(R.id.btnActionStop);
         btnQuickGoPlayers = findViewById(R.id.btnQuickGoPlayers);
@@ -582,6 +593,7 @@ public class MainActivity extends Activity implements View.OnClickListener {
         drawerItemSettings.setOnClickListener(this);
 
         btnActionStart.setOnClickListener(this);
+        btnServerSwitch.setOnClickListener(this);
         btnActionRestart.setOnClickListener(this);
         btnActionStop.setOnClickListener(this);
         btnQuickGoPlayers.setOnClickListener(this);
@@ -746,7 +758,7 @@ public class MainActivity extends Activity implements View.OnClickListener {
         switch (index) {
             case 0:
                 txtHeaderTitle.setText(I18n.t("ui.stato_server"));
-                txtHeaderSubtitle.setText("Server Forge 1.20.1");
+                txtHeaderSubtitle.setText(mActiveInstanceDetails.isEmpty() ? "Voxarium" : mActiveInstanceDetails);
                 fetchStatus();
                 break;
             case 1:
@@ -846,13 +858,17 @@ public class MainActivity extends Activity implements View.OnClickListener {
             selectSection(0);
         } else if (id == R.id.btnTopRefresh) {
             vibrate(20);
+            mLastInstancesFetch = 0;
             selectSection(mCurrentSectionIndex);
             fetchStatus();
             syncUrlsFromNtfy(false, null);
         }
 
         // Dashboard Actions
-        else if (id == R.id.btnActionStart) {
+        else if (id == R.id.btnServerSwitch) {
+            vibrate(20);
+            showServerPicker();
+        } else if (id == R.id.btnActionStart) {
             vibrate(40);
             actionStartServer();
         } else if (id == R.id.btnActionRestart) {
@@ -1269,6 +1285,12 @@ public class MainActivity extends Activity implements View.OnClickListener {
 
             @Override
             public void onError(final String error) {
+                if (error != null && error.matches("(?s)HTTP 4\\d\\d:.*") && !error.startsWith("HTTP 401") && !error.startsWith("HTTP 403")) {
+                    // Il PC ha risposto con un errore (es. "spegni prima il server"): è raggiungibile, quindi niente
+                    // passaggio all'altro indirizzo; prima si cambiava indirizzo a ogni errore e si ripeteva la richiesta
+                    callback.onError(error);
+                    return;
+                }
                 if (!isRetry && error != null && (error.contains("401") || error.contains("403")) && !"/api/auth/verify".equals(endpoint)) {
                     // Token non valido o scaduto: azzera, autentica con PIN e riprova la richiesta
                     mAuthToken = "";
@@ -1706,6 +1728,7 @@ public class MainActivity extends Activity implements View.OnClickListener {
                     mLastPushSyncAttempt = now;
                     ensureAuthToken(null);
                 }
+                fetchInstancesIfDue();
                 try {
                     JSONObject obj = new JSONObject(response);
                     String state = obj.optString("state", "OFFLINE");
@@ -2174,9 +2197,7 @@ public class MainActivity extends Activity implements View.OnClickListener {
                         submitCommand("gamemode spectator " + playerName);
                         I18n.makeText(MainActivity.this, I18n.t("app.impostato_spettatore", playerName), Toast.LENGTH_SHORT).show();
                     } else if (which == 6) {
-                        submitCommand("spawnpoint " + playerName);
-                        submitCommand("tp " + playerName + " 0 100 0");
-                        I18n.makeText(MainActivity.this, I18n.t("app.teletrasportato_allo_spawn", playerName), Toast.LENGTH_SHORT).show();
+                        teleportPlayerToSpawn(playerName);
                     } else if (which == 7) {
                         showPrivateMessageDialog(playerName);
                     } else if (which == 8) {
@@ -2190,6 +2211,29 @@ public class MainActivity extends Activity implements View.OnClickListener {
             })
             .setNegativeButton(I18n.t("app.annulla"), null)
             .show();
+    }
+
+    /** Spawn del mondo letto dal PC (level.dat). Prima: "spawnpoint" spostava lo spawn personale del giocatore dove si
+     *  trovava e poi lo mandava a 0 100 0, che di solito non è lo spawn (a mezz'aria o dentro la roccia). */
+    private void teleportPlayerToSpawn(final String playerName) {
+        try {
+            JSONObject body = new JSONObject();
+            body.put("player_name", playerName);
+            body.put("action", "spawn");
+            executeApiCall("/api/player/quick-action", "POST", body.toString(), new ApiClient.ApiCallback() {
+                @Override
+                public void onSuccess(String response) {
+                    I18n.makeText(MainActivity.this, I18n.t("app.teletrasportato_allo_spawn", playerName), Toast.LENGTH_SHORT).show();
+                }
+
+                @Override
+                public void onError(String error) {
+                    I18n.makeText(MainActivity.this, error, Toast.LENGTH_LONG).show();
+                }
+            });
+        } catch (Exception e) {
+            I18n.makeText(this, String.valueOf(e.getMessage()), Toast.LENGTH_SHORT).show();
+        }
     }
 
     private void showPrivateMessageDialog(final String playerName) {
@@ -3325,6 +3369,172 @@ public class MainActivity extends Activity implements View.OnClickListener {
             .show();
     }
 
+    // ================= PIÙ SERVER (ISTANZE) =================
+
+    /** Elenco dei server del PC, al massimo ogni 20 secondi (lo chiama fetchStatus). */
+    private void fetchInstancesIfDue() {
+        long now = System.currentTimeMillis();
+        if (now - mLastInstancesFetch < 20000) return;
+        mLastInstancesFetch = now;
+        fetchInstances(true);
+    }
+
+    private void fetchInstances() {
+        fetchInstances(false);
+    }
+
+    /** background: lettura periodica, senza login con PIN né passaggio all'indirizzo da internet se non riesce
+     *  (executeApiCall li farebbe a ogni errore, ogni 20 secondi). */
+    private void fetchInstances(final boolean background) {
+        ApiClient.ApiCallback cb = new ApiClient.ApiCallback() {
+            @Override
+            public void onSuccess(String response) {
+                try {
+                    mInstancesFailures = 0;
+                    JSONObject obj = new JSONObject(response);
+                    JSONArray list = obj.optJSONArray("instances");
+                    mInstances = list != null ? list : new JSONArray();
+                    JSONObject active = obj.optJSONObject("active_instance");
+                    mActiveInstanceName = active != null ? active.optString("name", "") : "";
+                    mActiveInstanceDetails = active != null
+                        ? (active.optString("server_type", "") + " " + active.optString("mc_version", "")).trim() : "";
+                    // Il sottotitolo della Dashboard dice quale server è; acceso, la versione la dà il server stesso
+                    // (se non la dà, resta questa al posto di "Voxarium")
+                    if (mCurrentSectionIndex == 0 && txtHeaderSubtitle != null && (!"ONLINE".equalsIgnoreCase(mServerState)
+                            || "Voxarium".contentEquals(txtHeaderSubtitle.getText()))) {
+                        txtHeaderSubtitle.setText(mActiveInstanceDetails.isEmpty() ? "Voxarium" : mActiveInstanceDetails);
+                    }
+                    updateServerSwitchUI();
+                } catch (Exception ignored) {
+                }
+            }
+
+            @Override
+            public void onError(String error) {
+                // PC non raggiungibile o login non ancora fatto (all'apertura dell'app): il selettore resta com'era.
+                // Si riprova tra 5 secondi, poi una volta al minuto (es. PIN rifiutato: niente richieste continue)
+                if (background) {
+                    mInstancesFailures++;
+                    mLastInstancesFetch = System.currentTimeMillis() + (mInstancesFailures == 1 ? -15000 : 40000);
+                }
+            }
+        };
+        String base = getEffectiveBaseUrl();
+        if (background) {
+            if (base != null && !base.isEmpty()) ApiClient.call(base + "/api/instances", "GET", null, mAuthToken, cb);
+        } else {
+            executeApiCall("/api/instances", "GET", null, cb);
+        }
+    }
+
+    private void updateServerSwitchUI() {
+        if (btnServerSwitch == null) return;
+        if (txtDrawerServerName != null) {
+            txtDrawerServerName.setText(mInstances.length() >= 2 && !mActiveInstanceName.isEmpty()
+                ? mActiveInstanceName : I18n.t("ui.server_principale"));
+        }
+        if (mInstances.length() < 2) {
+            btnServerSwitch.setVisibility(View.GONE);
+            return;
+        }
+        String name = mActiveInstanceName.isEmpty() ? "?" : mActiveInstanceName;
+        btnServerSwitch.setText(I18n.t("app.server_attivo_selettore", name, mInstances.length()));
+        btnServerSwitch.setVisibility(View.VISIBLE);
+    }
+
+    private boolean isServerStoppedForSwitch() {
+        return "OFFLINE".equalsIgnoreCase(mServerState) || "STOPPED".equalsIgnoreCase(mServerState)
+            || "CRASHED".equalsIgnoreCase(mServerState);
+    }
+
+    private void showServerPicker() {
+        final int n = mInstances.length();
+        if (n == 0) {
+            fetchInstances();
+            return;
+        }
+        final String[] items = new String[n];
+        final String[] ids = new String[n];
+        final String[] names = new String[n];
+        int activeIndex = -1;
+        for (int i = 0; i < n; i++) {
+            JSONObject inst = mInstances.optJSONObject(i);
+            if (inst == null) inst = new JSONObject();
+            ids[i] = inst.optString("id", "");
+            names[i] = inst.optString("name", "Server");
+            StringBuilder desc = new StringBuilder(names[i]);
+            String details = (inst.optString("server_type", "") + " " + inst.optString("mc_version", "")).trim();
+            int port = inst.optInt("server_port", 0);
+            if (port > 0) {
+                details = details.isEmpty() ? I18n.t("app.porta_n", port) : details + " • " + I18n.t("app.porta_n", port);
+            }
+            if (!details.isEmpty()) desc.append("\n").append(details);
+            if (inst.optBoolean("is_active", false)) {
+                activeIndex = i;
+                desc.append("\n").append(I18n.t("app.server_in_uso"));
+            }
+            if (!inst.optBoolean("dir_exists", true)) desc.append("\n").append(I18n.t("app.server_cartella_mancante"));
+            items[i] = desc.toString();
+        }
+        final int current = activeIndex;
+        new I18n.Builder(this)
+            .setTitle(I18n.t("app.scegli_server"))
+            .setSingleChoiceItems(items, current, new DialogInterface.OnClickListener() {
+                @Override
+                public void onClick(DialogInterface dialog, int which) {
+                    dialog.dismiss();
+                    if (which == current) return;
+                    switchToServer(ids[which], names[which]);
+                }
+            })
+            .setNegativeButton(I18n.t("app.annulla"), null)
+            .show();
+    }
+
+    private void switchToServer(final String instanceId, final String name) {
+        if (!isServerStoppedForSwitch()) {
+            // Sul PC gira un solo server alla volta: prima va spento quello attivo
+            new I18n.Builder(this)
+                .setTitle(I18n.t("app.server_attivo_2"))
+                .setMessage(I18n.t("app.spegni_prima_di_cambiare_server", mActiveInstanceName, name))
+                .setPositiveButton(I18n.t("app.spegni_server_ora"), new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        confirmStopServer();
+                    }
+                })
+                .setNegativeButton(I18n.t("app.annulla"), null)
+                .show();
+            return;
+        }
+        try {
+            JSONObject body = new JSONObject();
+            body.put("instance_id", instanceId);
+            executeApiCall("/api/instances/switch", "POST", body.toString(), new ApiClient.ApiCallback() {
+                @Override
+                public void onSuccess(String response) {
+                    I18n.makeText(MainActivity.this, I18n.t("app.server_attivato", name), Toast.LENGTH_SHORT).show();
+                    mActiveInstanceName = name;
+                    mLastInstancesFetch = 0;
+                    updateServerSwitchUI();
+                    fetchStatus();
+                    if (viewSettings.getVisibility() == View.VISIBLE) fetchBackupStatus();
+                }
+
+                @Override
+                public void onError(String error) {
+                    new I18n.Builder(MainActivity.this)
+                        .setTitle(I18n.t("app.cambio_server_non_riuscito"))
+                        .setMessage(error)
+                        .setPositiveButton("OK", null)
+                        .show();
+                }
+            });
+        } catch (Exception e) {
+            I18n.makeText(this, String.valueOf(e.getMessage()), Toast.LENGTH_SHORT).show();
+        }
+    }
+
     private void startRestoreAction() {
         if (!"OFFLINE".equalsIgnoreCase(mServerState) && !"STOPPED".equalsIgnoreCase(mServerState)) {
             new I18n.Builder(this)
@@ -3342,6 +3552,7 @@ public class MainActivity extends Activity implements View.OnClickListener {
         }
 
         I18n.makeText(this, I18n.t("app.ricerca_backup_disponibili_corso"), Toast.LENGTH_SHORT).show();
+        fetchInstances();  // nome del server attivo aggiornato per l'avviso sui backup di altri server
         executeApiCall("/api/backup/list", "GET", null, new ApiClient.ApiCallback() {
             @Override
             public void onSuccess(final String response) {
@@ -3363,6 +3574,9 @@ public class MainActivity extends Activity implements View.OnClickListener {
                             final String[] items = new String[backups.length()];
                             final String[] paths = new String[backups.length()];
                             final String[] labels = new String[backups.length()];
+                            // Di quale server è ogni backup: 1 = server attivo, 0 = un altro, -1 = non si sa (backup vecchio)
+                            final int[] sameServer = new int[backups.length()];
+                            final String[] backupServers = new String[backups.length()];
 
                             for (int i = 0; i < backups.length(); i++) {
                                 JSONObject b = backups.getJSONObject(i);
@@ -3374,6 +3588,14 @@ public class MainActivity extends Activity implements View.OnClickListener {
 
                                 String locLabel = "cloud".equalsIgnoreCase(loc) ? I18n.t("app.cloud_google_drive") : I18n.t("app.desktop_pc_2");
                                 String desc = locLabel + "\n" + filename + " (" + String.format(java.util.Locale.US, "%.1f MB", sizeMb) + ")\n" + mod;
+                                backupServers[i] = b.isNull("server_name") ? "" : b.optString("server_name", "");
+                                sameServer[i] = b.isNull("same_server") ? -1 : (b.optBoolean("same_server", false) ? 1 : 0);
+                                if (!backupServers[i].isEmpty()) {
+                                    desc += "\n" + I18n.t("app.backup_del_server", backupServers[i])
+                                        + (sameServer[i] == 1 ? " (" + I18n.t("app.server_in_uso") + ")" : "");
+                                } else if (mInstances.length() > 1) {
+                                    desc += "\n" + I18n.t("app.backup_server_non_indicato");
+                                }
                                 items[i] = desc;
                                 paths[i] = p;
                                 labels[i] = locLabel + " (" + filename + ")";
@@ -3384,7 +3606,7 @@ public class MainActivity extends Activity implements View.OnClickListener {
                                 .setItems(items, new DialogInterface.OnClickListener() {
                                     @Override
                                     public void onClick(DialogInterface dialog, int which) {
-                                        confirmExecuteRestore(paths[which], labels[which]);
+                                        confirmExecuteRestore(paths[which], labels[which], sameServer[which], backupServers[which]);
                                     }
                                 })
                                 .setNegativeButton(I18n.t("app.annulla"), null)
@@ -3409,22 +3631,37 @@ public class MainActivity extends Activity implements View.OnClickListener {
         });
     }
 
-    private void confirmExecuteRestore(final String sourcePath, final String label) {
+    private void confirmExecuteRestore(final String sourcePath, final String label, final int sameServer, final String backupServer) {
+        // Il ripristino cancella i file che non sono nel backup: un backup di un altro server sostituirebbe
+        // tutto il server attivo, quindi lo si dice chiaramente (il PC lo accetta solo con confirm_other_server)
+        String current = mActiveInstanceName.isEmpty() ? "?" : mActiveInstanceName;
+        String message;
+        if (sameServer == 0) {
+            String other = backupServer.isEmpty() ? "?" : backupServer;
+            message = I18n.t("app.backup_altro_server_conferma", other, current, current, other);
+        } else if (sameServer == -1 && mInstances.length() > 1) {
+            message = I18n.t("app.backup_server_ignoto_conferma", current);
+        } else {
+            message = I18n.t("app.attenzione_ripristino_sovrascrivera", label);
+        }
+        // Conferma per il PC solo se l'utente ha letto l'avviso; altrimenti è il PC a fermare il ripristino (409) e
+        // l'app ne mostra il messaggio (es. elenco dei server non ancora letto)
+        final boolean confirmOther = sameServer == 0 || (sameServer == -1 && mInstances.length() > 1);
         new I18n.Builder(this)
             .setTitle(I18n.t("app.conferma_ripristino_backup"))
-            .setMessage(I18n.t("app.attenzione_ripristino_sovrascrivera", label))
+            .setMessage(message)
             .setIcon(android.R.drawable.ic_dialog_alert)
             .setPositiveButton(I18n.t("app.si_ripristina_mondo"), new DialogInterface.OnClickListener() {
                 @Override
                 public void onClick(DialogInterface dialog, int which) {
-                    executeRestoreApi(sourcePath);
+                    executeRestoreApi(sourcePath, confirmOther);
                 }
             })
             .setNegativeButton(I18n.t("app.annulla"), null)
             .show();
     }
 
-    private void executeRestoreApi(String sourcePath) {
+    private void executeRestoreApi(String sourcePath, boolean confirmOtherServer) {
         if (btnRestoreBackup != null) btnRestoreBackup.setEnabled(false);
         if (btnTriggerBackup != null) btnTriggerBackup.setEnabled(false);
         progBarBackup.setVisibility(View.VISIBLE);
@@ -3435,6 +3672,7 @@ public class MainActivity extends Activity implements View.OnClickListener {
         try {
             JSONObject body = new JSONObject();
             body.put("source_path", sourcePath);
+            if (confirmOtherServer) body.put("confirm_other_server", true);
 
             executeApiCall("/api/backup/restore", "POST", body.toString(), new ApiClient.ApiCallback() {
                 @Override

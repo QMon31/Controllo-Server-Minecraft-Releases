@@ -57,6 +57,9 @@ class LaunchScriptTest(unittest.TestCase):
                              ["java", "-Xmx4G", "-jar", "server.jar", "nogui"])
             self.assertEqual(platform_utils.split_java_line("java -jar server.jar"),
                              ["java", "-jar", "server.jar", "nogui"])
+            # run.bat creato dal pannello: "nogui %*" dava "nogui nogui"
+            self.assertEqual(platform_utils.split_java_line("java -Xms8G -Xmx8G -jar server.jar nogui %*"),
+                             ["java", "-Xms8G", "-Xmx8G", "-jar", "server.jar", "nogui"])
 
     def test_split_java_line_linux(self):
         with mock.patch.object(platform_utils, "IS_WINDOWS", False):

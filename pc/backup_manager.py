@@ -35,6 +35,31 @@ def _make_writable(path: str):
 BACKUP_INFO_NAME = "__backup_info.json"
 BACKUP_IGNORED_DIRS = {"backups", ".git", "crash-reports", ".cache"}
 BACKUP_IGNORED_FILES = {"desktop.ini", "thumbs.db", ".ds_store", "session.lock", "backup_server_mc.zip"}
+# Nome dell'unico backup delle versioni fino alla 4.20.2, uguale per tutti i server
+LEGACY_BACKUP_FILENAME = "Backup_Server_Mc.zip"
+
+
+def _norm_dir(path: Optional[str]) -> str:
+    return os.path.normcase(os.path.abspath(path)) if path else ""
+
+
+def _slug(name: str) -> str:
+    """Nome del server utilizzabile in un nome di file (lettere, numeri, - e _)."""
+    out = "".join(c if (c.isalnum() or c in "-_") else "_" for c in (name or "").strip())
+    out = "_".join(p for p in out.split("_") if p)[:40].strip("_-")
+    return out or "Server"
+
+
+def read_backup_info(path: str) -> Dict[str, Any]:
+    """Metadati scritti dentro lo ZIP dal backup ({} se mancano: archivi vecchi o non creati da Voxarium)."""
+    try:
+        with zipfile.ZipFile(path, "r") as zf:
+            if BACKUP_INFO_NAME in zf.namelist():
+                meta = json.loads(zf.read(BACKUP_INFO_NAME).decode("utf-8"))
+                return meta if isinstance(meta, dict) else {}
+    except Exception:
+        pass
+    return {}
 
 
 def _is_excluded_from_backup(rel_path: str, exclude_lod_cache: bool) -> bool:
@@ -62,8 +87,12 @@ class BackupManager:
             if not os.path.exists(desktop_dir):
                 desktop_dir = user_profile
         self.desktop_dir = os.path.abspath(desktop_dir)
-        self.target_filename = "Backup_Server_Mc.zip"
-        self.target_path = os.path.join(self.desktop_dir, self.target_filename)
+        # Chi usa il backup manager può dire come si chiama il server di una cartella e quanti server ci sono:
+        # server_info_cb(server_dir) -> {"id": ..., "name": ..., "servers": n}
+        self.server_info_cb: Optional[Callable[[str], Dict[str, Any]]] = None
+        self._info_cache: Dict[str, Any] = {}
+        # Destinazione del backup in corso: resta quella anche se nel frattempo si cambia server attivo
+        self._job_target: Optional[str] = None
 
         self.is_running: bool = False
         self.cancel_requested: bool = False
@@ -94,6 +123,68 @@ class BackupManager:
         
         self.progress_subscribers: List[Callable[[Dict[str, Any]], None]] = []
 
+    # ---- Un backup per ogni server ----
+    def server_identity(self) -> Dict[str, Any]:
+        """Il server di cui si fa il backup ora: id dell'istanza, nome, cartella e quanti server ci sono."""
+        info: Dict[str, Any] = {}
+        if self.server_info_cb and self.server_dir:
+            try:
+                info = self.server_info_cb(self.server_dir) or {}
+            except Exception:
+                info = {}
+        name = info.get("name") or (os.path.basename(os.path.normpath(self.server_dir)) if self.server_dir else "")
+        return {"server_id": info.get("id") or "", "server_name": name or "Server",
+                "server_dir": self.server_dir, "servers": info.get("servers")}
+
+    def _cached_info(self, path: str) -> Dict[str, Any]:
+        """read_backup_info con una cache (gli ZIP grandi hanno migliaia di file da elencare)."""
+        try:
+            st = os.stat(path)
+        except OSError:
+            return {}
+        key = (os.path.normcase(path), st.st_mtime, st.st_size)
+        hit = self._info_cache.get(key[0])
+        if hit and hit[0] == key:
+            return hit[1]
+        meta = read_backup_info(path)
+        self._info_cache[key[0]] = (key, meta)
+        return meta
+
+    def belongs_to_current(self, meta: Dict[str, Any]) -> Optional[bool]:
+        """True se il backup è del server attivo, False se è di un altro, None se non si sa (backup vecchio)."""
+        ident = self.server_identity()
+        known = False
+        if meta.get("server_id") and ident["server_id"]:
+            known = True
+            if meta["server_id"] == ident["server_id"]:
+                return True
+        if meta.get("server_dir") and self.server_dir:
+            # Stessa cartella = stessi file, anche se il server è stato tolto e aggiunto di nuovo (id nuovo)
+            known = True
+            if _norm_dir(meta["server_dir"]) == _norm_dir(self.server_dir):
+                return True
+        return False if known else None
+
+    @property
+    def target_filename(self) -> str:
+        """Backup_<NomeServer>.zip; se esiste già un file con quel nome di un altro server (due server con lo
+        stesso nome) si aggiunge un codice ricavato dal server, così non si sovrascrivono mai a vicenda."""
+        if self._job_target:
+            return os.path.basename(self._job_target)
+        ident = self.server_identity()
+        name = f"Backup_{_slug(ident['server_name'])}.zip"
+        path = os.path.join(self.desktop_dir, name)
+        if name.lower() == LEGACY_BACKUP_FILENAME.lower() or (
+                os.path.isfile(path) and self.belongs_to_current(self._cached_info(path)) is not True):
+            import hashlib
+            code = hashlib.sha1((ident["server_id"] or _norm_dir(self.server_dir)).encode("utf-8")).hexdigest()[:6]
+            name = f"Backup_{_slug(ident['server_name'])}_{code}.zip"
+        return name
+
+    @property
+    def target_path(self) -> str:
+        return self._job_target or os.path.join(self.desktop_dir, self.target_filename)
+
     def subscribe_progress(self, callback: Callable[[Dict[str, Any]], None]):
         with self.lock:
             if callback not in self.progress_subscribers:
@@ -110,6 +201,11 @@ class BackupManager:
     def get_status(self) -> Dict[str, Any]:
         with self.lock:
             st = dict(self.progress)
+            if not self.is_running:
+                # Finita l'operazione, il file è quello del server attivo (dopo un ripristino o un cambio di server
+                # restava il nome dell'archivio usato l'ultima volta, magari di un altro server)
+                st["target_path"] = self.target_path
+                st["target_filename"] = self.target_filename
             st["existing_backup_exists"] = os.path.exists(self.target_path)
             if st["existing_backup_exists"] and not self.is_running:
                 try:
@@ -149,6 +245,10 @@ class BackupManager:
                     "message": f"Cartella del server Minecraft non configurata o non trovata: {self.server_dir}"
                 }
 
+            self._job_target = None
+            self._job_identity = self.server_identity()
+            self._job_target = os.path.join(self.desktop_dir, self.target_filename)
+            self._job_server_dir = self.server_dir
             self.is_running = True
             self.cancel_requested = False
             self.exclude_lod_cache = bool(exclude_lod_cache)
@@ -156,6 +256,7 @@ class BackupManager:
             self._active_zf = None
             self.progress = {
                 "operation": "backup",
+                "server_name": self._job_identity["server_name"],
                 "active": True,
                 "percent": 0,
                 "processed_mb": 0.0,
@@ -218,6 +319,17 @@ class BackupManager:
         return {"status": "success", "message": "Richiesta di blocco / annullamento inviata."}
 
     def _run_backup_worker(self):
+        my_target = self._job_target
+        try:
+            self._run_backup_job(self._job_server_dir)
+        finally:
+            with self.lock:
+                # Solo la propria destinazione: un nuovo backup può essere già partito (is_running torna False
+                # prima di qui, e dopo un annullamento forzato anche con questo thread ancora vivo)
+                if self._job_target == my_target:
+                    self._job_target = None
+
+    def _run_backup_job(self, server_dir: str):
         start_time = time.time()
         # Con la copia su Google Drive la barra è divisa: compressione 0-50%, copia 50-100%
         pct_scale = 0.5 if self._will_copy_to_cloud() else 1.0
@@ -239,7 +351,7 @@ class BackupManager:
 
             files_to_pack = []
             total_bytes = 0
-            for root, dirs, files in os.walk(self.server_dir):
+            for root, dirs, files in os.walk(server_dir):
                 if self.cancel_requested:
                     raise InterruptedError("Operazione annullata dall'utente.")
 
@@ -254,7 +366,7 @@ class BackupManager:
                     if self.cancel_requested:
                         raise InterruptedError("Operazione annullata dall'utente.")
                     full_p = os.path.join(root, f)
-                    rel_p = os.path.relpath(full_p, self.server_dir)
+                    rel_p = os.path.relpath(full_p, server_dir)
                     if f == self.target_filename or _is_excluded_from_backup(rel_p, self.exclude_lod_cache):
                         continue
                     try:
@@ -382,8 +494,12 @@ class BackupManager:
                 # Metadati del backup: servono al ripristino per sapere cosa era stato escluso
                 if not self.cancel_requested:
                     zf.writestr(BACKUP_INFO_NAME, json.dumps({
-                        "format": 1,
+                        "format": 2,
                         "created_at": datetime.now().isoformat(timespec="seconds"),
+                        # Di quale server è: il ripristino avvisa se lo si vuole estrarre in un altro
+                        "server_id": self._job_identity.get("server_id", ""),
+                        "server_name": self._job_identity.get("server_name", ""),
+                        "server_dir": server_dir,
                         "exclude_lod_cache": bool(self.exclude_lod_cache),
                         "ignored_dirs": sorted(BACKUP_IGNORED_DIRS),
                         "skipped": sorted(skipped_files),
@@ -394,7 +510,7 @@ class BackupManager:
             if self.cancel_requested:
                 raise InterruptedError("Operazione annullata dall'utente.")
 
-            # 4. Step: Atomic rename from .tmp to final Backup_Server_Mc.zip
+            # 4. Step: Atomic rename from .tmp to final Backup_<NomeServer>.zip
             if os.path.exists(temp_zip_path):
                 os.replace(temp_zip_path, self.target_path)
 
@@ -610,27 +726,54 @@ class BackupManager:
             return dict(info, problem="size")
         return None
 
+    def _backup_entry(self, path: str, location: str, entry_id: str) -> Optional[Dict[str, Any]]:
+        try:
+            sz = os.path.getsize(path)
+            formatted_d = datetime.fromtimestamp(os.path.getmtime(path)).strftime("%d/%m/%Y %H:%M:%S")
+        except OSError:
+            return None
+        meta = self._cached_info(path)
+        return {
+            "id": entry_id,
+            "location": location,
+            "location_label": "Desktop" if location == "desktop" else "Google Drive / Cloud",
+            "path": path,
+            "filename": os.path.basename(path),
+            "size_mb": round(sz / (1024 * 1024), 1),
+            "date": formatted_d,
+            "modified": formatted_d,
+            # Di quale server è (None per i backup delle versioni precedenti, che non lo scrivevano)
+            "server_name": meta.get("server_name") or None,
+            "same_server": self.belongs_to_current(meta),
+        }
+
+    @staticmethod
+    def _is_our_backup_name(filename: str) -> bool:
+        low = filename.lower()
+        return low.endswith(".zip") and low.startswith("backup_")
+
     def list_available_backups(self) -> List[Dict[str, Any]]:
+        """Backup sul Desktop (uno per server, più quello unico delle versioni precedenti) e su Google Drive.
+        Prima quelli del server attivo."""
         backups = []
-        # 1. Desktop backup
-        if os.path.exists(self.target_path):
-            try:
-                sz = os.path.getsize(self.target_path)
-                mtime = os.path.getmtime(self.target_path)
-                formatted_d = datetime.fromtimestamp(mtime).strftime("%d/%m/%Y %H:%M:%S")
-                backups.append({
-                    "id": "desktop",
-                    "location": "desktop",
-                    "location_label": "Desktop",
-                    "path": self.target_path,
-                    "filename": self.target_filename,
-                    "size_mb": round(sz / (1024 * 1024), 1),
-                    "date": formatted_d,
-                    "modified": formatted_d
-                })
-            except Exception:
-                pass
-        
+        current = os.path.normcase(self.target_path)
+        # 1. Desktop: "desktop" resta l'id del backup del server attivo (lo usano le versioni precedenti dell'app)
+        try:
+            names = sorted(os.listdir(self.desktop_dir)) if os.path.isdir(self.desktop_dir) else []
+        except OSError:
+            names = []
+        for f in names:
+            fp = os.path.join(self.desktop_dir, f)
+            if not self._is_our_backup_name(f) or not os.path.isfile(fp):
+                continue
+            # Sul Desktop solo i file creati da Voxarium (con i metadati) o il backup unico delle versioni precedenti
+            if f.lower() != LEGACY_BACKUP_FILENAME.lower() and not self._cached_info(fp):
+                continue
+            is_current = os.path.normcase(fp) == current
+            entry = self._backup_entry(fp, "desktop", "desktop" if is_current else f"desktop_{f}")
+            if entry:
+                backups.append(entry)
+
         # 2. Cloud sync backups
         if self.cloud_sync_dir and os.path.isdir(self.cloud_sync_dir):
             try:
@@ -638,25 +781,15 @@ class BackupManager:
                     for f in files:
                         if f.lower().endswith(".zip") and "backup" in f.lower():
                             fp = os.path.join(root, f)
-                            if fp != self.target_path:
-                                try:
-                                    sz = os.path.getsize(fp)
-                                    mtime = os.path.getmtime(fp)
-                                    formatted_d = datetime.fromtimestamp(mtime).strftime("%d/%m/%Y %H:%M:%S")
-                                    backups.append({
-                                        "id": f"cloud_{f}",
-                                        "location": "cloud",
-                                        "location_label": "Google Drive / Cloud",
-                                        "path": fp,
-                                        "filename": f,
-                                        "size_mb": round(sz / (1024 * 1024), 1),
-                                        "date": formatted_d,
-                                        "modified": formatted_d
-                                    })
-                                except Exception:
-                                    pass
+                            if os.path.normcase(fp) != current:
+                                entry = self._backup_entry(fp, "cloud", f"cloud_{f}")
+                                if entry:
+                                    backups.append(entry)
             except Exception:
                 pass
+        # Prima il server attivo, poi i backup vecchi senza nome del server, poi gli altri server
+        order = {True: 0, None: 1, False: 2}
+        backups.sort(key=lambda b: (order[b["same_server"]], b["location"] != "desktop"))
         return backups
 
     def _resolve_known_backup(self, id_or_path: Optional[str]) -> Optional[str]:
@@ -689,7 +822,32 @@ class BackupManager:
         except Exception as e:
             return {"status": "error", "message": f"Errore durante l'eliminazione del backup: {e}"}
 
-    def start_restore(self, is_server_stopped: bool, source_path: Optional[str] = None) -> Dict[str, Any]:
+    def restore_check(self, src: str) -> Optional[Dict[str, Any]]:
+        """None se il backup si può ripristinare nel server attivo senza chiedere; altrimenti l'errore da mostrare
+        (code "other_server": è di un altro server; "unknown_server": backup vecchio, con più server non si sa di quale)."""
+        meta = self._cached_info(src)
+        same = self.belongs_to_current(meta)
+        ident = self.server_identity()
+        if same is True:
+            return None
+        if same is None:
+            # Con un solo server il backup vecchio non può che essere suo
+            if ident.get("servers") is None or ident["servers"] <= 1:
+                return None
+            return {"status": "error", "code": "unknown_server", "backup_server": None,
+                    "current_server": ident["server_name"],
+                    "message": (f"Non si sa di quale server sia questo backup (creato con una versione precedente). "
+                                f"Il ripristino sostituisce tutti i file del server attivo \"{ident['server_name']}\": "
+                                f"conferma dal pannello sul PC se è davvero suo.")}
+        other = meta.get("server_name") or "?"
+        return {"status": "error", "code": "other_server", "backup_server": other,
+                "current_server": ident["server_name"],
+                "message": (f"Questo backup è del server \"{other}\", ma il server attivo è \"{ident['server_name']}\". "
+                            f"Il ripristino sostituirebbe tutti i suoi file con quelli dell'altro server: "
+                            f"attiva prima il server \"{other}\" oppure conferma dal pannello sul PC.")}
+
+    def start_restore(self, is_server_stopped: bool, source_path: Optional[str] = None,
+                      confirm_other_server: bool = False) -> Dict[str, Any]:
         with self.lock:
             if self.is_running:
                 return {"status": "error", "message": "Un'operazione di backup o ripristino è già in corso."}
@@ -702,6 +860,12 @@ class BackupManager:
             src = self._resolve_known_backup(source_path)
             if not src or not os.path.exists(src):
                 return {"status": "error", "message": f"File di backup non trovato: {source_path or self.target_filename}"}
+
+            # Il ripristino cancella i file che non sono nel backup: un backup di un altro server sostituirebbe
+            # tutto il server attivo. Si fa solo se l'utente lo conferma.
+            check = self.restore_check(src)
+            if check and not confirm_other_server:
+                return check
 
             self.is_running = True
             self.cancel_requested = False

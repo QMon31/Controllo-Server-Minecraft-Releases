@@ -476,8 +476,8 @@ def search_modrinth(
 def install_modrinth_project(
     project_id_or_slug: str,
     server_dir: str,
-    loader: str = "forge",
-    version: str = "1.20.1",
+    loader: str = "",
+    version: str = "",
     target_subdir: str = ""
 ) -> Dict[str, Any]:
     """Finds compatible version file, downloads .jar into server's mods or plugins folder, and registers in ledger."""
@@ -486,7 +486,7 @@ def install_modrinth_project(
 
     # Decide target folder: if server_type or loader is paper/spigot/purpur -> plugins, else mods
     if not target_subdir:
-        if loader.lower() in ["paper", "spigot", "purpur", "bukkit", "plugin"]:
+        if (loader or "").lower() in ["paper", "spigot", "purpur", "bukkit", "plugin"]:
             target_subdir = "plugins"
         else:
             target_subdir = "mods"
@@ -494,15 +494,15 @@ def install_modrinth_project(
     dest_folder = os.path.join(server_dir, target_subdir)
     os.makedirs(dest_folder, exist_ok=True)
 
-    # 1. Fetch versions for project
-    loaders_filter = json.dumps([loader.lower()]) if loader and loader.lower() not in ["all", "tutti"] else None
-    versions_filter = json.dumps([version.strip()]) if version and version.lower() not in ["all", "tutte"] else None
-
+    # 1. Fetch versions for project (stesse regole dei controlli degli aggiornamenti: Paper accetta i plugin
+    # Spigot/Bukkit, Quilt le mod Fabric). Senza loader o versione si cercano tutte.
+    has_loader = bool(loader) and loader.lower() not in ["all", "tutti", "vanilla"]
+    has_version = bool(version) and version.lower() not in ["all", "tutte"]
     query_params = {}
-    if loaders_filter:
-        query_params["loaders"] = loaders_filter
-    if versions_filter:
-        query_params["game_versions"] = versions_filter
+    if has_loader:
+        query_params["loaders"] = json.dumps(get_loader_filters(loader, folder=target_subdir))
+    if has_version:
+        query_params["game_versions"] = json.dumps([version.strip()])
 
     q_str = f"?{urllib.parse.urlencode(query_params)}" if query_params else ""
     url = f"https://api.modrinth.com/v2/project/{urllib.parse.quote(project_id_or_slug)}/version{q_str}"
@@ -514,14 +514,11 @@ def install_modrinth_project(
     except Exception as e:
         return {"success": False, "error": f"Errore recupero versioni da Modrinth: {e}"}
 
-    if not v_list or not isinstance(v_list, list):
-        fallback_url = f"https://api.modrinth.com/v2/project/{urllib.parse.quote(project_id_or_slug)}/version"
-        try:
-            req_fb = urllib.request.Request(fallback_url, headers={"User-Agent": USER_AGENT})
-            with urllib.request.urlopen(req_fb, timeout=12) as resp:
-                v_list = json.loads(resp.read().decode("utf-8"))
-        except Exception:
-            return {"success": False, "error": f"Nessuna versione compatibile trovata su Modrinth per {loader} {version}."}
+    # Nessuna versione per questo server: si dice, senza scaricare quella più recente qualunque (prima finiva nella
+    # cartella una mod per un'altra versione di Minecraft o un altro loader, che può far crashare il server)
+    if (not v_list or not isinstance(v_list, list)) and query_params:
+        what = " ".join(x for x in (loader if has_loader else "", version if has_version else "") if x)
+        return {"success": False, "error": f"Nessuna versione di questo progetto è compatibile con il server ({what})."}
 
     if not v_list:
         return {"success": False, "error": "Nessuna versione disponibile per questo progetto."}

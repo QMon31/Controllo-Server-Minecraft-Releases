@@ -128,7 +128,7 @@
 
       <button class="sidebar-nav-item" id="snav-changelog" onclick="toggleSidebarDrawer(false); openChangelogModal();">
         <span class="snav-icon info-circle-nav-icon">i</span>
-        <span class="snav-label">Info &amp; Versioni (v4.20.2)</span>
+        <span class="snav-label">Info &amp; Versioni (v4.21.0)</span>
       </button>
 
       <button class="sidebar-nav-item" id="snav-settings" onclick="toggleSidebarDrawer(false); openSettingsModal();">
@@ -2133,7 +2133,7 @@
               <div class="backup-info-row" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px;">
                 <div>
                   <span class="backup-info-label" data-i18n="ui.destinazione">Destinazione:</span>
-                  <code class="backup-code">Desktop\Backup_Server_Mc.zip</code>
+                  <code class="backup-code" id="backup-target-code">Desktop\Backup_Server_Mc.zip</code>
                 </div>
                 <button type="button" class="btn btn-xs btn-secondary host-only-item" onclick="openBackupFolderInExplorer()" title="Apri cartella del backup sul PC" data-i18n-title="ui.apri_cartella_backup_sul_pc" data-i18n="ui.apri_cartella">Apri Cartella</button>
               </div>
@@ -2687,7 +2687,7 @@
           <div class="modal-info-circle-badge">i</div>
           <div>
             <h3 style="margin: 0; font-size: 1.15rem; color: #f4f4f5;" data-i18n="ui.informazioni_novita_cronologia_versioni">Informazioni, Novità &amp; Cronologia Versioni</h3>
-            <span id="changelog-header-badge" style="font-size: 0.75rem; color: #8db6e8; font-weight: 600;">Release Ufficiale v4.20.2 (Build 100) &bull; Attiva</span>
+            <span id="changelog-header-badge" style="font-size: 0.75rem; color: #8db6e8; font-weight: 600;">Release Ufficiale v4.21.0 (Build 101) &bull; Attiva</span>
           </div>
         </div>
         <div style="display: flex; gap: 8px; align-items: center;">
@@ -2703,7 +2703,7 @@
             <div class="row-center">
               <span style="font-size: 1.1rem;"></span>
               <span style="font-size: 0.92rem; font-weight: 700; color: #f4f4f5;" data-i18n="ui.diagnostica_specifiche_sistema">Diagnostica &amp; Specifiche di Sistema</span>
-              <span id="sys-release-badge" class="badge badge-emerald" style="font-size: 0.7rem;">v4.20.2 (Build 100)</span>
+              <span id="sys-release-badge" class="badge badge-emerald" style="font-size: 0.7rem;">v4.21.0 (Build 101)</span>
               <button class="btn btn-xs btn-secondary" onclick="checkPcUpdate(true)" title="Verifica la disponibilità di una nuova versione del programma PC" data-i18n-title="ui.verifica_disponibilita_nuova_versione_programma" data-i18n="ui.controlla_aggiornamenti_programma">Controlla aggiornamenti programma</button>
             </div>
             <div style="display: flex; gap: 6px;">
@@ -2756,7 +2756,7 @@
         <!-- SEZIONE 1: ULTIME NOVITÀ -->
         <h4 style="margin: 0 0 10px; color: #f4f4f5; font-size: 1rem; display: flex; align-items: center; gap: 8px;">
           <span></span>
-          <span>Novità Ultimo Aggiornamento (PC v4.20.2 - Build 100 &bull; App v4.12.5 - Build 102):</span>
+          <span>Novità Ultimo Aggiornamento (PC v4.21.0 - Build 101 &bull; App v4.12.5 - Build 102):</span>
         </h4>
 
         <!-- SOTTOSEZIONE: PC (Visibile solo su PC o in modalità Tutti) -->
@@ -2766,6 +2766,8 @@
             <span data-i18n="ui.novita_pc_server_pannello_desktop">NOVITÀ PER PC (Server &amp; Pannello Desktop):</span>
           </h5>
           <ul style="margin: 0; padding-left: 20px; font-size: 0.85rem; color: #e7e7e9; display: flex; flex-direction: column; gap: 8px;">
+            <li><b>Backup per ogni server (v4.21.0)</b><span data-i18n="notes.backup_ogni_server_ripristino">: ogni server ha il suo backup (Backup_NomeServer.zip sul Desktop e su Google Drive) invece di un unico file che ogni server sovrascriveva; il ripristino di un backup nel server sbagliato chiede conferma.</span></li>
+            <li><b>Sicurezza e correzioni (v4.21.0)</b><span data-i18n="notes.sicurezza_pin_internet_correzioni">: da internet, dopo troppi PIN sbagliati il PIN viene bloccato per un'ora e arriva un avviso sul telefono; senza PIN non si vedono più il nome del PC e gli indirizzi di casa; il teletrasporto allo spawn porta allo spawn del mondo; lo stato ONLINE torna spento quando il server non risponde più; Arresta durante un riavvio lo annulla; installazione e aggiornamento delle mod dal negozio corretti.</span></li>
             <li><b>Installazione con winget (v4.20.2)</b><span data-i18n="notes.winget_silent_app_installate">: Voxarium si può installare anche con winget (winget install QMon31.Voxarium) e l'installer accetta --silent per installare senza domande; in &quot;App installate&quot; compaiono la versione vera e l'editore; i collegamenti su Desktop e Menu Start mostrano la nuova icona.</span></li>
             <li><b>Nuova icona e correzioni (v4.20.1)</b><span data-i18n="notes.icona_lingue_licenze_pannello">: nuova icona di Voxarium, disegnata da zero (prima era il blocco d'erba di Minecraft); menu dell'icona vicino all'orologio, avvisi e finestra di caricamento nelle 6 lingue; l'installazione contiene i testi delle licenze; nel pannello i pulsanti dei File e degli Errori hanno le scritte, Console e File si usano anche dal telefono, menu laterale e Store non tagliano più le scritte lunghe.</span></li>
             <li><b>PC Remoti aggiornati da soli (v4.20.0)</b><span data-i18n="notes.pc_remoti_aggiornamento_impostazioni">: i PC con Controllo Remoto controllano da soli le nuove versioni e chiedono se aggiornarsi (anche dalla voce &quot;Controlla aggiornamenti&quot; nel menu dell'icona); gli aggiornamenti non riaccendono più l'avvio automatico spento, non ricreano i collegamenti cancellati e non chiedono ogni volta il permesso di amministratore; i PC Linux trovano la loro versione anche dopo molte release per Windows.</span></li>

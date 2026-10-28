@@ -1,7 +1,7 @@
 # Ricetta per F-Droid (va nel repository fdroiddata: metadata/com.minecraftserver.manager.yml).
 Categories:
-  - Games
-  - Internet
+  - Game Helper
+  - Remote Access
 License: GPL-3.0-only
 AuthorName: QMon31
 SourceCode: https://github.com/QMon31/Voxarium
@@ -16,7 +16,7 @@ Repo: https://github.com/QMon31/Voxarium.git
 Builds:
   - versionName: 4.12.5
     versionCode: 102
-    commit: android-v4.12.5-b102
+    commit: 2adfe8baca9639d062327748cb15af723951ef29
     subdir: android
     gradle:
       - fdroid

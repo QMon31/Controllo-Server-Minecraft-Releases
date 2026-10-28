@@ -36,6 +36,9 @@ def api_get_instances(request: Request):
 @router.post("/api/instances/switch")
 def api_switch_instance(req: SwitchInstanceRequest, request: Request):
     verify_admin_access(request)
+    if backup_mgr.is_running:
+        # Il backup o il ripristino lavora sulla cartella del server attivo
+        raise HTTPException(status_code=409, detail="Attendi la fine del backup o del ripristino in corso.")
     res = instance_manager.switch_instance(req.instance_id, manager=manager)
     if not res.get("success"):
         raise HTTPException(status_code=409, detail=res.get("error", "Impossibile cambiare istanza"))

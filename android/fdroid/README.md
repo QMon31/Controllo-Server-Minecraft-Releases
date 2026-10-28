@@ -1,7 +1,8 @@
 # Voxarium su F-Droid
 
 Preparato il 27/10/2026. Prima versione per F-Droid: **v4.12.5 (Build 102)**, tag `android-v4.12.5-b102` nel
-repository pubblico `QMon31/Voxarium`. La richiesta a F-Droid la manda l'utente (serve un account GitLab).
+repository pubblico `QMon31/Voxarium`. Richiesta inviata il 27/10/2026: merge request
+https://gitlab.com/fdroid/fdroiddata/-/merge_requests/54519 (ramo `com.minecraftserver.manager`; la ricetta là punta al commit pubblico `2adfe8b`, con icona e screenshot).
 
 ## Come funziona
 

@@ -18,7 +18,7 @@ import urllib.request
 import urllib.parse
 from datetime import datetime
 from collections import deque
-from typing import Dict, Any, List, Optional, Callable
+from typing import Dict, Any, List, Optional, Callable, Tuple
 import shutil
 
 import psutil
@@ -39,6 +39,59 @@ def is_legacy_topic(topic) -> bool:
     return bool(topic) and hashlib.sha256(str(topic).encode("utf-8")).hexdigest() in LEGACY_TOPIC_HASHES
 
 DEFAULT_CONFIG_PATH =os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
+
+def _read_nbt(f, tag_type):
+    """Valore di un tag NBT (formato dei file di Minecraft) letto dal file già aperto."""
+    import struct
+    rd = lambda fmt: struct.unpack(">" + fmt, f.read(struct.calcsize(">" + fmt)))[0]
+    if tag_type == 1: return rd("b")
+    if tag_type == 2: return rd("h")
+    if tag_type == 3: return rd("i")
+    if tag_type == 4: return rd("q")
+    if tag_type == 5: return rd("f")
+    if tag_type == 6: return rd("d")
+    if tag_type == 7: return f.read(rd("i"))
+    if tag_type == 8: return f.read(rd("H")).decode("utf-8", "replace")
+    if tag_type == 9:
+        item_type, n = rd("b"), rd("i")
+        return [_read_nbt(f, item_type) for _ in range(n)]
+    if tag_type == 10:
+        out = {}
+        while True:
+            t = rd("b")
+            if t == 0:
+                return out
+            name = f.read(rd("H")).decode("utf-8", "replace")
+            out[name] = _read_nbt(f, t)
+    if tag_type == 11: return [rd("i") for _ in range(rd("i"))]
+    if tag_type == 12: return [rd("q") for _ in range(rd("i"))]
+    raise ValueError(f"tag NBT sconosciuto {tag_type}")
+
+
+def read_world_spawn(server_dir: str) -> Optional[Tuple[int, int, int]]:
+    """Punto di spawn del mondo principale (x, y, z) da level.dat; None se non si legge.
+    Fino a Minecraft 1.21.4 sono SpawnX/Y/Z, dopo un gruppo "spawn" con "pos"."""
+    import gzip
+    try:
+        level = "world"
+        props = os.path.join(server_dir, "server.properties")
+        if os.path.isfile(props):
+            for line in open(props, encoding="utf-8", errors="ignore"):
+                if line.startswith("level-name="):
+                    level = line.split("=", 1)[1].strip() or "world"
+        with gzip.open(os.path.join(server_dir, level, "level.dat"), "rb") as f:
+            root_type = f.read(1)[0]
+            f.read(int.from_bytes(f.read(2), "big"))
+            data = _read_nbt(f, root_type).get("Data", {})
+        if all(k in data for k in ("SpawnX", "SpawnY", "SpawnZ")):
+            return int(data["SpawnX"]), int(data["SpawnY"]), int(data["SpawnZ"])
+        pos = (data.get("spawn") or {}).get("pos")
+        if isinstance(pos, list) and len(pos) == 3:
+            return int(pos[0]), int(pos[1]), int(pos[2])
+    except Exception:
+        pass
+    return None
+
 
 class ServerManager:
     # Pre-compiled regex patterns for log parsing performance
@@ -183,6 +236,10 @@ class ServerManager:
         self.add_log("[Pannello] Modulo di controllo server inizializzato con diagnostica errori e chat attiva.")
 
     def _find_running_minecraft_proc(self) -> Optional[psutil.Process]:
+        # Senza server configurato non c'è niente di nostro: normpath("") è "." e "." compare in ogni "server.jar",
+        # quindi prima si "adottava" qualunque server Minecraft acceso sul PC (e Arresta l'avrebbe spento)
+        if not (self.config.get("server_dir") or "").strip():
+            return None
         server_dir = os.path.normpath(self.config.get("server_dir", "")).lower()
         for p in psutil.process_iter(['pid', 'name', 'cmdline', 'cwd']):
             try:
@@ -955,6 +1012,9 @@ class ServerManager:
 
     def stop_server(self, force: bool = False, reason: str = "Chiusura manuale da pannello") -> Dict[str, Any]:
         with self.lock:
+            # Arresto chiesto durante un riavvio: il riavvio si annulla (prima il server si riaccendeva lo stesso)
+            restart_was_pending = self.scheduled_restart_in_progress or self.state == "RESTARTING"
+            self.scheduled_restart_in_progress = False
             is_proc_running = (self.process and self.process.poll() is None)
             is_psutil_running = (self.psutil_proc and self.psutil_proc.is_running())
             if not is_proc_running and not is_psutil_running:
@@ -964,6 +1024,10 @@ class ServerManager:
                     is_psutil_running = True
                 else:
                     self.state = "STOPPED"
+                    if restart_was_pending:
+                        self.intentional_stop = True
+                        self.add_log("[Pannello] Riavvio annullato: il server resta spento.")
+                        return {"status": "success", "message": "Riavvio annullato: il server resta spento."}
                     return {"status": "error", "message": "Il server è già spento."}
 
             self.intentional_stop = True
@@ -1540,6 +1604,9 @@ class ServerManager:
             time.sleep(1)
         time.sleep(1)
         with self.lock:
+            # Nel frattempo è stato chiesto l'arresto (stato non più RESTARTING): niente riavvio
+            if self.state != "RESTARTING":
+                return
             self.start_server()
 
     def _ticker_loop(self):
@@ -1642,6 +1709,18 @@ class ServerManager:
         res = query_server_status(host="127.0.0.1", port=port, timeout=1.0)
         with self.lock:
             self.server_info = res
+            # ONLINE visto solo dal ping (nessun processo nostro) e il server non risponde più: chiuso fuori dal
+            # pannello. Prima lo stato restava ONLINE per sempre. Tre controlli di fila (~6 s) per non sbagliare.
+            no_process = not (self.process and self.process.poll() is None) and                 not (self.psutil_proc and self.psutil_proc.is_running())
+            if not res.get("online") and self.state == "ONLINE" and no_process:
+                self._slp_offline_count = getattr(self, "_slp_offline_count", 0) + 1
+                if self._slp_offline_count >= 3 and not self._find_running_minecraft_proc():
+                    self._slp_offline_count = 0
+                    self.state = "STOPPED"
+                    self.players.clear()
+                    self.add_log("[Pannello] Il server non risponde più e non è in esecuzione: segnato come spento.")
+            else:
+                self._slp_offline_count = 0
             if res.get("online"):
                 if self.state not in ("STOPPING", "RESTARTING"):
                     self.state = "ONLINE"
@@ -2167,6 +2246,9 @@ class ServerManager:
 
         cmd = ""
         action_desc = ""
+        # Il pannello manda "tp" con destinazione "spawn": in Minecraft vorrebbe dire "dal giocatore chiamato spawn"
+        if action == "tp" and (value or "").strip().lower() == "spawn":
+            action = "spawn"
         if action == "heal":
             cmd = f"effect give {player_name} minecraft:instant_health 1 255"
             cmd_feed = f"effect give {player_name} minecraft:saturation 1 255"
@@ -2197,6 +2279,17 @@ class ServerManager:
             if res.get("status") == "error":
                 return res
             action_desc = f"Teletrasporto di {player_name} eseguito."
+        elif action == "spawn":
+            # Punto di spawn del mondo, letto da level.dat (in Minecraft non c'è un comando "vai allo spawn")
+            spawn = read_world_spawn(self.config.get("server_dir", ""))
+            if not spawn:
+                return {"status": "error", "message": "Non riesco a leggere il punto di spawn del mondo (level.dat)."}
+            x, y, z = spawn
+            cmd = f"execute in minecraft:overworld run tp {player_name} {x + 0.5} {y} {z + 0.5}"
+            res = self.send_command(cmd)
+            if res.get("status") == "error":
+                return res
+            action_desc = f"{player_name} teletrasportato allo spawn del mondo ({x} {y} {z})."
         elif action == "give":
             item = value or "minecraft:cooked_beef 16"
             cmd = f"give {player_name} {item}"

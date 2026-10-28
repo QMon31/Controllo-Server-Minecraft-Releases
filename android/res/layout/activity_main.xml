@@ -200,6 +200,24 @@
                         android:textStyle="bold" />
                 </RelativeLayout>
 
+                <!-- Più server sul PC: quale è attivo e scelta di un altro (visibile solo con almeno due server) -->
+                <Button
+                    android:id="@+id/btnServerSwitch"
+                    android:layout_width="match_parent"
+                    android:layout_height="38dp"
+                    android:layout_marginTop="8dp"
+                    android:background="@drawable/btn_slate"
+                    android:gravity="start|center_vertical"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="12dp"
+                    android:text="Server"
+                    android:tag="notr"
+                    android:textAllCaps="false"
+                    android:textColor="#f4f4f5"
+                    android:textSize="12sp"
+                    android:textStyle="bold"
+                    android:visibility="gone" />
+
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -2138,11 +2156,13 @@
                     android:textSize="15sp"
                     android:textStyle="bold" />
 
+                <!-- Nome del server attivo (con più server); il testo lo scrive MainActivity -->
                 <TextView
+                    android:id="@+id/txtDrawerServerName"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="Server Principale"
-                    android:tag="t:ui.server_principale"
+                    android:tag="notr"
                     android:textColor="#9ccc65"
                     android:textSize="10sp" />
             </LinearLayout>

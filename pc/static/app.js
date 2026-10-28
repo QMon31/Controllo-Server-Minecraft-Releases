@@ -3566,6 +3566,10 @@ function renderBackupStatus(backup) {
     serverStateBadge.className = currentServerState === 'STOPPED' ? 'badge badge-emerald' : 'badge badge-amber';
   }
 
+  // Ogni server ha il suo file di backup (Backup_NomeServer.zip)
+  const targetCode = document.getElementById('backup-target-code');
+  if (targetCode && backup.target_filename) targetCode.textContent = 'Desktop\\' + backup.target_filename;
+
   if (backup.existing_backup_exists) {
     if (prevInfo) prevInfo.style.display = 'flex';
     if (prevDetails) prevDetails.textContent = t('msg.creato', formatSizeHuman(backup.existing_backup_size_mb || 0), backup.existing_backup_date || 'recente');
@@ -4027,7 +4031,7 @@ function abortManagedDownload() {
 }
 
 async function downloadDesktopBackupDirectly() {
-  return startManagedDownload('/api/backup/download', 'Backup_Server_Mc.zip');
+  return startManagedDownload('/api/backup/download', (currentBackupData && currentBackupData.target_filename) || 'Backup_Server_Mc.zip');
 }
 
 async function downloadBackupItem(id, filename) {
@@ -7514,6 +7518,10 @@ async function loadAvailableBackups() {
         : '<span class="badge badge-emerald" style="font-size: 0.7rem;">Desktop</span>';
 
       const backupDate = b.date || b.modified || '-';
+      // Di quale server è: ogni server ha il suo backup
+      const serverLine = b.server_name
+        ? th('msg.backup_del_server', escapeHtml(b.server_name)) + (b.same_server === true ? ` <span class="badge badge-emerald" style="font-size: 0.66rem;">${th('msg.backup_server_attivo')}</span>` : '')
+        : th('msg.backup_server_non_indicato');
 
       html += `
         <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px; background: rgba(19, 18, 23, 0.7); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; gap: 10px; flex-wrap: wrap;">
@@ -7527,6 +7535,7 @@ async function loadAvailableBackups() {
               <div style="font-size: 0.76rem; color: #9a9ca2; margin-top: 2px;">
                 ${th('msg.mb_creato', b.size_mb, escapeHtml(backupDate))}
               </div>
+              <div style="font-size: 0.76rem; color: ${b.same_server === false ? '#e3b35a' : '#9a9ca2'}; margin-top: 2px;">${serverLine}</div>
             </div>
           </div>
           <div style="display: flex; gap: 8px; align-items: center;">
@@ -7571,11 +7580,26 @@ async function confirmRestoreBackup(sourcePath, filename) {
   if (pTitle) pTitle.textContent = t('msg.avvio_estrazione_archivio');
 
   try {
-    const { ok, data } = await safeJsonFetch('/api/backup/restore', {
+    let { ok, data } = await safeJsonFetch('/api/backup/restore', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ source_path: sourcePath })
     });
+    // Backup di un altro server (o vecchio, senza nome del server): il ripristino sostituirebbe tutto il server attivo
+    if (!ok && (data.code === 'other_server' || data.code === 'unknown_server')) {
+      const question = data.code === 'other_server'
+        ? t('msg.backup_altro_server_conferma', data.backup_server || '?', data.current_server || '?')
+        : t('msg.backup_server_ignoto_conferma', data.current_server || '?');
+      if (!confirm(question)) {
+        if (pBox) pBox.style.display = 'none';
+        return;
+      }
+      ({ ok, data } = await safeJsonFetch('/api/backup/restore', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source_path: sourcePath, confirm_other_server: true })
+      }));
+    }
     if (!ok || data.status === 'error') {
       showToast(t('msg.errore_ripristino', data.detail || data.message || t('msg.operazione_riuscita')), 'error');
       if (pBox) pBox.style.display = 'none';
@@ -9523,7 +9547,7 @@ async function triggerInstanceFolderDetection(folderPath) {
     if (resultBox) {
       resultBox.innerHTML = `
         <div class="instance-detect-card-header">
-          <div class="instance-detect-icon">${icon}</div>
+          <div class="instance-detect-icon">${escapeHtml(((data.server_type_display || data.server_type || '?').trim().charAt(0) || '?').toUpperCase())}</div>
           <div style="flex: 1; min-width: 0;">
             <div style="display: flex; align-items: center; justify-content: space-between; gap: 6px;">
               <span style="font-weight: 700; color: #8db6e8; font-size: 0.95rem;">${escapeHtml(data.suggested_name)}</span>
@@ -10274,8 +10298,9 @@ async function installStoreProject(projectId, projectTitle, projectType, btnId) 
       body: JSON.stringify({
         project_id: projectId,
         project_type: projectType,
-        loader: loader === 'all' ? 'forge' : loader,
-        game_version: version === 'all' ? '1.20.1' : version
+        // "Tutti": decide il programma con tipo e versione del server attivo (prima si chiedeva sempre Forge 1.20.1)
+        loader: loader === 'all' ? null : loader,
+        game_version: version === 'all' ? null : version
       })
     });
 

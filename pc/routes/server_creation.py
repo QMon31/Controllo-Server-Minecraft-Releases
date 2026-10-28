@@ -41,6 +41,9 @@ def api_forge_refresh_versions(request: Request):
 def api_forge_install(req: ForgeInstallRequest, request: Request):
     verify_admin_access(request)
     verify_host_only_access(request)
+    # Cartella vuota: il server finirebbe nella cartella del programma, mescolato ai suoi file
+    if not (req.target_dir or "").strip():
+        raise HTTPException(status_code=400, detail="Scegli la cartella in cui installare il server.")
     if not is_safe_server_path(req.target_dir):
         raise HTTPException(status_code=400, detail="Percorso di installazione non consentito per motivi di sicurezza.")
     if manager.state == "ONLINE":

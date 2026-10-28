@@ -42,7 +42,8 @@ def split_java_line(line: str, server_dir: str = "") -> List[str]:
     Su Linux un win_args.txt (server copiato da Windows) diventa unix_args.txt se c'è: il primo usa ';' come separatore."""
     s = line.strip()
     if "%*" in s:
-        s = s.replace("%*", "nogui")
+        # "%*" = argomenti passati allo script: al loro posto "nogui", se la riga non lo ha già (era "nogui nogui")
+        s = " ".join(s.replace("%*", "" if "nogui" in s else "nogui").split())
     elif "$@" in s:
         s = s.replace('"$@"', "").replace("$@", "").strip()
         if "nogui" not in s:

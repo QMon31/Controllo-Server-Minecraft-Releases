@@ -12,7 +12,9 @@ import shutil
 import sys
 import tempfile
 import time
+import zipfile
 import types
+import urllib.parse
 import unittest
 from unittest import mock
 
@@ -420,7 +422,7 @@ class InternetAccessTest(unittest.TestCase):
         with open(os.path.join(ROOT, "app.py"), encoding="utf-8") as fh:
             src = fh.read()
         wanted = ("is_internet_request", "is_local_request", "verify_admin_access", "pin_is_default",
-                  "has_admin_access", "hide_private_paths")
+                  "has_admin_access", "hide_private_paths", "is_public_client_ip", "public_network_payload")
         fns = [n for n in ast.parse(src).body if isinstance(n, ast.FunctionDef) and n.name in wanted]
         cls.config = {"admin_pin": "583921", "require_pin_for_remote": True}
 
@@ -483,6 +485,30 @@ class InternetAccessTest(unittest.TestCase):
         self.assertEqual(self._status(self._req(8443, "81.0.0.9", {"X-Admin-Token": "tok"})), 403)
         self.assertEqual(self._status(self._req(8080)), 200)                      # in casa funziona
 
+    def test_public_address_on_panel_port_is_internet(self):
+        # Porta 8080 aperta per sbaglio sul router (o DMZ): chi arriva da internet non è la rete di casa
+        self.config["require_pin_for_remote"] = False
+        self.assertEqual(self._status(self._req(8080, "81.0.0.9")), 401)
+        self.assertEqual(self._status(self._req(8080, "2a01:e0a:1:2::5")), 401)
+        self.assertEqual(self._status(self._req(8080, "81.0.0.9", {"X-Admin-Token": "tok"})), 200)
+        self.config["admin_pin"] = "1234"
+        self.assertEqual(self._status(self._req(8080, "81.0.0.9", {"X-Admin-Token": "tok"})), 403)
+        # Rete di casa, hotspot di Windows, indirizzi locali IPv6 e IPv4 dentro IPv6 restano di casa
+        for ip in ("192.168.1.20", "192.168.137.5", "10.0.0.3", "fe80::1", "fd00::5", "::ffff:192.168.1.5"):
+            self.assertEqual(self._status(self._req(8080, ip)), 200, ip)
+        self.assertFalse(self.ns["is_public_client_ip"]("testclient"))
+
+    def test_public_network_payload_hides_home_network(self):
+        full = {"hostname": "DESKTOP-X", "local_ip": "192.168.1.10", "public_ip": "81.0.0.1", "lan_url": "http://192.168.1.10:8080",
+                "minecraft": {"public_port": 32769, "direct_address": "81.0.0.1:32769", "lan_address": "192.168.1.10:32769"},
+                "apk": {"lan_url": "http://192.168.1.10:8080/api/app/download", "remote_url": "https://81.0.0.1:32770/x"},
+                "upnp": {"active": True, "router_ip": "192.168.1.254"}, "remote": {"url": "https://81.0.0.1:32770"}}
+        pub = self.ns["public_network_payload"](full)
+        self.assertNotIn("192.168.", repr(pub))
+        self.assertNotIn("DESKTOP-X", repr(pub))
+        self.assertEqual(pub["remote"], {"url": "https://81.0.0.1:32770"})
+        self.assertEqual(pub["minecraft"]["direct_address"], "81.0.0.1:32769")
+
 
 class PinLockoutTest(unittest.TestCase):
     """Blocco per PIN errati: contano solo i PIN diversi, e la risposta dice quanto manca."""
@@ -493,8 +519,10 @@ class PinLockoutTest(unittest.TestCase):
         import threading
         with open(os.path.join(ROOT, "app.py"), encoding="utf-8") as fh:
             src = fh.read()
-        fn = [n for n in ast.parse(src).body if isinstance(n, ast.FunctionDef) and n.name == "verify_pin"]
-        fn[0].decorator_list = []   # senza @app.post: si prova solo la funzione
+        wanted = ("verify_pin", "_wait_text", "_too_many_pins")
+        fn = [n for n in ast.parse(src).body if isinstance(n, ast.FunctionDef) and n.name in wanted]
+        for f in fn:
+            f.decorator_list = []   # senza @app.post: si prova solo la funzione
 
         class HTTPException(Exception):
             def __init__(self, status_code, detail=""):
@@ -511,16 +539,20 @@ class PinLockoutTest(unittest.TestCase):
         self.ns = {"HTTPException": HTTPException, "JSONResponse": JSONResponse, "manager": Manager,
                    "_auth_lock": threading.Lock(), "_auth_failed_attempts": {}, "AUTH_LOCK_SECONDS": 600,
                    "AUTH_MAX_WRONG_PINS": 5, "hashlib": hashlib, "valid_auth_tokens": set(),
-                   "is_internet_request": lambda r: False, "pin_is_default": lambda: False,
+                   "is_internet_request": lambda r: r.client.host.startswith("81."), "pin_is_default": lambda: False,
                    "remote_access": type("R", (), {"fingerprint": "", "url": ""}), "uuid": __import__("uuid"),
                    "time": type("T", (), {"time": staticmethod(lambda: self.clock[0])}),
-                   "VerifyPinRequest": object, "Request": object, "DEFAULT_PIN_INTERNET_MSG": ""}
+                   "VerifyPinRequest": object, "Request": object, "DEFAULT_PIN_INTERNET_MSG": "",
+                   "_internet_failed_attempts": [], "AUTH_INTERNET_WINDOW_SECONDS": 3600,
+                   "AUTH_INTERNET_MAX_WRONG_PINS": 20, "List": list,
+                   "_alert_internet_pin_lock": lambda: self.alerts.append(1)}
+        self.alerts = []
         exec(compile(ast.Module(body=fn, type_ignores=[]), "app.py", "exec"), self.ns)
         self.HTTPException = HTTPException
 
-    def _try(self, pin):
+    def _try(self, pin, ip="192.168.1.50"):
         req = type("Q", (), {"pin": pin})()
-        request = type("Rq", (), {"client": type("C", (), {"host": "192.168.1.50"})()})()
+        request = type("Rq", (), {"client": type("C", (), {"host": ip})()})()
         try:
             res = self.ns["verify_pin"](req, request)
             return getattr(res, "status_code", 200), res
@@ -542,6 +574,26 @@ class PinLockoutTest(unittest.TestCase):
         self.assertIn("7 minuti e 11 secondi", res.content["detail"])
         self.clock[0] += 431
         self.assertEqual(self._try("583921")[0], 200)     # finito il blocco si entra
+
+    def test_many_internet_addresses_lock_internet_only(self):
+        # Botnet: ogni indirizzo prova un solo PIN, quindi il limite per indirizzo non scatta mai
+        for i in range(20):
+            self.assertEqual(self._try(f"{100000 + i}", ip=f"81.0.0.{i}")[0], 403)
+        self.assertEqual(self.alerts, [1])                       # avviso al telefono una sola volta
+        code, res = self._try("583921", ip="81.0.9.9")
+        self.assertEqual(code, 429)                              # neanche il PIN giusto da internet
+        self.assertIn("in casa funziona", res.content["detail"])
+        self.assertEqual(self._try("583921")[0], 200)            # dalla rete di casa si entra
+        self.assertEqual(self._try("999999", ip="81.0.9.9")[0], 429)
+        self.assertEqual(self.alerts, [1])
+        self.clock[0] += 3601
+        self.assertEqual(self._try("583921", ip="81.0.9.9")[0], 200)   # dopo un'ora si torna a entrare
+
+    def test_home_wrong_pins_do_not_count_for_internet(self):
+        for i in range(30):
+            self._try(f"{200000 + i}", ip=f"192.168.1.{i + 2}")
+        self.assertEqual(self._try("583921", ip="81.0.9.9")[0], 200)
+        self.assertEqual(self.alerts, [])
 
 
 class RenamedReleaseRepoTest(unittest.TestCase):
@@ -1399,7 +1451,12 @@ class CloudBackupCheckTest(unittest.TestCase):
         self.mgr.cloud_sync_dir = self.drive
         self.desk_zip = self.mgr.target_path
         self.drive_zip = os.path.join(self.drive, self.mgr.target_filename)
-        self._write(self.desk_zip, 4 * 1024 * 1024, 1_000_000)
+        # Backup vero di questo server (con i metadati): un file senza metadati sarebbe di un server sconosciuto
+        with zipfile.ZipFile(self.desk_zip, "w") as zf:
+            zf.writestr(bm.BACKUP_INFO_NAME, json.dumps({"server_dir": srv}))
+            zf.writestr("world/level.dat", b"x" * 4 * 1024 * 1024)
+        os.utime(self.desk_zip, (1_000_000, 1_000_000))
+        self.assertEqual(self.mgr.target_path, self.desk_zip)
 
     def tearDown(self):
         shutil.rmtree(self.d, ignore_errors=True)
@@ -1470,6 +1527,353 @@ class BackupPhasesAndStartGuardTest(unittest.TestCase):
         self.assertIn("Ripristino in corso", m.start_server()["message"])
         self.mgr.is_running = False
         self.assertIsNone(self.mgr.busy_message())
+
+
+class BackupPerServerTest(unittest.TestCase):
+    """Più server: ognuno ha il suo backup (nessuno sovrascrive l'altro) e il ripristino di un backup di un altro
+    server nel server attivo si fa solo con conferma."""
+
+    def setUp(self):
+        self.d = _sandbox(["backup_manager.py"], instances=[], config={"server_dir": ""})
+        self.bm = _load(self.d, "backup_manager")
+        self.a, self.b, self.desk = (os.path.join(self.d, n) for n in ("Sopravvivenza", "Creativo", "desk"))
+        for srv, content in ((self.a, b"mondo A"), (self.b, b"mondo B")):
+            os.makedirs(os.path.join(srv, "world"))
+            with open(os.path.join(srv, "world", "level.dat"), "wb") as fh:
+                fh.write(content)
+        os.makedirs(self.desk)
+        self.servers = {self.a: {"id": "inst_a", "name": "Sopravvivenza"}, self.b: {"id": "inst_b", "name": "Creativo"}}
+        self.mgr = self.bm.BackupManager(self.a, desktop_dir=self.desk)
+        self.mgr.server_info_cb = lambda d: dict(self.servers.get(os.path.abspath(d), {}), servers=len(self.servers))
+
+    def tearDown(self):
+        shutil.rmtree(self.d, ignore_errors=True)
+
+    def _wait(self):
+        for _ in range(400):
+            if not self.mgr.is_running:
+                break
+            time.sleep(0.05)
+        self.assertFalse(self.mgr.is_running)
+
+    def _backup(self, srv):
+        self.mgr.server_dir = srv
+        self.assertEqual(self.mgr.start_backup(is_server_stopped=True)["status"], "success")
+        self._wait()
+        self.assertEqual(self.mgr.progress["percent"], 100, self.mgr.progress.get("status"))
+
+    def _level(self, srv):
+        with open(os.path.join(srv, "world", "level.dat"), "rb") as fh:
+            return fh.read()
+
+    def test_un_backup_per_server(self):
+        self._backup(self.a)
+        self._backup(self.b)
+        self.assertEqual(sorted(os.listdir(self.desk)), ["Backup_Creativo.zip", "Backup_Sopravvivenza.zip"])
+        info = self.bm.read_backup_info(os.path.join(self.desk, "Backup_Sopravvivenza.zip"))
+        self.assertEqual((info["server_id"], info["server_name"]), ("inst_a", "Sopravvivenza"))
+        # L'elenco dice di quale server è ognuno, prima quello attivo (ora B)
+        lst = self.mgr.list_available_backups()
+        self.assertEqual([(x["server_name"], x["same_server"], x["id"]) for x in lst],
+                         [("Creativo", True, "desktop"), ("Sopravvivenza", False, "desktop_Backup_Sopravvivenza.zip")])
+        self.assertEqual(self.mgr.get_status()["target_filename"], "Backup_Creativo.zip")
+
+    def test_ripristino_di_un_altro_server_chiede_conferma(self):
+        self._backup(self.a)
+        self.mgr.server_dir = self.b
+        src = os.path.join(self.desk, "Backup_Sopravvivenza.zip")
+        res = self.mgr.start_restore(is_server_stopped=True, source_path=src)
+        self.assertEqual((res["status"], res["code"], res["backup_server"], res["current_server"]),
+                         ("error", "other_server", "Sopravvivenza", "Creativo"))
+        self.assertEqual(self._level(self.b), b"mondo B")          # nessun file toccato
+        # Confermato: si ripristina
+        self.assertEqual(self.mgr.start_restore(True, src, confirm_other_server=True)["status"], "success")
+        self._wait()
+        self.assertEqual(self._level(self.b), b"mondo A")
+        # Finito il ripristino lo stato parla di nuovo del file del server attivo, non dell'archivio usato
+        self.assertEqual(self.mgr.get_status()["target_filename"], "Backup_Creativo.zip")
+
+    def test_ripristino_nello_stesso_server_senza_domande(self):
+        self._backup(self.a)
+        with open(os.path.join(self.a, "world", "level.dat"), "wb") as fh:
+            fh.write(b"rovinato")
+        self.assertEqual(self.mgr.start_restore(True, "desktop")["status"], "success")
+        self._wait()
+        self.assertEqual(self._level(self.a), b"mondo A")
+
+    def test_backup_vecchio_unico(self):
+        # Backup_Server_Mc.zip delle versioni precedenti: resta nell'elenco, non viene sovrascritto,
+        # e con più server il ripristino chiede conferma (con un solo server no)
+        legacy = os.path.join(self.desk, self.bm.LEGACY_BACKUP_FILENAME)
+        with zipfile.ZipFile(legacy, "w") as zf:
+            zf.writestr("world/level.dat", b"vecchio")
+        self._backup(self.a)
+        self.assertTrue(os.path.isfile(legacy))
+        lst = self.mgr.list_available_backups()
+        self.assertEqual([(x["filename"], x["same_server"]) for x in lst],
+                         [("Backup_Sopravvivenza.zip", True), ("Backup_Server_Mc.zip", None)])
+        self.assertEqual(self.mgr.start_restore(True, legacy)["code"], "unknown_server")
+        del self.servers[self.b]
+        self.assertIsNone(self.mgr.restore_check(legacy))
+        # Altri zip "Backup_..." dell'utente sul Desktop (non di Voxarium) non compaiono
+        with zipfile.ZipFile(os.path.join(self.desk, "Backup_foto.zip"), "w") as zf:
+            zf.writestr("a.jpg", b"x")
+        self.assertNotIn("Backup_foto.zip", [x["filename"] for x in self.mgr.list_available_backups()])
+
+    def test_due_server_con_lo_stesso_nome(self):
+        self.servers[self.b]["name"] = "Sopravvivenza"
+        self._backup(self.a)
+        self._backup(self.b)
+        names = sorted(os.listdir(self.desk))
+        self.assertEqual(len(names), 2, names)
+        self.assertIn("Backup_Sopravvivenza.zip", names)
+        # Il backup di A non è stato toccato
+        self.mgr.server_dir = self.a
+        self.assertEqual(self.mgr.target_filename, "Backup_Sopravvivenza.zip")
+
+    def test_fine_backup_non_tocca_il_backup_successivo(self):
+        # Il backup A finisce (is_running già False) e intanto parte il backup B: la chiusura di A non deve
+        # cancellare la destinazione di B
+        self.mgr._job_server_dir = self.a
+        self.mgr._job_target = os.path.join(self.desk, "Backup_A.zip")
+
+        def job_a(server_dir):
+            self.mgr._job_target = os.path.join(self.desk, "Backup_B.zip")   # start_backup di B, a metà strada
+
+        self.mgr._run_backup_job = job_a
+        self.mgr._run_backup_worker()
+        self.assertEqual(self.mgr._job_target, os.path.join(self.desk, "Backup_B.zip"))
+        # Caso normale: nessun backup nuovo, la destinazione si azzera
+        self.mgr._run_backup_job = lambda server_dir: None
+        self.mgr._run_backup_worker()
+        self.assertIsNone(self.mgr._job_target)
+
+    def test_server_rinominato(self):
+        self._backup(self.a)
+        self.servers[self.a]["name"] = "Sopravvivenza 2"
+        self.mgr.server_dir = self.a
+        # Il nuovo backup ha il nome nuovo; quello vecchio resta, riconosciuto come dello stesso server (stesso id)
+        self.assertEqual(self.mgr.target_filename, "Backup_Sopravvivenza_2.zip")
+        old = os.path.join(self.desk, "Backup_Sopravvivenza.zip")
+        self.assertIsNone(self.mgr.restore_check(old))
+        self.assertEqual({x["filename"]: x["same_server"] for x in self.mgr.list_available_backups()},
+                         {"Backup_Sopravvivenza.zip": True})
+        # Server tolto e aggiunto di nuovo (id nuovo) sulla stessa cartella: stessi file, nessun avviso
+        self.servers[self.a]["id"] = "inst_a_nuovo"
+        self.assertIsNone(self.mgr.restore_check(old))
+
+    def test_due_server_con_nomi_che_differiscono_solo_per_maiuscole(self):
+        # Su Windows Backup_Test.zip e Backup_test.zip sono lo stesso file
+        self.servers[self.a]["name"] = "Test"
+        self.servers[self.b]["name"] = "test"
+        self._backup(self.a)
+        self._backup(self.b)
+        self.assertEqual(len(os.listdir(self.desk)), 2, os.listdir(self.desk))
+        self.assertEqual(self.bm.read_backup_info(os.path.join(self.desk, "Backup_Test.zip"))["server_id"], "inst_a")
+
+    def test_cambio_server_durante_il_backup(self):
+        # La destinazione è fissata all'avvio: il file resta quello del server di cui si fa il backup
+        self.mgr.server_dir = self.a
+        self.assertEqual(self.mgr.start_backup(is_server_stopped=True)["status"], "success")
+        self.mgr.server_dir = self.b
+        self._wait()
+        self.assertEqual(os.listdir(self.desk), ["Backup_Sopravvivenza.zip"])
+        info = self.bm.read_backup_info(os.path.join(self.desk, "Backup_Sopravvivenza.zip"))
+        self.assertEqual(info["server_id"], "inst_a")
+        self.assertEqual(self.mgr.target_filename, "Backup_Creativo.zip")
+
+
+class ExistingMethodsTest(unittest.TestCase):
+    """Gli indirizzi del programma chiamano solo funzioni che esistono (manager.get_status non esisteva: l'aggiornamento
+    delle mod dal negozio finiva sempre con l'errore 500)."""
+
+    def test_calls_to_existing_members(self):
+        import ast
+        import glob
+
+        def members(path, cls=None):
+            tree = ast.parse(open(os.path.join(ROOT, path), encoding="utf-8").read())
+            names = set()
+            for n in ast.walk(tree):
+                if cls is None:
+                    if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                        names.add(n.name)
+                    if isinstance(n, ast.Assign):
+                        names.update(t.id for t in n.targets if isinstance(t, ast.Name))
+                elif isinstance(n, ast.ClassDef) and n.name == cls:
+                    for b in ast.walk(n):
+                        if isinstance(b, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                            names.add(b.name)
+                        if isinstance(b, ast.Attribute) and isinstance(b.ctx, ast.Store) \
+                                and isinstance(b.value, ast.Name) and b.value.id == "self":
+                            names.add(b.attr)
+                        if isinstance(b, ast.Assign):
+                            names.update(t.id for t in b.targets if isinstance(t, ast.Name))
+            return names
+
+        objs = {"manager": members("server_manager.py", "ServerManager"),
+                "backup_mgr": members("backup_manager.py", "BackupManager"),
+                "remote_access": members("remote_access.py", "RemoteAccess"),
+                "upnp_mgr": members("upnp_manager.py", "UPnPManager"),
+                "forge_installer": members("server_installer.py", "ForgeServerInstaller"),
+                "instance_manager": members("instance_manager.py"), "modrinth_store": members("modrinth_store.py"),
+                "pc_updater": members("pc_updater.py"), "file_manager": members("file_manager.py"),
+                "mod_info": members("mod_info.py")}
+        bad = []
+        for f in ["app.py"] + [os.path.relpath(p, ROOT) for p in glob.glob(os.path.join(ROOT, "routes", "*.py"))]:
+            src = open(os.path.join(ROOT, f), encoding="utf-8").read()
+            for obj, names in objs.items():
+                for m in re.finditer(r"\b%s\.(\w+)" % obj, src):
+                    if m.group(1) not in names and not m.group(1).startswith("__"):
+                        bad.append(f"{f}:{src.count(chr(10), 0, m.start()) + 1} {obj}.{m.group(1)}")
+        self.assertEqual(bad, [])
+
+
+class StopDuringRestartTest(unittest.TestCase):
+    """Arresto chiesto durante un riavvio: il riavvio si annulla (prima il server si riaccendeva da solo)."""
+
+    def setUp(self):
+        self.d = _sandbox(["server_manager.py", "instance_manager.py", "mc_ping.py", "platform_utils.py"],
+                          instances=[], config={"server_dir": ""})
+        self.sm = _load(self.d, "server_manager")
+        self.m = self.sm.ServerManager(config_path=os.path.join(self.d, "config.json"))
+        self.m._find_running_minecraft_proc = lambda: None
+
+    def tearDown(self):
+        shutil.rmtree(self.d, ignore_errors=True)
+
+    def test_stop_cancels_pending_restart(self):
+        started = []
+        self.m.start_server = lambda: started.append(1) or {"status": "success"}
+        self.m.state = "RESTARTING"            # vecchio server già chiuso, nuovo avvio tra qualche secondo
+        res = self.m.stop_server()
+        self.assertEqual((res["status"], self.m.state), ("success", "STOPPED"))
+        self.assertIn("Riavvio annullato", res["message"])
+        self.sm.query_server_status = lambda **kw: {"online": False}
+        self.m._delayed_restart_worker(0)      # il lavoro del riavvio arriva dopo l'arresto
+        self.assertEqual(started, [])
+        self.assertEqual(self.m.stop_server()["status"], "error")   # ora è davvero già spento
+
+    def test_no_server_configured_adopts_nothing(self):
+        # Un server Minecraft di qualcun altro acceso sul PC: senza cartella configurata non è "nostro"
+        del self.m._find_running_minecraft_proc
+        other = types.SimpleNamespace(info={"pid": 1, "name": "java.exe", "cwd": r"D:\altro\server",
+                                            "cmdline": ["java", "-jar", "server.jar", "nogui"]})
+        with mock.patch.object(self.sm.psutil, "process_iter", lambda attrs=None: [other]):
+            self.m.config["server_dir"] = ""
+            self.assertIsNone(self.m._find_running_minecraft_proc())
+            self.m.config["server_dir"] = r"D:\altro\server"
+            self.assertIs(self.m._find_running_minecraft_proc(), other)
+
+    def test_teleport_to_world_spawn(self):
+        # "Teletrasporta allo spawn": coordinate dello spawn del mondo da level.dat (prima "spawnpoint" + "tp 0 100 0"
+        # nell'app e "tp giocatore spawn" nel pannello, cioè dal giocatore chiamato "spawn")
+        import gzip
+        import struct
+
+        def tag(t, name, payload):
+            n = name.encode()
+            return bytes([t]) + struct.pack(">H", len(n)) + n + payload
+
+        def level(data_tags, folder):
+            os.makedirs(folder, exist_ok=True)
+            body = tag(10, "", tag(10, "Data", b"".join(data_tags) + b"\x00") + b"\x00")
+            with gzip.open(os.path.join(folder, "level.dat"), "wb") as fh:
+                fh.write(body)
+
+        srv = os.path.join(self.d, "srv")
+        level([tag(3, "SpawnX", struct.pack(">i", -120)), tag(3, "SpawnY", struct.pack(">i", 71)),
+               tag(3, "SpawnZ", struct.pack(">i", 48)), tag(8, "LevelName", struct.pack(">H", 5) + b"world")],
+              os.path.join(srv, "world"))
+        self.assertEqual(self.sm.read_world_spawn(srv), (-120, 71, 48))
+        # Mondo con un altro nome e formato dopo la 1.21.4 (gruppo "spawn" con "pos")
+        with open(os.path.join(srv, "server.properties"), "w") as fh:
+            fh.write("level-name=mondo2\n")
+        pos = tag(11, "pos", struct.pack(">i", 3) + struct.pack(">iii", 5, 80, -7))
+        level([tag(10, "spawn", pos + b"\x00")], os.path.join(srv, "mondo2"))
+        self.assertEqual(self.sm.read_world_spawn(srv), (5, 80, -7))
+        self.assertIsNone(self.sm.read_world_spawn(os.path.join(self.d, "nessuno")))
+
+        sent = []
+        self.m.send_command = lambda c: sent.append(c) or {"status": "success"}
+        self.m.config["server_dir"] = srv
+        self.assertEqual(self.m.player_quick_action("Alex", "tp", "spawn")["status"], "success")   # pulsante del pannello
+        self.assertEqual(self.m.player_quick_action("Alex", "spawn")["status"], "success")          # app
+        self.assertEqual(sent, ["execute in minecraft:overworld run tp Alex 5.5 80 -6.5"] * 2)
+        self.m.config["server_dir"] = os.path.join(self.d, "nessuno")
+        self.assertEqual(self.m.player_quick_action("Alex", "spawn")["status"], "error")
+
+    def test_online_without_process_goes_stopped(self):
+        # ONLINE solo perché qualcosa rispondeva sulla porta; poi sparisce: dopo 3 controlli il server è spento
+        self.m.state = "ONLINE"
+        answers = iter([{"online": False}] * 2 + [{"online": True, "players_online": 0}] + [{"online": False}] * 3)
+        self.sm.query_server_status = lambda **kw: next(answers)
+        for _ in range(2):
+            self.m._background_slp_query(25565)
+        self.assertEqual(self.m.state, "ONLINE")             # due controlli non bastano
+        self.m._background_slp_query(25565)                  # risponde di nuovo: si ricomincia a contare
+        for _ in range(2):
+            self.m._background_slp_query(25565)
+        self.assertEqual(self.m.state, "ONLINE")
+        self.m._background_slp_query(25565)
+        self.assertEqual(self.m.state, "STOPPED")
+
+    def test_restart_still_works(self):
+        started = []
+        self.m.start_server = lambda: started.append(1) or {"status": "success"}
+        self.m.state = "RESTARTING"
+        self.sm.query_server_status = lambda **kw: {"online": False}
+        self.m._delayed_restart_worker(0)
+        self.assertEqual(started, [1])
+
+
+class StoreInstallVersionTest(unittest.TestCase):
+    """Installazione dal negozio delle mod: versione per il server attivo, mai una qualunque se non è compatibile."""
+
+    def setUp(self):
+        self.d = _sandbox(["modrinth_store.py", "file_manager.py"], instances=[], config={"server_dir": ""})
+        self.ms = _load(self.d, "modrinth_store")
+        self.srv = os.path.join(self.d, "srv")
+        os.makedirs(self.srv)
+        self.urls = []
+
+    def tearDown(self):
+        shutil.rmtree(self.d, ignore_errors=True)
+
+    def _fake(self, versions):
+        import io
+
+        def urlopen(req, timeout=0):
+            url = req.full_url if hasattr(req, "full_url") else req
+            self.urls.append(url)
+            if "/version" in url:
+                return io.BytesIO(json.dumps(versions).encode())
+            return io.BytesIO(b"jar")
+        self.ms.urllib.request.urlopen = urlopen
+
+    def test_no_compatible_version_installs_nothing(self):
+        self._fake([])
+        res = self.ms.install_modrinth_project("P7dR8mSH", self.srv, loader="forge", version="1.20.1")
+        self.assertFalse(res["success"])
+        self.assertIn("compatibile", res["error"])
+        self.assertEqual(len(self.urls), 1)                  # prima seguiva una seconda richiesta senza filtri
+        self.assertEqual(os.listdir(os.path.join(self.srv, "mods")), [])
+
+    def test_loader_families(self):
+        self._fake([])
+        self.ms.install_modrinth_project("x", self.srv, loader="quilt", version="1.21.4")
+        self.assertIn("fabric", urllib.parse.unquote(self.urls[-1]))
+        self.ms.install_modrinth_project("x", self.srv, loader="paper", version="1.21.4")
+        self.assertIn("bukkit", urllib.parse.unquote(self.urls[-1]))
+        self.ms.install_modrinth_project("x", self.srv, loader="", version="")
+        self.assertNotIn("loaders", self.urls[-1])           # nessun filtro: tutte le versioni
+
+    def test_route_uses_active_server(self):
+        src = open(os.path.join(ROOT, "app.py"), encoding="utf-8").read()
+        model = src[src.index("class InstallStoreRequest"):src.index("class UninstallStoreRequest")]
+        self.assertIn("loader: Optional[str] = None", model)
+        self.assertIn("version: Optional[str] = None", model)
+        self.assertNotIn("'1.20.1' : version", open(os.path.join(ROOT, "static", "app.js"), encoding="utf-8").read())
 
 
 class PublicDownloadsTest(unittest.TestCase):

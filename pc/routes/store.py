@@ -12,6 +12,9 @@ from app import (
 
 router = APIRouter()
 
+# Stati in cui il server tiene aperti i file .jar delle mod
+SERVER_RUNNING_STATES = ("ONLINE", "STARTING", "STOPPING", "RESTARTING")
+
 
 # =========================================================
 # COMMERCIAL MODULE 3: MODRINTH APP STORE
@@ -119,8 +122,8 @@ def api_store_update(req: UpdateStoreRequest, request: Request):
     eff_version = active_inst.get("mc_version", "")
 
     # If server is running, block mod file replacement to prevent WinError 32
-    status = manager.get_status()
-    if status.get("running"):
+    # (prima chiamava una funzione inesistente e l'aggiornamento finiva sempre con l'errore 500)
+    if manager.state in SERVER_RUNNING_STATES:
         raise HTTPException(
             status_code=409,
             detail="Impossibile aggiornare la mod: il server Minecraft è in esecuzione e blocca i file .jar. Spegni il server prima di procedere."
@@ -149,8 +152,7 @@ def api_store_update_all(request: Request):
     eff_loader = active_inst.get("server_type", "")
     eff_version = active_inst.get("mc_version", "")
 
-    status = manager.get_status()
-    if status.get("running"):
+    if manager.state in SERVER_RUNNING_STATES:
         raise HTTPException(
             status_code=409,
             detail="Impossibile aggiornare le mod in blocco: il server Minecraft è in esecuzione e blocca i file .jar. Spegni il server prima di procedere."

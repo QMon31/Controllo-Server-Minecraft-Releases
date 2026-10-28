@@ -73,6 +73,20 @@ os.makedirs(STATIC_DIR, exist_ok=True)
 
 manager = ServerManager()
 backup_mgr = BackupManager(server_dir=manager.config.get("server_dir", ""))
+
+
+def _backup_server_info(server_dir: str) -> Dict[str, Any]:
+    """Nome e id del server (istanza) di una cartella: ogni server ha il suo file di backup."""
+    instances = instance_manager.load_instances_data()
+    wanted = os.path.normcase(os.path.abspath(server_dir))
+    for inst in instances:
+        d = inst.get("server_dir")
+        if d and os.path.normcase(os.path.abspath(d)) == wanted:
+            return {"id": inst.get("id"), "name": inst.get("name"), "servers": len(instances)}
+    return {"servers": len(instances)}
+
+
+backup_mgr.server_info_cb = _backup_server_info
 # Niente avvio del server mentre un backup o un ripristino lavora sui suoi file
 manager.start_blocker = backup_mgr.busy_message
 if manager.config.get("cloud_backup_dir"):
@@ -328,6 +342,8 @@ class CloudSyncRequest(BaseModel):
 
 class RestoreRequest(BaseModel):
     source_path: Optional[str] = None
+    # Ripristinare anche se il backup è di un altro server (o non si sa di quale): l'utente l'ha confermato
+    confirm_other_server: bool = False
 
 class DeleteBackupRequest(BaseModel):
     id: Optional[str] = None
@@ -419,8 +435,9 @@ class UnzipItemRequest(BaseModel):
 
 class InstallStoreRequest(BaseModel):
     project_id: str
-    loader: Optional[str] = "forge"
-    version: Optional[str] = "1.20.1"
+    # Vuoti: si usano tipo e versione del server attivo (prima "forge" e "1.20.1" li sostituivano sempre)
+    loader: Optional[str] = None
+    version: Optional[str] = None
     game_version: Optional[str] = None
     target_subdir: Optional[str] = ""
     project_type: Optional[str] = "mod"
@@ -474,11 +491,25 @@ DEFAULT_PIN_INTERNET_MSG = ("PIN predefinito (1234): l'accesso da internet è bl
 def pin_is_default() -> bool:
     return is_default_pin(manager.config.get("admin_pin", "1234"))
 
+def is_public_client_ip(host: str) -> bool:
+    """Indirizzo che non è della rete di casa né del PC stesso (es. 81.x.x.x). Nomi non numerici (test) no."""
+    import ipaddress
+    try:
+        ip = ipaddress.ip_address((host or "").split("%")[0])
+    except ValueError:
+        return False
+    ip = getattr(ip, "ipv4_mapped", None) or ip
+    return not (ip.is_private or ip.is_loopback or ip.is_link_local)
+
+
 def is_internet_request(conn) -> bool:
-    """Richiesta arrivata da internet: è entrata dalla porta HTTPS aperta sul router (remote_port).
-    La porta del pannello (web_port) non è mai aperta sul router, quindi lì arriva solo la rete di casa."""
+    """Richiesta arrivata da internet: è entrata dalla porta HTTPS aperta sul router (remote_port), oppure viene da
+    un indirizzo pubblico. La porta del pannello (web_port) non va mai aperta sul router, ma se qualcuno lo facesse
+    (a mano o con la DMZ) chi arriva da internet non deve essere trattato come la rete di casa."""
     server = conn.scope.get("server") or (None, None)
-    return server[1] == REMOTE_PORT
+    if server[1] == REMOTE_PORT:
+        return True
+    return is_public_client_ip(conn.client.host if conn.client else "")
 
 CROSS_SITE_MSG = "Richiesta rifiutata: proviene da un altro sito web."
 
@@ -856,9 +887,28 @@ def build_network_payload() -> Dict[str, Any]:
     return payload
 
 
+def public_network_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Solo gli indirizzi raggiungibili da fuori: nome del PC, indirizzi e router della rete di casa no."""
+    mc = payload.get("minecraft") or {}
+    apk = payload.get("apk") or {}
+    upnp = {k: v for k, v in (payload.get("upnp") or {}).items() if k != "router_ip"}
+    return {
+        "public_ip": payload.get("public_ip"),
+        "minecraft": {k: mc.get(k) for k in ("public_port", "connection_mode", "direct_address", "public_address")},
+        "apk": {"remote_url": apk.get("remote_url"), "remote_qr": apk.get("remote_qr"),
+                "preferred_url": apk.get("remote_url"), "preferred_qr": apk.get("remote_qr")},
+        "upnp": upnp,
+        "remote": payload.get("remote"),
+    }
+
+
 @app.get("/api/network")
-def get_network_info():
-    return build_network_payload()
+def get_network_info(request: Request):
+    payload = build_network_payload()
+    # Senza PIN da internet niente dati della rete di casa (prima si vedevano nome del PC e indirizzo locale)
+    if is_internet_request(request) and not has_admin_access(request):
+        return public_network_payload(payload)
+    return payload
 
 @app.get("/api/remote/status")
 def get_remote_status():
@@ -904,9 +954,12 @@ def api_open_browser(req: OpenUrlRequest, request: Request):
 
 # UPnP Automatic Router Port Forwarding Routes
 @app.get("/api/upnp/status")
-def get_upnp_status():
+def get_upnp_status(request: Request):
     mc_port = manager.get_server_port()
-    return upnp_mgr.get_status(mc_port)
+    st = upnp_mgr.get_status(mc_port)
+    if is_internet_request(request) and not has_admin_access(request):
+        st = {k: v for k, v in st.items() if k != "router_ip"}   # indirizzo del router: solo per chi ha accesso
+    return st
 
 @app.post("/api/upnp/refresh")
 def refresh_upnp_port(request: Request):
@@ -922,10 +975,41 @@ _auth_failed_attempts: Dict[str, List[tuple]] = {}   # IP -> [(ora, impronta del
 AUTH_LOCK_SECONDS = 600
 AUTH_MAX_WRONG_PINS = 5
 _auth_lock = threading.Lock()
+# Limite per tutti gli indirizzi di internet insieme: chi prova i PIN da tanti indirizzi diversi (botnet) non viene
+# fermato dal limite per indirizzo. Raggiunto il limite si blocca il PIN da internet per un'ora (in casa funziona, e i
+# telefoni che hanno già fatto l'accesso continuano a funzionare col loro token) e si avvisa il telefono.
+_internet_failed_attempts: List[tuple] = []   # [(ora, impronta del PIN sbagliato)] da internet
+AUTH_INTERNET_WINDOW_SECONDS = 3600
+AUTH_INTERNET_MAX_WRONG_PINS = 20
+
+
+def _wait_text(seconds: int) -> str:
+    mins, secs = divmod(seconds, 60)
+    return (f"{mins} minut{'o' if mins == 1 else 'i'}" + (f" e {secs} secondi" if secs else "")) if mins else f"{secs} secondi"
+
+
+def _too_many_pins(attempts: List[tuple], window: int, now: float, detail: str) -> JSONResponse:
+    retry_after = int(window - (now - min(a[0] for a in attempts))) + 1
+    # retry_after: secondi che mancano, per l'app e il pannello (prima diceva sempre "10 minuti")
+    return JSONResponse(status_code=429, headers={"Retry-After": str(retry_after)}, content={
+        "detail": detail.format(_wait_text(retry_after)), "retry_after": retry_after})
+
+
+def _alert_internet_pin_lock():
+    msg = (f"Da internet sono stati provati {AUTH_INTERNET_MAX_WRONG_PINS} PIN sbagliati in un'ora: "
+           "l'accesso con PIN da internet è bloccato per un'ora. In casa funziona.")
+    try:
+        manager.add_log(f"[Sicurezza] {msg}")
+        manager.send_push_notification(title="Tentativi di accesso da internet", message=msg,
+                                       priority="high", tags="warning,lock")
+    except Exception as e:
+        print(f"[Sicurezza] Avviso blocco PIN non inviato: {e}")
+
 
 @app.post("/api/auth/verify")
 def verify_pin(req: VerifyPinRequest, request: Request):
     client_ip = request.client.host if request.client else "unknown"   # senza tunnel è l'IP reale del dispositivo
+    internet = is_internet_request(request)
     now = time.time()
     with _auth_lock:
         # Tentativi sbagliati degli ultimi 10 minuti: (ora, impronta del PIN). Contano solo i PIN DIVERSI: l'app che
@@ -933,15 +1017,15 @@ def verify_pin(req: VerifyPinRequest, request: Request):
         attempts = [a for a in _auth_failed_attempts.get(client_ip, []) if now - a[0] < AUTH_LOCK_SECONDS]
         _auth_failed_attempts[client_ip] = attempts
         if len({a[1] for a in attempts}) >= AUTH_MAX_WRONG_PINS:
-            retry_after = int(AUTH_LOCK_SECONDS - (now - min(a[0] for a in attempts))) + 1
-            mins, secs = divmod(retry_after, 60)
-            when = (f"{mins} minut{'o' if mins == 1 else 'i'}" + (f" e {secs} secondi" if secs else "")) if mins else f"{secs} secondi"
-            # retry_after: secondi che mancano, per l'app e il pannello (prima diceva sempre "10 minuti")
-            return JSONResponse(status_code=429, headers={"Retry-After": str(retry_after)}, content={
-                "detail": f"Troppi PIN errati: accesso bloccato. Riprova tra {when}.",
-                "retry_after": retry_after,
-            })
-    if is_internet_request(request) and pin_is_default():
+            return _too_many_pins(attempts, AUTH_LOCK_SECONDS, now, "Troppi PIN errati: accesso bloccato. Riprova tra {}.")
+        if internet:
+            _internet_failed_attempts[:] = [a for a in _internet_failed_attempts
+                                            if now - a[0] < AUTH_INTERNET_WINDOW_SECONDS]
+            if len({a[1] for a in _internet_failed_attempts}) >= AUTH_INTERNET_MAX_WRONG_PINS:
+                return _too_many_pins(_internet_failed_attempts, AUTH_INTERNET_WINDOW_SECONDS, now,
+                                      "Troppi PIN errati da internet: accesso con PIN da internet bloccato. "
+                                      "Riprova tra {} (in casa funziona).")
+    if internet and pin_is_default():
         raise HTTPException(status_code=403, detail=DEFAULT_PIN_INTERNET_MSG)
 
     expected = str(manager.config.get("admin_pin", "1234")).strip()
@@ -960,9 +1044,16 @@ def verify_pin(req: VerifyPinRequest, request: Request):
             "message": "Accesso autorizzato."
         }
 
+    locked_now = False
     with _auth_lock:
         pin_mark = hashlib.sha256(str(req.pin or "").strip().encode("utf-8")).hexdigest()[:16]
         _auth_failed_attempts.setdefault(client_ip, []).append((now, pin_mark))
+        if internet:
+            before = len({a[1] for a in _internet_failed_attempts})
+            _internet_failed_attempts.append((now, pin_mark))
+            locked_now = before < AUTH_INTERNET_MAX_WRONG_PINS <= len({a[1] for a in _internet_failed_attempts})
+    if locked_now:
+        _alert_internet_pin_lock()   # una sola volta, quando scatta il blocco (ntfy non va tempestato)
     raise HTTPException(status_code=403, detail="PIN di sicurezza non corretto.")
 
 @app.post("/api/server/start")
@@ -1461,7 +1552,11 @@ def api_get_backup_list(request: Request):
 def api_backup_restore(req: RestoreRequest, request: Request):
     verify_admin_access(request)
     is_stopped = (manager.state == "STOPPED")
-    res = backup_mgr.start_restore(is_server_stopped=is_stopped, source_path=req.source_path)
+    res = backup_mgr.start_restore(is_server_stopped=is_stopped, source_path=req.source_path,
+                                   confirm_other_server=req.confirm_other_server)
+    if res.get("code") in ("other_server", "unknown_server"):
+        # Il pannello chiede conferma e riprova; l'app (e le versioni precedenti) mostrano il messaggio
+        return JSONResponse(status_code=409, content=dict(res, detail=res.get("message")))
     if res.get("status") == "error":
         raise HTTPException(status_code=400, detail=res.get("message"))
     return res
@@ -2048,4 +2143,8 @@ async def _serve_all(port: int):
 if __name__ == "__main__":
     port = manager.config.get("web_port", 8080)
     print(f"Avvio Voxarium su porta {port} (HTTPS da internet su {REMOTE_PORT})...")
-    asyncio.run(_serve_all(port))
+    try:
+        asyncio.run(_serve_all(port))
+    except KeyboardInterrupt:
+        # Chiusura normale (Ctrl+C, arresto del servizio su Linux): niente traccia d'errore nel registro
+        pass
