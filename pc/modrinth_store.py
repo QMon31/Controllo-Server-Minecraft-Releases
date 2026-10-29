@@ -107,19 +107,6 @@ def get_installed_projects(server_dir: str) -> Dict[str, Any]:
     for pid in to_delete:
         installed.pop(pid, None)
 
-    # Also scan disk for jars to detect mods/plugins installed outside the store
-    disk_jars: Dict[str, str] = {}  # lowercase_base -> (folder, actual_filename)
-    for sub in ["mods", "plugins"]:
-        dir_path = os.path.join(server_dir, sub)
-        if os.path.isdir(dir_path):
-            try:
-                for fname in os.listdir(dir_path):
-                    if fname.lower().endswith(".jar"):
-                        clean_name = fname.lower()
-                        disk_jars[clean_name] = (sub, fname)
-            except Exception:
-                pass
-
     return installed
 
 

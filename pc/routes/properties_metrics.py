@@ -6,7 +6,7 @@ import re
 from fastapi import APIRouter
 from platform_utils import write_text_atomic
 
-from app import CloudSyncRequest, PropertiesUpdateRequest, backup_mgr, manager, verify_admin_access
+from app import CloudSyncRequest, PropertiesUpdateRequest, backup_mgr, is_safe_server_path, manager, verify_admin_access
 
 router = APIRouter()
 
@@ -222,6 +222,8 @@ def api_set_backup_cloud_config(req: CloudSyncRequest, request: Request):
     verify_admin_access(request)
     target = req.cloud_sync_dir.strip() if req.cloud_sync_dir and req.cloud_sync_dir.strip() else ""
     if target:
+        if not is_safe_server_path(target):
+            raise HTTPException(status_code=400, detail="Percorso cartella non consentito per motivi di sicurezza.")
         try:
             os.makedirs(target, exist_ok=True)
         except Exception as e:

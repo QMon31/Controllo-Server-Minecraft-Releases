@@ -109,7 +109,7 @@ class IconTest(unittest.TestCase):
         from PIL import Image
         with Image.open(os.path.join(ROOT, "static", "minecraft_block.png")) as im:
             self.assertEqual(im.size, (256, 256))
-            self.assertEqual(list(im.convert("RGBA").getdata()), list(voxarium_icon.icon(256).getdata()))
+            self.assertEqual(im.convert("RGBA").tobytes(), voxarium_icon.icon(256).tobytes())
         with Image.open(os.path.join(ROOT, "minecraft.ico")) as ico:
             self.assertIn((16, 16), ico.ico.sizes())
             self.assertIn((256, 256), ico.ico.sizes())

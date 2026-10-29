@@ -877,12 +877,15 @@ class BackupManager:
             try:
                 for root, dirs, files in os.walk(self.cloud_sync_dir):
                     for f in files:
-                        if f.lower().endswith(".zip") and "backup" in f.lower():
-                            fp = os.path.join(root, f)
-                            if os.path.normcase(fp) != current:
-                                entry = self._backup_entry(fp, "cloud", f"cloud_{f}")
-                                if entry:
-                                    backups.append(entry)
+                        fp = os.path.join(root, f)
+                        if not self._is_our_backup_name(f) or not os.path.isfile(fp):
+                            continue
+                        if f.lower() != LEGACY_BACKUP_FILENAME.lower() and not self._cached_info(fp):
+                            continue
+                        if os.path.normcase(fp) != current:
+                            entry = self._backup_entry(fp, "cloud", f"cloud_{f}")
+                            if entry:
+                                backups.append(entry)
             except Exception:
                 pass
         # Prima il server attivo (il suo ultimo backup in cima, poi le copie precedenti dalla più recente), poi i

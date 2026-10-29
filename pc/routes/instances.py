@@ -93,12 +93,19 @@ def api_add_instance(req: AddInstanceRequest, request: Request):
             server_run_bat = server_run_bat or detected.get("server_run_bat")
             server_command = server_command or detected.get("server_command")
 
+    if req.set_active and backup_mgr.is_running:
+        raise HTTPException(status_code=409, detail="Attendi la fine del backup o del ripristino in corso.")
+    eff_port = server_port if server_port is not None else 25565
+    port_error = minecraft_port_error(eff_port)
+    if port_error:
+        raise HTTPException(status_code=400, detail=port_error)
+
     res = instance_manager.add_instance(
         name=name or os.path.basename(os.path.normpath(req.server_dir)) or "Server",
         server_dir=req.server_dir,
         server_run_bat=server_run_bat or "run.bat",
         server_command=server_command or "java -Xmx4G -Xms2G -jar server.jar nogui",
-        server_port=server_port or 25565,
+        server_port=eff_port,
         server_type=server_type or "",
         mc_version=mc_version or "",
         set_active=req.set_active or False,
@@ -106,6 +113,11 @@ def api_add_instance(req: AddInstanceRequest, request: Request):
     )
     if not res.get("success"):
         raise HTTPException(status_code=400, detail=res.get("error"))
+    if req.set_active:
+        try:
+            backup_mgr.server_dir = manager.config.get("server_dir", "")
+        except Exception:
+            pass
     return {"status": "success", **res}
 
 @router.post("/api/instances/update")
@@ -124,6 +136,10 @@ def api_update_instance(req: UpdateInstanceRequest, request: Request):
         updates["mc_version"] = updates.pop("version")
     if "server_dir" in updates and not is_safe_server_path(updates["server_dir"]):
         raise HTTPException(status_code=400, detail="Percorso cartella non consentito.")
+    if "server_dir" in updates and backup_mgr.is_running:
+        active = instance_manager.get_active_instance()
+        if active and active.get("id") == req.instance_id:
+            raise HTTPException(status_code=409, detail="Attendi la fine del backup o del ripristino in corso.")
     if "server_port" in updates:
         port_error = minecraft_port_error(updates["server_port"])
         if port_error:
@@ -131,6 +147,11 @@ def api_update_instance(req: UpdateInstanceRequest, request: Request):
     res = instance_manager.update_instance(req.instance_id, updates, manager=manager)
     if not res.get("success"):
         raise HTTPException(status_code=400, detail=res.get("error"))
+    if "server_dir" in updates:
+        try:
+            backup_mgr.server_dir = manager.config.get("server_dir", "")
+        except Exception:
+            pass
     if "server_port" in updates:
         # La porta vale solo se è scritta anche in server.properties del server
         try:

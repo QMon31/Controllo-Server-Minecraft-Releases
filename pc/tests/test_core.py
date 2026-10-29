@@ -1714,7 +1714,8 @@ class ExistingMethodsTest(unittest.TestCase):
         import glob
 
         def members(path, cls=None):
-            tree = ast.parse(open(os.path.join(ROOT, path), encoding="utf-8").read())
+            with open(os.path.join(ROOT, path), encoding="utf-8") as fh:
+                tree = ast.parse(fh.read())
             names = set()
             for n in ast.walk(tree):
                 if cls is None:
@@ -1743,7 +1744,8 @@ class ExistingMethodsTest(unittest.TestCase):
                 "mod_info": members("mod_info.py")}
         bad = []
         for f in ["app.py"] + [os.path.relpath(p, ROOT) for p in glob.glob(os.path.join(ROOT, "routes", "*.py"))]:
-            src = open(os.path.join(ROOT, f), encoding="utf-8").read()
+            with open(os.path.join(ROOT, f), encoding="utf-8") as fh:
+                src = fh.read()
             for obj, names in objs.items():
                 for m in re.finditer(r"\b%s\.(\w+)" % obj, src):
                     if m.group(1) not in names and not m.group(1).startswith("__"):
@@ -1893,11 +1895,13 @@ class StoreInstallVersionTest(unittest.TestCase):
         self.assertNotIn("loaders", self.urls[-1])           # nessun filtro: tutte le versioni
 
     def test_route_uses_active_server(self):
-        src = open(os.path.join(ROOT, "app.py"), encoding="utf-8").read()
+        with open(os.path.join(ROOT, "app.py"), encoding="utf-8") as fh:
+            src = fh.read()
         model = src[src.index("class InstallStoreRequest"):src.index("class UninstallStoreRequest")]
         self.assertIn("loader: Optional[str] = None", model)
         self.assertIn("version: Optional[str] = None", model)
-        self.assertNotIn("'1.20.1' : version", open(os.path.join(ROOT, "static", "app.js"), encoding="utf-8").read())
+        with open(os.path.join(ROOT, "static", "app.js"), encoding="utf-8") as fh:
+            self.assertNotIn("'1.20.1' : version", fh.read())
 
 
 class PublicDownloadsTest(unittest.TestCase):
@@ -1923,6 +1927,127 @@ class PublicDownloadsTest(unittest.TestCase):
             self.assertIn("update_readme_download(tag", fh.read())
         with open(os.path.join(ROOT, "release_about.md"), encoding="utf-8") as fh:
             self.assertIn("Voxarium#download", fh.read())
+
+
+class CodeAuditFixesTest(unittest.TestCase):
+    """Controlli su Store, file, istanze, cartella cloud backup, RCON multi-pacchetto e chiusura file."""
+
+    def test_world_spawn_readers_close_files(self):
+        import gc
+        import warnings
+        import server_manager
+        with tempfile.TemporaryDirectory() as td:
+            with open(os.path.join(td, "server.properties"), "w", encoding="utf-8") as f:
+                f.write("level-name=world\n")
+            with warnings.catch_warnings(record=True) as w:
+                warnings.simplefilter("always", ResourceWarning)
+                server_manager.read_world_spawn_dimension(td)
+                server_manager.read_world_spawn(td)
+                gc.collect()
+                self.assertEqual([str(x.message) for x in w], [])
+
+    def test_store_blocks_install_and_uninstall_when_server_or_backup_running(self):
+        from fastapi import HTTPException
+        import app as app_mod
+        from routes import store as store_routes
+        with mock.patch("routes.store.verify_admin_access"), mock.patch.object(app_mod.manager, "state", "ONLINE"):
+            with self.assertRaises(HTTPException) as ctx1:
+                store_routes.api_store_install(app_mod.InstallStoreRequest(project_id="proj1"), None)
+            self.assertEqual(ctx1.exception.status_code, 409)
+            with self.assertRaises(HTTPException) as ctx2:
+                store_routes.api_store_uninstall(app_mod.UninstallStoreRequest(project_id="proj1"), None)
+            self.assertEqual(ctx2.exception.status_code, 409)
+        with mock.patch("routes.store.verify_admin_access"), mock.patch.object(app_mod.backup_mgr, "is_running", True):
+            with self.assertRaises(HTTPException) as ctx3:
+                store_routes.api_store_uninstall(app_mod.UninstallStoreRequest(project_id="proj1"), None)
+            self.assertEqual(ctx3.exception.status_code, 409)
+
+    def test_files_routes_block_when_backup_running(self):
+        from fastapi import HTTPException
+        import app as app_mod
+        from routes import files as files_routes
+        with tempfile.TemporaryDirectory() as td:
+            p = os.path.join(td, "importante.txt")
+            with open(p, "w", encoding="utf-8") as f:
+                f.write("dati")
+            with mock.patch("routes.files.verify_admin_access"), \
+                    mock.patch("routes.files.get_server_dir_path", return_value=td), \
+                    mock.patch.object(app_mod.backup_mgr, "is_running", True):
+                with self.assertRaises(HTTPException) as ctx:
+                    files_routes.api_files_delete(app_mod.DeleteItemRequest(path="importante.txt"), None)
+                self.assertEqual(ctx.exception.status_code, 409)
+            self.assertTrue(os.path.exists(p))
+
+    def test_instances_add_validates_port_and_backup_running(self):
+        from fastapi import HTTPException
+        import app as app_mod
+        from routes import instances as instances_routes
+        with tempfile.TemporaryDirectory() as td:
+            with mock.patch("routes.instances.verify_admin_access"):
+                with self.assertRaises(HTTPException) as ctx_port:
+                    instances_routes.api_add_instance(app_mod.AddInstanceRequest(
+                        name="Test8080", server_dir=td, server_port=8080, server_type="vanilla", mc_version="1.20.4"
+                    ), None)
+                self.assertEqual(ctx_port.exception.status_code, 400)
+                with mock.patch.object(app_mod.backup_mgr, "is_running", True):
+                    with self.assertRaises(HTTPException) as ctx_busy:
+                        instances_routes.api_add_instance(app_mod.AddInstanceRequest(
+                            name="TestBusy", server_dir=td, server_port=25565, server_type="vanilla", mc_version="1.20.4", set_active=True
+                        ), None)
+                    self.assertEqual(ctx_busy.exception.status_code, 409)
+
+    def test_cloud_backup_rejects_system_dir_and_foreign_zips(self):
+        from fastapi import HTTPException
+        import app as app_mod
+        from routes import properties_metrics as pm_routes
+        with tempfile.TemporaryDirectory() as td:
+            foreign = os.path.join(td, "mio_backup_foto_personali.zip")
+            with zipfile.ZipFile(foreign, "w") as zf:
+                zf.writestr("foto.jpg", b"x")
+            with mock.patch.object(app_mod.backup_mgr, "cloud_sync_dir", td):
+                names = [b["filename"] for b in app_mod.backup_mgr.list_available_backups()]
+                self.assertNotIn("mio_backup_foto_personali.zip", names)
+            if os.name == "nt":
+                with mock.patch("routes.properties_metrics.verify_admin_access"):
+                    with self.assertRaises(HTTPException) as ctx:
+                        pm_routes.api_set_backup_cloud_config(app_mod.CloudSyncRequest(cloud_sync_dir=r"C:\Windows"), None)
+                    self.assertEqual(ctx.exception.status_code, 400)
+
+    def test_rcon_reassembles_split_tcp_packets(self):
+        import socket
+        import struct
+        import threading
+        import app as app_mod
+        port_holder = []
+
+        def fake_rcon():
+            srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            srv.settimeout(3)
+            srv.bind(("127.0.0.1", 0))
+            srv.listen(1)
+            port_holder.append(srv.getsockname()[1])
+            conn, _ = srv.accept()
+            _ = conn.recv(1024)
+            auth_resp = struct.pack("<ii", 99, 2) + b"\x00\x00"
+            conn.sendall(struct.pack("<i", len(auth_resp)) + auth_resp)
+            _ = conn.recv(1024)
+            full_text = b"Posizione giocatore: [123.45d, 64.0d, -789.12d]"
+            cmd_resp = struct.pack("<ii", 100, 0) + full_text + b"\x00\x00"
+            pkt = struct.pack("<i", len(cmd_resp)) + cmd_resp
+            conn.sendall(pkt[:22])
+            time.sleep(0.02)
+            conn.sendall(pkt[22:])
+            conn.close()
+            srv.close()
+
+        t = threading.Thread(target=fake_rcon, daemon=True)
+        t.start()
+        while not port_holder:
+            time.sleep(0.005)
+        with mock.patch.object(app_mod.manager, "_get_rcon_credentials", return_value=(port_holder[0], "test")):
+            res = app_mod.manager._send_rcon_command("data get entity Steve")
+        t.join(timeout=2)
+        self.assertEqual(res, "Posizione giocatore: [123.45d, 64.0d, -789.12d]")
 
 
 if __name__ == "__main__":

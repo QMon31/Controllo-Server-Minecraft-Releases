@@ -7,7 +7,7 @@ import os
 from fastapi import APIRouter
 
 from app import (
-    CreateItemRequest, DeleteItemRequest, RenameItemRequest, SaveFileRequest, UnzipItemRequest, get_server_dir_path, save_upload,
+    CreateItemRequest, DeleteItemRequest, RenameItemRequest, SaveFileRequest, UnzipItemRequest, backup_mgr, get_server_dir_path, save_upload,
     verify_admin_access,
 )
 
@@ -40,6 +40,8 @@ def api_files_read(path: str = "", subpath: str = "", request: Request = None):
 @router.post("/api/files/save")
 def api_files_save(req: SaveFileRequest, request: Request):
     verify_admin_access(request)
+    if backup_mgr.is_running:
+        raise HTTPException(status_code=409, detail="Attendi la fine del backup o del ripristino in corso.")
     server_dir = get_server_dir_path()
     target_rel = req.path or req.subpath or ""
     res = file_manager.save_text_file(server_dir, target_rel, req.content)
@@ -50,6 +52,8 @@ def api_files_save(req: SaveFileRequest, request: Request):
 @router.post("/api/files/create")
 def api_files_create(req: CreateItemRequest, request: Request):
     verify_admin_access(request)
+    if backup_mgr.is_running:
+        raise HTTPException(status_code=409, detail="Attendi la fine del backup o del ripristino in corso.")
     server_dir = get_server_dir_path()
     target_rel = req.path or req.subpath or ""
     if req.name:
@@ -62,6 +66,8 @@ def api_files_create(req: CreateItemRequest, request: Request):
 @router.post("/api/files/delete")
 def api_files_delete(req: DeleteItemRequest, request: Request):
     verify_admin_access(request)
+    if backup_mgr.is_running:
+        raise HTTPException(status_code=409, detail="Attendi la fine del backup o del ripristino in corso.")
     server_dir = get_server_dir_path()
     target_rel = req.path or req.subpath or ""
     res = file_manager.delete_item(server_dir, target_rel)
@@ -72,6 +78,8 @@ def api_files_delete(req: DeleteItemRequest, request: Request):
 @router.post("/api/files/rename")
 def api_files_rename(req: RenameItemRequest, request: Request):
     verify_admin_access(request)
+    if backup_mgr.is_running:
+        raise HTTPException(status_code=409, detail="Attendi la fine del backup o del ripristino in corso.")
     server_dir = get_server_dir_path()
     target_rel = req.path or req.subpath or ""
     res = file_manager.rename_item(server_dir, target_rel, req.new_name)
@@ -82,6 +90,8 @@ def api_files_rename(req: RenameItemRequest, request: Request):
 @router.post("/api/files/unzip")
 def api_files_unzip(req: UnzipItemRequest, request: Request):
     verify_admin_access(request)
+    if backup_mgr.is_running:
+        raise HTTPException(status_code=409, detail="Attendi la fine del backup o del ripristino in corso.")
     server_dir = get_server_dir_path()
     target_rel = req.path or req.subpath or ""
     res = file_manager.unzip_archive(server_dir, target_rel)
@@ -103,6 +113,8 @@ def api_files_download(path: str = "", subpath: str = "", request: Request = Non
 @router.post("/api/files/upload")
 async def api_files_upload(request: Request, filename: str, path: str = ""):
     verify_admin_access(request)
+    if backup_mgr.is_running:
+        raise HTTPException(status_code=409, detail="Attendi la fine del backup o del ripristino in corso.")
     server_dir = get_server_dir_path()
     target_dir = file_manager.resolve_safe_path(server_dir, path)
     if not target_dir or not os.path.isdir(target_dir):

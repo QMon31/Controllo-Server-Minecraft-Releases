@@ -104,9 +104,10 @@ def read_world_spawn_dimension(server_dir: str) -> str:
         level = "world"
         props = os.path.join(server_dir, "server.properties")
         if os.path.isfile(props):
-            for line in open(props, encoding="utf-8", errors="ignore"):
-                if line.startswith("level-name="):
-                    level = line.split("=", 1)[1].strip() or "world"
+            with open(props, encoding="utf-8", errors="ignore") as pf:
+                for line in pf:
+                    if line.startswith("level-name="):
+                        level = line.split("=", 1)[1].strip() or "world"
         with gzip.open(os.path.join(server_dir, level, "level.dat"), "rb") as f:
             root_type = f.read(1)[0]
             f.read(int.from_bytes(f.read(2), "big"))
@@ -126,9 +127,10 @@ def read_world_spawn(server_dir: str) -> Optional[Tuple[int, int, int]]:
         level = "world"
         props = os.path.join(server_dir, "server.properties")
         if os.path.isfile(props):
-            for line in open(props, encoding="utf-8", errors="ignore"):
-                if line.startswith("level-name="):
-                    level = line.split("=", 1)[1].strip() or "world"
+            with open(props, encoding="utf-8", errors="ignore") as pf:
+                for line in pf:
+                    if line.startswith("level-name="):
+                        level = line.split("=", 1)[1].strip() or "world"
         with gzip.open(os.path.join(server_dir, level, "level.dat"), "rb") as f:
             root_type = f.read(1)[0]
             f.read(int.from_bytes(f.read(2), "big"))
@@ -360,6 +362,24 @@ class ServerManager:
         import struct
         s = None
         try:
+            def _recv_packet(sock: socket.socket) -> bytes:
+                buf = bytearray()
+                while len(buf) < 4:
+                    chunk = sock.recv(4096)
+                    if not chunk:
+                        return bytes(buf)
+                    buf.extend(chunk)
+                pkt_len = struct.unpack("<i", buf[:4])[0]
+                if pkt_len < 10 or pkt_len > 65536:
+                    return bytes(buf)
+                total = 4 + pkt_len
+                while len(buf) < total:
+                    chunk = sock.recv(min(4096, total - len(buf)))
+                    if not chunk:
+                        break
+                    buf.extend(chunk)
+                return bytes(buf[:total])
+
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             s.settimeout(2.5)
             s.connect(("127.0.0.1", port))
@@ -370,7 +390,7 @@ class ServerManager:
             pkt = struct.pack("<iii", len(pwd_bytes) + 10, req_id, 3) + pwd_bytes + b"\x00\x00"
             s.sendall(pkt)
 
-            resp = s.recv(4096)
+            resp = _recv_packet(s)
             if len(resp) < 12:
                 s.close()
                 return None
@@ -384,7 +404,7 @@ class ServerManager:
             pkt = struct.pack("<iii", len(cmd_bytes) + 10, req_id + 1, 2) + cmd_bytes + b"\x00\x00"
             s.sendall(pkt)
 
-            resp = s.recv(4096)
+            resp = _recv_packet(s)
             out = ""
             if len(resp) >= 12:
                 out = resp[12:-2].decode("utf-8", errors="replace")

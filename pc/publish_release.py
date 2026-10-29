@@ -11,9 +11,11 @@ import sys
 import urllib.error
 import urllib.request
 
-from pc_version import LEGACY_UPDATE_REPO, PC_BUILD, PC_VERSION, UPDATE_REPO
-
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+if BASE_DIR not in sys.path:
+    sys.path.insert(0, BASE_DIR)
+
+from pc_version import LEGACY_UPDATE_REPO, PC_BUILD, PC_VERSION, UPDATE_REPO
 SETUP_PATH = os.path.join(BASE_DIR, "Setup_Voxarium.exe")
 SETUP_NAME = "Setup_Voxarium.exe"
 TOKEN_FILE = os.path.join(os.path.expanduser("~"), ".controllo_mc_github_token")

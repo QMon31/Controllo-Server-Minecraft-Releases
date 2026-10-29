@@ -10,6 +10,8 @@ import tempfile
 import time
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+if BASE_DIR not in sys.path:
+    sys.path.insert(0, BASE_DIR)
 LOCAL_APP_DIR = os.path.join(os.environ.get("LOCALAPPDATA") or os.path.join(os.path.expanduser("~"), "AppData", "Local"),
                              "Programs", "Controllo Server Minecraft")
 DESKTOP_DIR = os.path.join(os.path.expanduser("~"), "Desktop")
@@ -79,6 +81,7 @@ FILES_TO_SYNC = [
     "Installer.cs",
     "InstallerI18n.cs",
     "create_package.py",
+    "create_linux_package.py",
     "requirements.txt",
     "requirements-lock.txt",
     "build_runtime.py",
@@ -86,9 +89,17 @@ FILES_TO_SYNC = [
     "pc_updater.py",
     "pin_rules.py",
     "publish_release.py",
+    "publish_linux_release.py",
     "publish_source.py",
+    "publish_winget.py",
+    "make_winget_manifest.py",
+    "voxarium_icon.py",
+    "release_about.md",
     "build_deploy.py",
     "BUGFIX_PER_CHAT_PC.md",
+    os.path.join("linux", "install.sh"),
+    os.path.join("linux", "voxarium.service"),
+    *[os.path.join("licenses", f) for f in sorted(os.listdir(os.path.join(BASE_DIR, "licenses")))],
     *[os.path.join("routes", f) for f in sorted(os.listdir(os.path.join(BASE_DIR, "routes"))) if f.endswith(".py")],
     os.path.join("static", "index.html"),
     os.path.join("static", "app.js"),
@@ -102,6 +113,7 @@ FILES_TO_SYNC = [
     os.path.join("static", "icon-512.png"),
     os.path.join("static", "icon-maskable-512.png"),
     "minecraft.ico",
+    "voxarium.ico",
     "minecraft_block.png",
     "favicon.ico",
     "Microsoft.Web.WebView2.Core.dll",
@@ -110,8 +122,11 @@ FILES_TO_SYNC = [
 ]
 
 # File che servono solo a sviluppare: vanno nelle copie del progetto, non nella cartella installata del programma
-DEV_ONLY_FILES = {"PROJECT_CONTEXT.md", "Launcher.cs", "Installer.cs", "InstallerI18n.cs", "create_package.py", "requirements.txt",
-                  "requirements-lock.txt", "build_runtime.py", "publish_release.py", "publish_source.py", "build_deploy.py", "BUGFIX_PER_CHAT_PC.md"}
+DEV_ONLY_FILES = {"PROJECT_CONTEXT.md", "Launcher.cs", "Installer.cs", "InstallerI18n.cs", "create_package.py",
+                  "create_linux_package.py", "requirements.txt", "requirements-lock.txt", "build_runtime.py",
+                  "publish_release.py", "publish_linux_release.py", "publish_source.py", "publish_winget.py",
+                  "make_winget_manifest.py", "voxarium_icon.py", "release_about.md", "build_deploy.py",
+                  "BUGFIX_PER_CHAT_PC.md", os.path.join("linux", "install.sh"), os.path.join("linux", "voxarium.service")}
 
 # config.json e instances.json (PIN, push_secret, elenco server) non sono in FILES_TO_SYNC: l'unica copia valida è
 # quella del programma installato, modificata dal pannello. Copiarli da qui sovrascriveva le modifiche fatte dal pannello
@@ -293,19 +308,19 @@ print(f"Avvio del backend da: {app_target_dir}")
 # Stesso registro del launcher, così gli avvisi (print) restano leggibili
 log_dir = os.path.join(os.environ.get("LOCALAPPDATA", ""), "Controllo Server Minecraft")
 os.makedirs(log_dir, exist_ok=True)
-backend_log = open(os.path.join(log_dir, "backend.log"), "a", encoding="utf-8")
 DETACHED = 0x00000008
 NEW_GROUP = 0x00000200
 NO_WINDOW = 0x08000000
-subprocess.Popen(
-    [py_exe, "-u", app_py_file],
-    cwd=app_target_dir,
-    stdin=subprocess.DEVNULL,
-    stdout=backend_log,
-    stderr=subprocess.STDOUT,
-    creationflags=DETACHED | NEW_GROUP | NO_WINDOW,
-    close_fds=True
-)
+with open(os.path.join(log_dir, "backend.log"), "a", encoding="utf-8") as backend_log:
+    subprocess.Popen(
+        [py_exe, "-u", app_py_file],
+        cwd=app_target_dir,
+        stdin=subprocess.DEVNULL,
+        stdout=backend_log,
+        stderr=subprocess.STDOUT,
+        creationflags=DETACHED | NEW_GROUP | NO_WINDOW,
+        close_fds=True
+    )
 
 # Verify port 8080 becomes available
 time.sleep(3)

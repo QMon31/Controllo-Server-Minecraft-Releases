@@ -7,7 +7,7 @@ import modrinth_store
 from fastapi import APIRouter
 
 from app import (
-    InstallStoreRequest, UninstallStoreRequest, UpdateStoreRequest, get_server_dir_path, manager, verify_admin_access,
+    InstallStoreRequest, UninstallStoreRequest, UpdateStoreRequest, backup_mgr, get_server_dir_path, manager, verify_admin_access,
 )
 
 router = APIRouter()
@@ -43,6 +43,13 @@ def api_store_search(q: str = "", query: str = "", loader: str = "", version: st
 @router.post("/api/store/install")
 def api_store_install(req: InstallStoreRequest, request: Request):
     verify_admin_access(request)
+    if backup_mgr.is_running:
+        raise HTTPException(status_code=409, detail="Attendi la fine del backup o del ripristino in corso.")
+    if manager.state in SERVER_RUNNING_STATES:
+        raise HTTPException(
+            status_code=409,
+            detail="Impossibile aggiornare la mod: il server Minecraft è in esecuzione e blocca i file .jar. Spegni il server prima di procedere."
+        )
     server_dir = get_server_dir_path()
     active_inst = instance_manager.get_active_instance()
     eff_loader = req.loader or active_inst.get("server_type", "")
@@ -61,6 +68,13 @@ def api_store_install(req: InstallStoreRequest, request: Request):
 @router.post("/api/store/uninstall")
 def api_store_uninstall(req: UninstallStoreRequest, request: Request):
     verify_admin_access(request)
+    if backup_mgr.is_running:
+        raise HTTPException(status_code=409, detail="Attendi la fine del backup o del ripristino in corso.")
+    if manager.state in SERVER_RUNNING_STATES:
+        raise HTTPException(
+            status_code=409,
+            detail="Impossibile eliminare la mod: il server Minecraft è in esecuzione e blocca il file. Spegni il server prima di eliminare le mod."
+        )
     server_dir = get_server_dir_path()
     res = modrinth_store.uninstall_modrinth_project(
         project_id_or_slug=req.project_id,
@@ -125,6 +139,8 @@ def api_store_update(req: UpdateStoreRequest, request: Request):
     eff_loader = active_inst.get("server_type", "")
     eff_version = active_inst.get("mc_version", "")
 
+    if backup_mgr.is_running:
+        raise HTTPException(status_code=409, detail="Attendi la fine del backup o del ripristino in corso.")
     # If server is running, block mod file replacement to prevent WinError 32
     # (prima chiamava una funzione inesistente e l'aggiornamento finiva sempre con l'errore 500)
     if manager.state in SERVER_RUNNING_STATES:
@@ -156,6 +172,8 @@ def api_store_update_all(request: Request):
     eff_loader = active_inst.get("server_type", "")
     eff_version = active_inst.get("mc_version", "")
 
+    if backup_mgr.is_running:
+        raise HTTPException(status_code=409, detail="Attendi la fine del backup o del ripristino in corso.")
     if manager.state in SERVER_RUNNING_STATES:
         raise HTTPException(
             status_code=409,
