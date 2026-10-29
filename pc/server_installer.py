@@ -1586,38 +1586,43 @@ class ForgeServerInstaller:
             self.progress_pct = 95
             self.step_text = "Salvataggio configurazione del pannello..."
 
+        # Se un altro server è acceso in questo momento, il nuovo server viene registrato in instances.json ma non
+        # sostituisce il server attivo in config.json e nel gestore backup finché quello in esecuzione non viene spento
+        server_busy = bool(server_manager and getattr(server_manager, "state", "OFFLINE") in ("ONLINE", "STARTING", "STOPPING", "RESTARTING"))
+
         # Con il pannello acceso si parte dalla sua configurazione in memoria e si salva da lì: un solo punto che
         # scrive config.json (due copie diverse si cancellavano a vicenda le modifiche)
-        if server_manager is not None:
-            cfg = server_manager.config
-        else:
-            cfg = {}
-            if os.path.exists(self.config_path):
-                try:
-                    cfg = read_json_with_backup(self.config_path)
-                except Exception as e:
-                    # Senza questo si riscriverebbe config.json da zero, perdendo PIN e chiavi
-                    self._append_log(f"[AVVISO] config.json non leggibile ({e}): non viene modificato.")
-                    cfg = None
-
-        if cfg is not None:
-            cfg["server_dir"] = target_dir
-            cfg["server_run_bat"] = run_bat_path
-            cfg["server_command"] = launch_cmd
-            cfg["server_port"] = port
+        if not server_busy:
             if server_manager is not None:
-                server_manager.save_config()
+                cfg = server_manager.config
             else:
-                write_json_atomic(self.config_path, cfg, keep_backup=True)
-            self._append_log("[OK] config.json aggiornato con successo.")
+                cfg = {}
+                if os.path.exists(self.config_path):
+                    try:
+                        cfg = read_json_with_backup(self.config_path)
+                    except Exception as e:
+                        # Senza questo si riscriverebbe config.json da zero, perdendo PIN e chiavi
+                        self._append_log(f"[AVVISO] config.json non leggibile ({e}): non viene modificato.")
+                        cfg = None
 
-        if server_manager:
-            try:
-                server_manager.server_dir = target_dir
-                server_manager.run_bat = run_bat_path
-                self._append_log("[OK] Gestore server sincronizzato con il nuovo percorso.")
-            except Exception as ex:
-                self._append_log(f"Notice sync: {ex}")
+            if cfg is not None:
+                cfg["server_dir"] = target_dir
+                cfg["server_run_bat"] = run_bat_path
+                cfg["server_command"] = launch_cmd
+                cfg["server_port"] = port
+                if server_manager is not None:
+                    server_manager.save_config()
+                else:
+                    write_json_atomic(self.config_path, cfg, keep_backup=True)
+                self._append_log("[OK] config.json aggiornato con successo.")
+
+            if server_manager:
+                try:
+                    server_manager.server_dir = target_dir
+                    server_manager.run_bat = run_bat_path
+                    self._append_log("[OK] Gestore server sincronizzato con il nuovo percorso.")
+                except Exception as ex:
+                    self._append_log(f"Notice sync: {ex}")
 
         # Auto-register new instance in Multi-Instance Manager
         try:
@@ -1631,14 +1636,14 @@ class ForgeServerInstaller:
                 server_port=port,
                 server_type=self.server_type,
                 mc_version=self.selected_mc_version or "1.20.1",
-                set_active=True,
+                set_active=not server_busy,
                 manager=server_manager
             )
             self._append_log(f"[OK] Istanza '{inst_name}' registrata con successo nel Gestore Multi-Server.")
         except Exception as ex_inst:
             self._append_log(f"Notice instance registration: {ex_inst}")
 
-        if self.on_server_ready:
+        if self.on_server_ready and not server_busy:
             # Prima backup e ripristino restavano sul server precedente fino al riavvio del programma
             try:
                 self.on_server_ready(target_dir)

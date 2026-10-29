@@ -1801,9 +1801,32 @@ namespace MinecraftControlCenter
                 if (pythonProcess != null && !pythonProcess.HasExited)
                 {
                     pythonProcess.Kill();
+                    return;
                 }
             }
             catch {}
+
+            // Se il backend Python era già attivo all'avvio del Launcher (pythonProcess == null),
+            // termina il processo python.exe della cartella runtime/ di questa installazione
+            try
+            {
+                string runtimeDir = Path.GetFullPath(Path.Combine(appDir, "runtime")).TrimEnd('\\') + "\\";
+                foreach (Process p in Process.GetProcessesByName("python"))
+                {
+                    try
+                    {
+                        string exePath = p.MainModule != null ? p.MainModule.FileName : null;
+                        if (!string.IsNullOrEmpty(exePath) &&
+                            Path.GetFullPath(exePath).StartsWith(runtimeDir, StringComparison.OrdinalIgnoreCase))
+                        {
+                            p.Kill();
+                        }
+                    }
+                    catch { }
+                    finally { try { p.Dispose(); } catch { } }
+                }
+            }
+            catch { }
         }
 
         static string PromptInput(string prompt, string title, string defaultValue)

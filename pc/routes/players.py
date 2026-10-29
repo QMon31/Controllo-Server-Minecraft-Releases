@@ -16,7 +16,7 @@ from fastapi import APIRouter
 from platform_utils import write_json_atomic
 
 import app as core  # loop cambia mentre il programma gira: si legge al momento dell'uso
-from app import PlayerActionRequest, _async_broadcast, active_websockets, get_server_dir_path, manager, verify_admin_access
+from app import PlayerActionRequest, _async_broadcast, active_websockets, backup_mgr, get_server_dir_path, manager, verify_admin_access
 
 router = APIRouter()
 
@@ -27,10 +27,10 @@ router = APIRouter()
 @router.get("/api/whitelist")
 def api_get_whitelist(request: Request):
     verify_admin_access(request)
-    s_dir = get_server_dir_path()
-    w_path = os.path.join(s_dir, "whitelist.json")
+    s_dir = (get_server_dir_path() or "").strip()
+    w_path = os.path.join(s_dir, "whitelist.json") if s_dir else ""
     items = []
-    if os.path.exists(w_path):
+    if w_path and os.path.exists(w_path):
         try:
             with open(w_path, "r", encoding="utf-8") as f:
                 items = json.load(f)
@@ -82,6 +82,10 @@ def _refuse_while_changing():
     momento e la modifica si perdeva senza avviso. Si accettano solo a server acceso (comando) o spento (file)."""
     if manager.state in ("STARTING", "STOPPING", "RESTARTING"):
         raise HTTPException(status_code=409, detail=SERVER_CHANGING_MSG)
+    if backup_mgr.is_running:
+        raise HTTPException(status_code=409, detail="Attendi la fine del backup o del ripristino in corso.")
+    if not (get_server_dir_path() or "").strip():
+        raise HTTPException(status_code=400, detail="Nessun server collegato: configura prima una cartella del server.")
 
 
 NOT_FOUND_MSG = "Il giocatore {0} non esiste su Minecraft: controlla il nome."
@@ -204,10 +208,10 @@ def api_whitelist_remove(req: PlayerActionRequest, request: Request):
 @router.get("/api/banned-players")
 def api_get_banned_players(request: Request):
     verify_admin_access(request)
-    s_dir = get_server_dir_path()
-    b_path = os.path.join(s_dir, "banned-players.json")
+    s_dir = (get_server_dir_path() or "").strip()
+    b_path = os.path.join(s_dir, "banned-players.json") if s_dir else ""
     items = []
-    if os.path.exists(b_path):
+    if b_path and os.path.exists(b_path):
         try:
             with open(b_path, "r", encoding="utf-8") as f:
                 items = json.load(f)

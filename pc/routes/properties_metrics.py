@@ -6,9 +6,28 @@ import re
 from fastapi import APIRouter
 from platform_utils import write_text_atomic
 
-from app import CloudSyncRequest, PropertiesUpdateRequest, backup_mgr, is_safe_server_path, manager, verify_admin_access
+from app import (
+    CloudSyncRequest, PropertiesUpdateRequest, backup_mgr, is_safe_server_path, manager,
+    minecraft_port_error, request_minecraft_port_sync, verify_admin_access,
+)
 
 router = APIRouter()
+
+
+def _validate_raw_server_port(raw_text: str):
+    """Controlla che un eventuale server-port= nel testo di server.properties sia un numero valido e non una porta riservata."""
+    for line in (raw_text or "").splitlines():
+        s = line.strip()
+        if s and not s.startswith("#") and "=" in s:
+            k, v = s.split("=", 1)
+            if k.strip() == "server-port":
+                try:
+                    port_val = int(v.strip())
+                except ValueError:
+                    raise HTTPException(status_code=400, detail="Porta del server non valida: inserisci un numero tra 1024 e 65535.")
+                port_err = minecraft_port_error(port_val)
+                if port_err:
+                    raise HTTPException(status_code=400, detail=port_err)
 
 
 # =========================================================
@@ -17,11 +36,11 @@ router = APIRouter()
 @router.get("/api/server/properties")
 def api_get_server_properties(request: Request):
     verify_admin_access(request)
-    server_dir = manager.config.get("server_dir", "")
-    props_path = os.path.join(server_dir, "server.properties")
-    bak_path = props_path + ".bak"
+    server_dir = (manager.config.get("server_dir") or "").strip()
+    props_path = os.path.join(server_dir, "server.properties") if server_dir else ""
+    bak_path = (props_path + ".bak") if props_path else ""
     raw_text = ""
-    if os.path.isfile(props_path):
+    if props_path and os.path.isfile(props_path):
         try:
             with open(props_path, "r", encoding="utf-8", errors="ignore") as f:
                 raw_text = f.read()
@@ -42,7 +61,7 @@ def api_get_server_properties(request: Request):
     if "rcon.password" in props:
         props["rcon.password"] = "********"
 
-    backup_exists = os.path.isfile(bak_path)
+    backup_exists = bool(bak_path and os.path.isfile(bak_path))
     backup_info = {}
     if backup_exists:
         try:
@@ -67,7 +86,11 @@ def api_get_server_properties(request: Request):
 @router.post("/api/server/properties/restore-backup")
 def api_restore_server_properties_backup(request: Request):
     verify_admin_access(request)
-    server_dir = manager.config.get("server_dir", "")
+    if backup_mgr.is_running:
+        raise HTTPException(status_code=409, detail="Attendi la fine del backup o del ripristino in corso.")
+    server_dir = (manager.config.get("server_dir") or "").strip()
+    if not server_dir or not os.path.isdir(server_dir):
+        raise HTTPException(status_code=400, detail="Nessun server collegato: scegli prima la cartella del server.")
     props_path = os.path.join(server_dir, "server.properties")
     bak_path = props_path + ".bak"
     if not os.path.isfile(bak_path):
@@ -81,6 +104,8 @@ def api_restore_server_properties_backup(request: Request):
         with open(props_path, "r", encoding="utf-8", errors="ignore") as f:
             raw_text = f.read()
         props = manager.get_server_properties()
+        manager.remember_server_port(manager.get_server_port())
+        request_minecraft_port_sync()
         raw_text = re.sub(r"(?m)^(rcon\.password=).*$", r"\1********", raw_text)
         if "rcon.password" in props:
             props["rcon.password"] = "********"
@@ -97,7 +122,11 @@ def api_restore_server_properties_backup(request: Request):
 @router.post("/api/server/properties")
 def api_save_server_properties(req: PropertiesUpdateRequest, request: Request):
     verify_admin_access(request)
-    server_dir = manager.config.get("server_dir", "")
+    if backup_mgr.is_running:
+        raise HTTPException(status_code=409, detail="Attendi la fine del backup o del ripristino in corso.")
+    server_dir = (manager.config.get("server_dir") or "").strip()
+    if not server_dir or not os.path.isdir(server_dir):
+        raise HTTPException(status_code=400, detail="Nessun server collegato: scegli prima la cartella del server.")
     props_path = os.path.join(server_dir, "server.properties")
 
     # Read current actual rcon.password to preserve if masked value '********' is sent back
@@ -113,6 +142,7 @@ def api_save_server_properties(req: PropertiesUpdateRequest, request: Request):
             pass
 
     if req.raw is not None:
+        _validate_raw_server_port(req.raw)
         try:
             write_content = req.raw
             if "rcon.password=********" in write_content:
@@ -121,18 +151,32 @@ def api_save_server_properties(req: PropertiesUpdateRequest, request: Request):
                 import shutil
                 shutil.copy2(props_path, props_path + ".bak")
             write_text_atomic(props_path, write_content)
+            manager.remember_server_port(manager.get_server_port())
+            request_minecraft_port_sync()
             manager.add_log("[Pannello] File server.properties modificato direttamente in modalità testo (creato backup server.properties.bak).")
             return {"status": "ok", "message": "File salvato con successo!", "needs_restart": manager.state == "ONLINE"}
+        except HTTPException:
+            raise
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Errore scrittura: {e}")
 
     if req.properties is not None:
         props_to_save = dict(req.properties)
+        if "server-port" in props_to_save:
+            try:
+                prop_port = int(str(props_to_save["server-port"]).strip())
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Porta del server non valida: inserisci un numero tra 1024 e 65535.")
+            port_err = minecraft_port_error(prop_port)
+            if port_err:
+                raise HTTPException(status_code=400, detail=port_err)
         if props_to_save.get("rcon.password") == "********":
             props_to_save["rcon.password"] = current_rcon_pw
         res = manager.save_server_properties(props_to_save)
         if res.get("status") == "error":
             raise HTTPException(status_code=400, detail=res.get("message"))
+        manager.remember_server_port(manager.get_server_port())
+        request_minecraft_port_sync()
         res["status"] = "ok"
         return res
 

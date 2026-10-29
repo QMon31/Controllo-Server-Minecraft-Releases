@@ -2049,6 +2049,115 @@ class CodeAuditFixesTest(unittest.TestCase):
         t.join(timeout=2)
         self.assertEqual(res, "Posizione giocatore: [123.45d, 64.0d, -789.12d]")
 
+    def test_mods_routes_block_when_online_or_backup_running_or_no_server(self):
+        from fastapi import HTTPException
+        import app as app_mod
+        from routes import mods as mods_routes
+        with tempfile.TemporaryDirectory() as td:
+            mods_dir = os.path.join(td, "mods")
+            os.makedirs(mods_dir, exist_ok=True)
+            jar_path = os.path.join(mods_dir, "testmod.jar")
+            with open(jar_path, "wb") as f:
+                f.write(b"PK\x03\x04dummy")
+            with mock.patch("routes.mods.verify_admin_access"), \
+                    mock.patch.object(app_mod.manager, "config", {**app_mod.manager.config, "server_dir": td}):
+                with mock.patch.object(app_mod.manager, "state", "ONLINE"):
+                    with self.assertRaises(HTTPException) as ctx_on:
+                        mods_routes.api_toggle_mod(mods_routes.ModActionRequest(filename="testmod.jar"), None)
+                    self.assertEqual(ctx_on.exception.status_code, 409)
+                with mock.patch.object(app_mod.manager, "state", "OFFLINE"), \
+                        mock.patch.object(app_mod.backup_mgr, "is_running", True):
+                    with self.assertRaises(HTTPException) as ctx_bkp:
+                        mods_routes.api_delete_mod(mods_routes.ModActionRequest(filename="testmod.jar"), None)
+                    self.assertEqual(ctx_bkp.exception.status_code, 409)
+            self.assertTrue(os.path.exists(jar_path))
+            with mock.patch.object(app_mod.manager, "config", {**app_mod.manager.config, "server_dir": ""}):
+                self.assertEqual(app_mod.get_mods_dir(), "")
+
+    def test_players_and_folders_reject_empty_server_dir(self):
+        from fastapi import HTTPException
+        import app as app_mod
+        from routes import players as players_routes
+        with mock.patch("routes.players.verify_admin_access"), \
+                mock.patch("app.verify_admin_access"), \
+                mock.patch("app.verify_host_only_access"), \
+                mock.patch.object(app_mod.manager, "state", "OFFLINE"), \
+                mock.patch.object(app_mod.backup_mgr, "is_running", False), \
+                mock.patch.object(app_mod.manager, "config", {**app_mod.manager.config, "server_dir": ""}):
+            with self.assertRaises(HTTPException) as ctx_ban:
+                players_routes.api_ban_player(app_mod.PlayerActionRequest(player="TestPlayer", reason="test"), None)
+            self.assertEqual(ctx_ban.exception.status_code, 400)
+            with self.assertRaises(HTTPException) as ctx_open:
+                app_mod.api_open_server_folder(None)
+            self.assertEqual(ctx_open.exception.status_code, 400)
+
+    def test_save_server_properties_validates_raw_port_and_syncs_port_and_blocks_backup(self):
+        from fastapi import HTTPException
+        import app as app_mod
+        from routes import properties_metrics as pm_routes
+        with tempfile.TemporaryDirectory() as td:
+            props_path = os.path.join(td, "server.properties")
+            with open(props_path, "w", encoding="utf-8") as f:
+                f.write("server-port=25565\nmotd=Test\n")
+            cfg = {**app_mod.manager.config, "server_dir": td, "server_port": 25565}
+            with mock.patch("routes.properties_metrics.verify_admin_access"), \
+                    mock.patch.object(app_mod.manager, "config", cfg), \
+                    mock.patch.object(app_mod.manager, "save_config"), \
+                    mock.patch("routes.properties_metrics.request_minecraft_port_sync") as sync_mock:
+                # 1. Raw mode with reserved port 8080 must fail with 400
+                with self.assertRaises(HTTPException) as ctx_raw:
+                    pm_routes.api_save_server_properties(app_mod.PropertiesUpdateRequest(raw="server-port=8080\n"), None)
+                self.assertEqual(ctx_raw.exception.status_code, 400)
+                # 2. Dict mode changing server-port updates manager.config['server_port'] and triggers sync
+                res = pm_routes.api_save_server_properties(app_mod.PropertiesUpdateRequest(properties={"server-port": "25577"}), None)
+                self.assertEqual(res.get("status"), "ok")
+                self.assertEqual(app_mod.manager.config.get("server_port"), 25577)
+                self.assertTrue(sync_mock.called)
+                # 3. Backup running blocks saving server.properties
+                with mock.patch.object(app_mod.backup_mgr, "is_running", True):
+                    with self.assertRaises(HTTPException) as ctx_bkp:
+                        pm_routes.api_save_server_properties(app_mod.PropertiesUpdateRequest(properties={"motd": "No"}), None)
+                    self.assertEqual(ctx_bkp.exception.status_code, 409)
+
+    def test_finalize_config_keeps_active_server_when_another_server_is_online(self):
+        import app as app_mod
+        import instance_manager
+        import server_installer
+        with tempfile.TemporaryDirectory() as td:
+            srv1 = os.path.join(td, "srv1")
+            srv2 = os.path.join(td, "srv2")
+            os.makedirs(srv1, exist_ok=True)
+            os.makedirs(srv2, exist_ok=True)
+            inst_file = os.path.join(td, "instances.json")
+            with open(inst_file, "w", encoding="utf-8") as f:
+                json.dump([{"id": "inst_1", "name": "Server 1", "server_dir": srv1, "server_port": 25565, "is_active": True}], f)
+            cfg = {**app_mod.manager.config, "server_dir": srv1, "server_port": 25565}
+            bkp_dir_holder = [srv1]
+            inst = server_installer.ForgeServerInstaller()
+            inst.on_server_ready = lambda p: bkp_dir_holder.__setitem__(0, p)
+            inst.config_path = os.path.join(td, "config.json")
+            with mock.patch.object(instance_manager, "INSTANCES_FILE", inst_file), \
+                    mock.patch.object(app_mod.manager, "config", cfg), \
+                    mock.patch.object(app_mod.manager, "save_config"), \
+                    mock.patch.object(app_mod.manager, "state", "ONLINE"):
+                inst._finalize_config(
+                    target_dir=srv2,
+                    run_bat_path=os.path.join(srv2, "run.bat"),
+                    launch_cmd="java -jar server.jar",
+                    port=25566,
+                    server_manager=app_mod.manager,
+                )
+                self.assertEqual(app_mod.manager.config["server_dir"], srv1)
+                self.assertEqual(bkp_dir_holder[0], srv1)
+                self.assertEqual(instance_manager.get_active_instance().get("server_dir"), srv1)
+
+    def test_launcher_kill_python_backend_handles_preexisting_process(self):
+        with open(os.path.join(ROOT, "Launcher.cs"), encoding="utf-8") as f:
+            src = f.read()
+        body = src[src.index("static void KillPythonBackend()"):src.index("static string PromptInput(")]
+        self.assertIn('Process.GetProcessesByName("python")', body)
+        self.assertIn('Path.Combine(appDir, "runtime")', body)
+
 
 if __name__ == "__main__":
     unittest.main()

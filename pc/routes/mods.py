@@ -9,9 +9,21 @@ import os
 import zipfile
 from fastapi import APIRouter
 
-from app import get_mods_dir, get_server_dir_path, manager, save_upload, verify_admin_access
+from app import backup_mgr, get_mods_dir, get_server_dir_path, manager, save_upload, verify_admin_access
 
 router = APIRouter()
+
+
+def _require_mods_writable() -> str:
+    """Blocca le modifiche a mods/ durante backup/ripristino o a server acceso, o senza server collegato."""
+    if backup_mgr.is_running:
+        raise HTTPException(status_code=409, detail="Impossibile modificare le mod mentre è in corso un backup o un ripristino del server.")
+    if manager.state in ("ONLINE", "STARTING", "STOPPING", "RESTARTING"):
+        raise HTTPException(status_code=409, detail="Spegni il server prima di modificare, caricare o eliminare le mod.")
+    mods_dir = get_mods_dir()
+    if not mods_dir:
+        raise HTTPException(status_code=400, detail="Nessun server collegato: configura prima una cartella del server.")
+    return mods_dir
 
 
 # =========================================================
@@ -41,7 +53,7 @@ def get_mod_stem(fname: str) -> str:
 def api_list_mods(request: Request):
     verify_admin_access(request)
     mods_dir = get_mods_dir()
-    if not os.path.exists(mods_dir):
+    if not mods_dir or not os.path.exists(mods_dir):
         return {
             "status": "success",
             "mods": [],
@@ -160,16 +172,17 @@ def api_list_mods(request: Request):
 def api_mod_info(filename: str, request: Request):
     """Scheda di una mod: dati scritti nel .jar e, se la mod è su Modrinth, quelli del progetto."""
     verify_admin_access(request)
+    mods_dir = get_mods_dir()
     clean_name = os.path.basename(filename or "").strip()
-    file_path = os.path.join(get_mods_dir(), clean_name)
-    if not clean_name or not os.path.isfile(file_path):
+    file_path = os.path.join(mods_dir, clean_name) if mods_dir else ""
+    if not mods_dir or not clean_name or not os.path.isfile(file_path):
         raise HTTPException(status_code=404, detail="File mod non trovato")
     return {"status": "success", **mod_info.get_mod_info(file_path)}
 
 @router.post("/api/mods/batch-toggle")
 def api_batch_toggle_mods(req: ModBatchToggleRequest, request: Request):
     verify_admin_access(request)
-    mods_dir = get_mods_dir()
+    mods_dir = _require_mods_writable()
     if not os.path.exists(mods_dir):
         raise HTTPException(status_code=404, detail="Cartella mods non trovata")
     
@@ -235,7 +248,7 @@ def api_batch_toggle_mods(req: ModBatchToggleRequest, request: Request):
 @router.post("/api/mods/toggle")
 def api_toggle_mod(req: ModActionRequest, request: Request):
     verify_admin_access(request)
-    mods_dir = get_mods_dir()
+    mods_dir = _require_mods_writable()
     clean_name = os.path.basename(req.filename).strip()
     file_path = os.path.join(mods_dir, clean_name)
     
@@ -269,7 +282,7 @@ def api_toggle_mod(req: ModActionRequest, request: Request):
 @router.post("/api/mods/upload_file")
 async def api_upload_mod_file(request: Request, name: str):
     verify_admin_access(request)
-    mods_dir = get_mods_dir()
+    mods_dir = _require_mods_writable()
     os.makedirs(mods_dir, exist_ok=True)
     clean_name = os.path.basename(name).strip()
     if not clean_name.lower().endswith(".jar"):
@@ -304,7 +317,7 @@ async def api_upload_mod_file(request: Request, name: str):
 @router.post("/api/mods/delete")
 def api_delete_mod(req: ModActionRequest, request: Request):
     verify_admin_access(request)
-    mods_dir = get_mods_dir()
+    mods_dir = _require_mods_writable()
     clean_name = os.path.basename(req.filename).strip()
     file_path = os.path.join(mods_dir, clean_name)
     

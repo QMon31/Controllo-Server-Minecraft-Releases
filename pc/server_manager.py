@@ -739,10 +739,10 @@ class ServerManager:
         return round(self.current_tps, 1)
 
     def get_server_properties(self) -> Dict[str, Any]:
-        server_dir = self.config.get("server_dir", "")
-        props_path = os.path.join(server_dir, "server.properties")
+        server_dir = (self.config.get("server_dir") or "").strip()
+        props_path = os.path.join(server_dir, "server.properties") if server_dir else ""
         props = {}
-        if os.path.isfile(props_path):
+        if props_path and os.path.isfile(props_path):
             try:
                 with open(props_path, "r", encoding="utf-8", errors="ignore") as f:
                     for line in f:
@@ -755,9 +755,9 @@ class ServerManager:
         return props
 
     def save_server_properties(self, new_props: Dict[str, Any]) -> Dict[str, Any]:
-        server_dir = self.config.get("server_dir", "")
-        props_path = os.path.join(server_dir, "server.properties")
-        if not os.path.isfile(props_path):
+        server_dir = (self.config.get("server_dir") or "").strip()
+        props_path = os.path.join(server_dir, "server.properties") if server_dir else ""
+        if not props_path or not os.path.isfile(props_path):
             return {"status": "error", "message": "File server.properties non trovato."}
         pvp_when = None
         if "pvp" in new_props and self.pvp_is_gamerule():

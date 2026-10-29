@@ -1310,10 +1310,16 @@ def clear_errors(request: Request):
     manager.clear_errors()
     return {"status": "success", "message": "Errori ripuliti."}
 
+def _require_server_dir() -> str:
+    s_dir = (manager.config.get("server_dir") or "").strip()
+    if not s_dir:
+        raise HTTPException(status_code=400, detail="Nessun server collegato: scegli prima la cartella del server.")
+    return s_dir
+
 @app.get("/api/crash-report/{filename}")
 def get_crash_report(filename: str, request: Request):
     verify_admin_access(request)
-    server_dir = manager.config.get("server_dir", "")
+    server_dir = _require_server_dir()
     safe_name = os.path.basename(filename)
     if not safe_name.endswith(".txt"):
         raise HTTPException(status_code=400, detail="Formato file non supportato")
@@ -1327,7 +1333,9 @@ def get_crash_report(filename: str, request: Request):
 @app.delete("/api/crash-report/{filename}")
 def delete_crash_report(filename: str, request: Request):
     verify_admin_access(request)
-    server_dir = manager.config.get("server_dir", "")
+    if backup_mgr.is_running:
+        raise HTTPException(status_code=409, detail="Attendi la fine del backup o del ripristino in corso.")
+    server_dir = _require_server_dir()
     safe_name = os.path.basename(filename)
     if not safe_name.endswith(".txt"):
         raise HTTPException(status_code=400, detail="Nome file non valido")
@@ -1344,7 +1352,7 @@ def delete_crash_report(filename: str, request: Request):
 def api_open_crash_folder(request: Request):
     verify_admin_access(request)
     verify_host_only_access(request)
-    s_dir = manager.config.get("server_dir", "")
+    s_dir = _require_server_dir()
     crash_dir = os.path.join(s_dir, "crash-reports")
     os.makedirs(crash_dir, exist_ok=True)
     try:
@@ -1356,7 +1364,11 @@ def api_open_crash_folder(request: Request):
 @app.delete("/api/crash-reports/clear-all")
 def api_clear_all_crash_reports(request: Request):
     verify_admin_access(request)
-    s_dir = manager.config.get("server_dir", "")
+    if backup_mgr.is_running:
+        raise HTTPException(status_code=409, detail="Attendi la fine del backup o del ripristino in corso.")
+    s_dir = (manager.config.get("server_dir") or "").strip()
+    if not s_dir:
+        return {"status": "success", "deleted_count": 0}
     crash_dir = os.path.join(s_dir, "crash-reports")
     if not os.path.exists(crash_dir):
         return {"status": "success", "deleted_count": 0}
@@ -1531,14 +1543,21 @@ def get_config(request: Request):
 def update_config(req: ConfigUpdateRequest, request: Request):
     verify_admin_access(request)
     with manager.lock:
+        current = manager.config
+        old_dir = (current.get("server_dir") or "").strip()
         if req.server_dir is not None:
-            if not is_safe_server_path(req.server_dir):
+            new_dir = req.server_dir.strip()
+            if not is_safe_server_path(new_dir):
                 raise HTTPException(status_code=400, detail="Percorso cartella server non consentito per la sicurezza del sistema.")
-            backup_mgr.server_dir = os.path.abspath(req.server_dir)
+            if new_dir != old_dir:
+                if manager.state in ("ONLINE", "STARTING", "STOPPING", "RESTARTING"):
+                    raise HTTPException(status_code=409, detail="Impossibile cambiare la cartella del server mentre il server è in esecuzione. Spegnilo prima.")
+                if backup_mgr.is_running:
+                    raise HTTPException(status_code=409, detail="Attendi la fine del backup o del ripristino in corso.")
+            backup_mgr.server_dir = os.path.abspath(new_dir) if new_dir else ""
         if req.server_run_bat is not None:
             if not is_safe_server_path(req.server_run_bat):
                 raise HTTPException(status_code=400, detail="Percorso file di avvio non consentito per la sicurezza del sistema.")
-        current = manager.config
         update_data = req.model_dump(exclude_none=True)
         # La porta del pannello resta quella che il programma sul PC e l'app si aspettano (8080): con un'altra il
         # pannello non si apriva più, e un valore non valido impediva al programma di ripartire
@@ -1562,7 +1581,8 @@ def update_config(req: ConfigUpdateRequest, request: Request):
         port_error = minecraft_port_error(new_port) if new_port is not None else None
         if port_error:
             raise HTTPException(status_code=400, detail=port_error)
-        old_dir = current.get("server_dir", "")
+        if new_port is not None and current.get("server_dir") and int(new_port) != manager.get_server_port() and backup_mgr.is_running:
+            raise HTTPException(status_code=409, detail="Attendi la fine del backup o del ripristino in corso.")
         pin_changed = "admin_pin" in update_data and update_data["admin_pin"] != str(current.get("admin_pin", "1234")).strip()
         for k, v in update_data.items():
             current[k] = v
@@ -1788,6 +1808,8 @@ def api_get_storage(request: Request):
 @app.post("/api/storage/clean-logs")
 def api_clean_logs(request: Request):
     verify_admin_access(request)
+    if backup_mgr.is_running:
+        raise HTTPException(status_code=409, detail="Attendi la fine del backup o del ripristino in corso.")
     return manager.clean_old_logs()
 
 @app.post("/api/player/quick-action")
@@ -1809,6 +1831,8 @@ def api_get_jvm_tuning(request: Request):
 @app.post("/api/server/jvm-tuning")
 def api_save_jvm_tuning(req: JvmTuningRequest, request: Request):
     verify_admin_access(request)
+    if backup_mgr.is_running:
+        raise HTTPException(status_code=409, detail="Attendi la fine del backup o del ripristino in corso.")
     res = manager.save_jvm_tuning(req.ram_gb, req.use_aikar_flags)
     if res.get("status") == "error":
         raise HTTPException(status_code=400, detail=res.get("message"))
@@ -1818,6 +1842,7 @@ def api_save_jvm_tuning(req: JvmTuningRequest, request: Request):
 def api_open_mods_folder(request: Request):
     verify_admin_access(request)
     verify_host_only_access(request)
+    _require_server_dir()
     mods_dir = get_mods_dir()
     os.makedirs(mods_dir, exist_ok=True)
     try:
@@ -1830,7 +1855,7 @@ def api_open_mods_folder(request: Request):
 def api_open_server_folder(request: Request):
     verify_admin_access(request)
     verify_host_only_access(request)
-    s_dir = manager.config.get("server_dir", "")
+    s_dir = _require_server_dir()
     os.makedirs(s_dir, exist_ok=True)
     try:
         open_directory_in_explorer(s_dir)
@@ -1854,7 +1879,7 @@ def api_open_backup_folder(request: Request):
 def api_open_logs_folder(request: Request):
     verify_admin_access(request)
     verify_host_only_access(request)
-    s_dir = manager.config.get("server_dir", "")
+    s_dir = _require_server_dir()
     logs_dir = os.path.join(s_dir, "logs")
     os.makedirs(logs_dir, exist_ok=True)
     try:
@@ -1885,10 +1910,10 @@ def api_get_system_about(request: Request):
     except Exception:
         pass
         
-    s_dir = manager.config.get("server_dir", "")
+    s_dir = (manager.config.get("server_dir") or "").strip()
     prog_dir = os.path.dirname(os.path.abspath(__file__))
-    mods_dir = os.path.join(s_dir, "mods")
-    mods_count = len([f for f in os.listdir(mods_dir) if f.endswith(".jar")]) if os.path.isdir(mods_dir) else 0
+    mods_dir = get_mods_dir()
+    mods_count = len([f for f in os.listdir(mods_dir) if f.endswith(".jar")]) if (mods_dir and os.path.isdir(mods_dir)) else 0
     
     vm = psutil.virtual_memory()
     ram_total_gb = round(vm.total / (1024**3), 1)
@@ -2115,14 +2140,39 @@ def api_read_config_file(path: str, request: Request):
 @app.post("/api/config-file")
 def api_save_config_file(req: SaveConfigFileRequest, request: Request):
     verify_admin_access(request)
+    if backup_mgr.is_running:
+        raise HTTPException(status_code=409, detail="Attendi la fine del backup o del ripristino in corso.")
     target_path = req.rel_path or req.path or ""
-    return manager.save_config_file(target_path, req.content)
+    if os.path.basename(target_path).lower() == "server.properties":
+        for line in (req.content or "").splitlines():
+            s = line.strip()
+            if s and not s.startswith("#") and "=" in s:
+                k, v = s.split("=", 1)
+                if k.strip() == "server-port":
+                    try:
+                        p_val = int(v.strip())
+                    except ValueError:
+                        raise HTTPException(status_code=400, detail="Porta del server non valida: inserisci un numero tra 1024 e 65535.")
+                    p_err = minecraft_port_error(p_val)
+                    if p_err:
+                        raise HTTPException(status_code=400, detail=p_err)
+    res = manager.save_config_file(target_path, req.content)
+    if os.path.basename(target_path).lower() == "server.properties" and res.get("status") == "success":
+        manager.remember_server_port(manager.get_server_port())
+        request_minecraft_port_sync()
+    return res
 
 @app.post("/api/config-file/restore")
 def api_restore_config_file(req: RestoreConfigFileRequest, request: Request):
     verify_admin_access(request)
+    if backup_mgr.is_running:
+        raise HTTPException(status_code=409, detail="Attendi la fine del backup o del ripristino in corso.")
     target_path = req.rel_path or req.path or ""
-    return manager.restore_config_file(target_path)
+    res = manager.restore_config_file(target_path)
+    if os.path.basename(target_path).lower() == "server.properties" and res.get("status") == "success":
+        manager.remember_server_port(manager.get_server_port())
+        request_minecraft_port_sync()
+    return res
 
 # =========================================================
 # ADVANCED DESKTOP FILESYSTEM EXPLORER ENDPOINTS
@@ -2278,8 +2328,8 @@ def _sync_config_with_active_instance():
 
 
 def get_mods_dir() -> str:
-    s_dir = manager.config.get("server_dir", "")
-    return os.path.join(s_dir, "mods")
+    s_dir = (manager.config.get("server_dir") or "").strip()
+    return os.path.join(s_dir, "mods") if s_dir else ""
 
 
 def open_directory_in_explorer(path: str):
