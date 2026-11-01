@@ -209,7 +209,11 @@ namespace MinecraftControlCenter
                     e.Handled = true;
                     try
                     {
-                        if (!string.IsNullOrEmpty(e.Uri))
+                        // Solo pagine web: prima Windows apriva qualunque indirizzo chiesto dalla pagina (file://, programmi
+                        // associati a protocolli), e uno script inserito nel pannello poteva far eseguire file sul PC
+                        Uri u;
+                        if (!string.IsNullOrEmpty(e.Uri) && Uri.TryCreate(e.Uri, UriKind.Absolute, out u)
+                            && (u.Scheme == Uri.UriSchemeHttp || u.Scheme == Uri.UriSchemeHttps))
                         {
                             ProcessStartInfo psi = new ProcessStartInfo(e.Uri) { UseShellExecute = true };
                             Process.Start(psi);
@@ -304,9 +308,10 @@ namespace MinecraftControlCenter
                 else
                 {
                     if (pendingError != null) ApplyBackendError();
-                    else if (Program.IsUnverifiedRemoteHost(targetUrl))
+                    else if (Program.IsUnverifiedRemoteHost(targetUrl) || Program.IsUntrustedLanUrl(targetUrl))
                     {
-                        // All'indirizzo da internet non risponde l'Host con il suo certificato: niente PIN a chi c'è lì,
+                        // All'indirizzo da internet non risponde l'Host con il suo certificato, oppure l'indirizzo è della
+                        // rete di casa ma questo PC è in un'altra rete: niente PIN a chi c'è lì,
                         // si cerca l'indirizzo giusto (rete di casa o ntfy) come quando l'Host non risponde
                         UpdateLoadingText(LauncherText.T("disc.searching"));
                         Program.TriggerAutoReconnectAsync(false);
@@ -336,6 +341,17 @@ namespace MinecraftControlCenter
                 }
                 try { if (!IsAutoUrl(targetUrl)) Process.Start(targetUrl); } catch { }
             }
+        }
+
+        /// <summary>Lascia il pannello aperto (pagina vuota): la sua pagina smette di contattare l'indirizzo.</summary>
+        public void LeavePage()
+        {
+            if (this.InvokeRequired)
+            {
+                try { this.Invoke(new Action(LeavePage)); } catch { }
+                return;
+            }
+            try { if (webView != null && webView.CoreWebView2 != null) webView.CoreWebView2.Navigate("about:blank"); } catch { }
         }
 
         public void NavigateTo(string newUrl)
@@ -829,6 +845,7 @@ namespace MinecraftControlCenter
                 { "tray.exit", "Esci" },
                 { "tray.exit_all", "Esci (chiude pannello e server)" },
                 { "tray.stopping", "Spegnimento sicuro del server Minecraft in corso: il programma si chiude appena il mondo è salvato." },
+                { "tray.waiting_backup", "Backup o ripristino in corso: il programma si chiude appena è finito, per non lasciare il mondo a metà." },
                 { "disc.channels", "Controllo dei canali di notifica e dell'indirizzo da internet..." },
                 { "disc.test_lan", "Prova della rete di casa ({0})..." },
                 { "disc.scan_wifi", "Ricerca veloce nella rete Wi-Fi di casa (porta 8080)..." },
@@ -840,6 +857,8 @@ namespace MinecraftControlCenter
                 { "disc.connected", "Collegato al PC Host:\n{0}" },
                 { "disc.not_found_window", "PC Host non trovato.\r\nControlla che sia acceso, oppure scegli 'Cambia indirizzo del PC Host' dal menu dell'icona accanto all'orologio." },
                 { "disc.first_at_home", "PC Host non trovato da internet: questo PC non lo conosce ancora.\r\nCollega questo PC una volta alla rete di casa del PC Host (stesso Wi-Fi): da quel momento funziona anche da fuori casa." },
+                { "disc.confirm_home_title", "È la rete di casa?" },
+                { "disc.confirm_home", "In questa rete locale risponde un PC Host all'indirizzo {0}.\r\n\r\nSei collegato alla rete di casa del PC Host?\r\nSe sei fuori casa (bar, hotel, ufficio, rete pubblica) rispondi No: in quelle reti un altro dispositivo può fingersi il PC Host per farti scrivere il PIN.\r\n\r\nCon Sì questa rete viene ricordata come rete di casa." },
                 { "disc.not_found_title", "PC Host non trovato" },
                 { "disc.not_found", "Nessun PC Host trovato in rete o su internet.\nControlla che sia acceso e che il programma sia avviato." },
                 { "upd.menu", "Controlla aggiornamenti" } } },
@@ -896,6 +915,7 @@ namespace MinecraftControlCenter
                 { "tray.exit", "Exit" },
                 { "tray.exit_all", "Exit (closes panel and server)" },
                 { "tray.stopping", "Safely shutting down the Minecraft server: the program will close as soon as the world is saved." },
+                { "tray.waiting_backup", "Backup or restore in progress: the program will close as soon as it has finished, so the world is not left half done." },
                 { "disc.channels", "Checking notification channels and internet address..." },
                 { "disc.test_lan", "Testing the home network ({0})..." },
                 { "disc.scan_wifi", "Quick search on the home Wi-Fi network (port 8080)..." },
@@ -907,6 +927,8 @@ namespace MinecraftControlCenter
                 { "disc.connected", "Connected to the Host PC:\n{0}" },
                 { "disc.not_found_window", "Host PC not found.\r\nCheck that it is turned on, or choose 'Change Host PC address' from the menu of the icon next to the clock." },
                 { "disc.first_at_home", "Host PC not found from the internet: this PC does not know it yet.\r\nConnect this PC once to the Host PC's home network (same Wi-Fi): from then on it also works away from home." },
+                { "disc.confirm_home_title", "Is this your home network?" },
+                { "disc.confirm_home", "A Host PC answers on this local network at {0}.\r\n\r\nAre you connected to the Host PC's home network?\r\nIf you are away from home (café, hotel, office, public network) answer No: on those networks another device can pretend to be the Host PC to make you type the PIN.\r\n\r\nWith Yes this network is remembered as your home network." },
                 { "disc.not_found_title", "Host PC not found" },
                 { "disc.not_found", "No Host PC found on the network or the internet.\nCheck that it is on and the program is running." },
                 { "upd.menu", "Check for updates" } } },
@@ -963,6 +985,7 @@ namespace MinecraftControlCenter
                 { "tray.exit", "Salir" },
                 { "tray.exit_all", "Salir (cierra panel y servidor)" },
                 { "tray.stopping", "Apagando el servidor de Minecraft de forma segura: el programa se cerrará en cuanto se guarde el mundo." },
+                { "tray.waiting_backup", "Copia de seguridad o restauración en curso: el programa se cerrará en cuanto termine, para no dejar el mundo a medias." },
                 { "disc.channels", "Comprobando los canales de notificación y la dirección de internet..." },
                 { "disc.test_lan", "Probando la red de casa ({0})..." },
                 { "disc.scan_wifi", "Búsqueda rápida en la red Wi-Fi de casa (puerto 8080)..." },
@@ -974,6 +997,8 @@ namespace MinecraftControlCenter
                 { "disc.connected", "Conectado al PC Host:\n{0}" },
                 { "disc.not_found_window", "No se encontró el PC Host.\r\nComprueba que esté encendido o elige 'Cambiar dirección del PC Host' en el menú del icono junto al reloj." },
                 { "disc.first_at_home", "No se encontró el PC Host desde internet: este PC todavía no lo conoce.\r\nConecta este PC una vez a la red de casa del PC Host (mismo Wi-Fi): a partir de entonces también funciona fuera de casa." },
+                { "disc.confirm_home_title", "¿Es la red de casa?" },
+                { "disc.confirm_home", "En esta red local responde un PC Host en la dirección {0}.\r\n\r\n¿Estás conectado a la red de casa del PC Host?\r\nSi estás fuera de casa (bar, hotel, oficina, red pública) responde No: en esas redes otro dispositivo puede hacerse pasar por el PC Host para que escribas el PIN.\r\n\r\nCon Sí esta red se recuerda como red de casa." },
                 { "disc.not_found_title", "PC Host no encontrado" },
                 { "disc.not_found", "No se encontró ningún PC Host en la red ni en internet.\nComprueba que esté encendido y que el programa esté abierto." },
                 { "upd.menu", "Buscar actualizaciones" } } },
@@ -1030,6 +1055,7 @@ namespace MinecraftControlCenter
                 { "tray.exit", "Quitter" },
                 { "tray.exit_all", "Quitter (ferme le panneau et le serveur)" },
                 { "tray.stopping", "Arrêt sécurisé du serveur Minecraft en cours : le programme se fermera dès que le monde sera sauvegardé." },
+                { "tray.waiting_backup", "Sauvegarde ou restauration en cours : le programme se fermera dès qu'elle sera terminée, pour ne pas laisser le monde à moitié." },
                 { "disc.channels", "Vérification des canaux de notification et de l'adresse internet..." },
                 { "disc.test_lan", "Test du réseau domestique ({0})..." },
                 { "disc.scan_wifi", "Recherche rapide sur le réseau Wi-Fi domestique (port 8080)..." },
@@ -1041,6 +1067,8 @@ namespace MinecraftControlCenter
                 { "disc.connected", "Connecté au PC Hôte :\n{0}" },
                 { "disc.not_found_window", "PC Hôte introuvable.\r\nVérifiez qu'il est allumé ou choisissez « Modifier l'adresse du PC Hôte » dans le menu de l'icône près de l'horloge." },
                 { "disc.first_at_home", "PC Hôte introuvable depuis internet : ce PC ne le connaît pas encore.\r\nConnectez ce PC une fois au réseau domestique du PC Hôte (même Wi-Fi) : ensuite il fonctionnera aussi hors de chez vous." },
+                { "disc.confirm_home_title", "Est-ce votre réseau domestique ?" },
+                { "disc.confirm_home", "Un PC Hôte répond sur ce réseau local à l'adresse {0}.\r\n\r\nÊtes-vous connecté au réseau domestique du PC Hôte ?\r\nSi vous n'êtes pas chez vous (café, hôtel, bureau, réseau public), répondez Non : sur ces réseaux un autre appareil peut se faire passer pour le PC Hôte afin de vous faire saisir le PIN.\r\n\r\nAvec Oui, ce réseau est mémorisé comme réseau domestique." },
                 { "disc.not_found_title", "PC Hôte introuvable" },
                 { "disc.not_found", "Aucun PC Hôte trouvé sur le réseau ou sur internet.\nVérifiez qu'il est allumé et que le programme est lancé." },
                 { "upd.menu", "Rechercher des mises à jour" } } },
@@ -1097,6 +1125,7 @@ namespace MinecraftControlCenter
                 { "tray.exit", "Beenden" },
                 { "tray.exit_all", "Beenden (schließt Panel und Server)" },
                 { "tray.stopping", "Der Minecraft-Server wird sicher heruntergefahren: Das Programm schließt sich, sobald die Welt gespeichert ist." },
+                { "tray.waiting_backup", "Backup oder Wiederherstellung läuft: Das Programm schließt sich, sobald sie fertig ist, damit die Welt nicht halb fertig bleibt." },
                 { "disc.channels", "Benachrichtigungskanäle und Internetadresse werden geprüft..." },
                 { "disc.test_lan", "Heimnetz wird getestet ({0})..." },
                 { "disc.scan_wifi", "Schnellsuche im Heim-WLAN (Port 8080)..." },
@@ -1108,6 +1137,8 @@ namespace MinecraftControlCenter
                 { "disc.connected", "Mit dem Host-PC verbunden:\n{0}" },
                 { "disc.not_found_window", "Host-PC nicht gefunden.\r\nPrüfe, ob er eingeschaltet ist, oder wähle „Adresse des Host-PCs ändern“ im Menü des Symbols neben der Uhr." },
                 { "disc.first_at_home", "Host-PC über das Internet nicht gefunden: Dieser PC kennt ihn noch nicht.\r\nVerbinde diesen PC einmal mit dem Heimnetz des Host-PCs (gleiches WLAN): Danach funktioniert es auch unterwegs." },
+                { "disc.confirm_home_title", "Ist das dein Heimnetz?" },
+                { "disc.confirm_home", "In diesem lokalen Netz antwortet ein Host-PC unter {0}.\r\n\r\nBist du mit dem Heimnetz des Host-PCs verbunden?\r\nWenn du unterwegs bist (Café, Hotel, Büro, öffentliches Netz), antworte mit Nein: In solchen Netzen kann sich ein anderes Gerät als Host-PC ausgeben, damit du die PIN eingibst.\r\n\r\nMit Ja wird dieses Netz als Heimnetz gespeichert." },
                 { "disc.not_found_title", "Host-PC nicht gefunden" },
                 { "disc.not_found", "Kein Host-PC im Netzwerk oder im Internet gefunden.\nPrüfe, ob er eingeschaltet ist und das Programm läuft." },
                 { "upd.menu", "Nach Updates suchen" } } },
@@ -1164,6 +1195,7 @@ namespace MinecraftControlCenter
                 { "tray.exit", "Sair" },
                 { "tray.exit_all", "Sair (fecha painel e servidor)" },
                 { "tray.stopping", "Desligando o servidor Minecraft com segurança: o programa fecha assim que o mundo for salvo." },
+                { "tray.waiting_backup", "Backup ou restauração em andamento: o programa fecha assim que terminar, para não deixar o mundo pela metade." },
                 { "disc.channels", "Verificando os canais de notificação e o endereço da internet..." },
                 { "disc.test_lan", "Testando a rede de casa ({0})..." },
                 { "disc.scan_wifi", "Busca rápida na rede Wi-Fi de casa (porta 8080)..." },
@@ -1175,6 +1207,8 @@ namespace MinecraftControlCenter
                 { "disc.connected", "Conectado ao PC Host:\n{0}" },
                 { "disc.not_found_window", "PC Host não encontrado.\r\nVerifique se está ligado ou escolha 'Alterar endereço do PC Host' no menu do ícone ao lado do relógio." },
                 { "disc.first_at_home", "PC Host não encontrado pela internet: este PC ainda não o conhece.\r\nConecte este PC uma vez à rede de casa do PC Host (mesmo Wi-Fi): a partir daí funciona também fora de casa." },
+                { "disc.confirm_home_title", "É a rede de casa?" },
+                { "disc.confirm_home", "Nesta rede local responde um PC Host no endereço {0}.\r\n\r\nVocê está conectado à rede de casa do PC Host?\r\nSe estiver fora de casa (café, hotel, escritório, rede pública), responda Não: nessas redes outro dispositivo pode se passar pelo PC Host para fazer você digitar o PIN.\r\n\r\nCom Sim esta rede fica memorizada como rede de casa." },
                 { "disc.not_found_title", "PC Host não encontrado" },
                 { "disc.not_found", "Nenhum PC Host encontrado na rede ou na internet.\nVerifique se está ligado e se o programa está aberto." },
                 { "upd.menu", "Procurar atualizações" } } }
@@ -1233,6 +1267,12 @@ namespace MinecraftControlCenter
         static string hostPushTopic = "";
         static string hostId = "";
         static string hostCertFingerprint = "";
+        // MAC del router della rete di casa (imparato quando l'Host è stato trovato in rete locale): fuori casa la
+        // ricerca in chiaro (http) nella rete locale non si fa, lì un altro dispositivo potrebbe fingersi l'Host
+        static string homeGatewayMac = "";
+        // Chiave con cui l'Host dimostra di essere lui in rete locale (/api/status?nonce=..., ricevuta da /api/discovery
+        // solo nella rete di casa): l'identificativo hostId si legge senza PIN anche da internet e da solo non prova niente
+        static string hostProofKey = "";
         static MainWindow mainWindow = null;
         static Icon appIcon = null;
 
@@ -1328,7 +1368,14 @@ namespace MinecraftControlCenter
                     SetupRemoteTray();
                     mainWindow = new MainWindow(remoteUrl, appIcon, trayIcon);
                     string startUrl = remoteUrl;
-                    Task.Factory.StartNew(() => LearnHostIdentity(startUrl));
+                    // Si impara dall'indirizzo salvato solo se l'Host non è ancora conosciuto, o nella rete di casa
+                    // riconosciuta dal router: prima, al primo avvio in un bar, la rete del bar diventava "di casa"
+                    Task.Factory.StartNew(() => {
+                        if (string.IsNullOrEmpty(hostId) || (string.IsNullOrEmpty(hostProofKey) && IsHomeNetwork()))
+                            LearnHostIdentity(startUrl);
+                    });
+                    System.Net.NetworkInformation.NetworkChange.NetworkAddressChanged += (s, e) =>
+                        Task.Factory.StartNew(OnNetworkChanged);
                     RemoteUpdater.Start(trayIcon);
 
                     if (isAutostart)
@@ -1399,6 +1446,10 @@ namespace MinecraftControlCenter
                     if (Regex.IsMatch(lang, "^[a-z]{2}$")) AppLanguage = lang;
                     string fp = ReadJsonString(txt, "cert_fingerprint");
                     if (Regex.IsMatch(fp, "^[0-9a-f]{64}$")) hostCertFingerprint = fp;
+                    string gw = ReadJsonString(txt, "home_gateway");
+                    if (Regex.IsMatch(gw, "^[0-9a-f]{2}(-[0-9a-f]{2}){5}$")) homeGatewayMac = gw;
+                    string pk = ReadJsonString(txt, "proof_key");
+                    if (Regex.IsMatch(pk, "^[0-9a-f]{64}$")) hostProofKey = pk;
                 }
                 catch { }
             }
@@ -1460,8 +1511,10 @@ namespace MinecraftControlCenter
             return !VerifyServerCandidate(u.GetLeftPart(UriPartial.Authority));
         }
 
-        /// <summary>Se l'Host è raggiungibile in rete locale, salva il suo topic ntfy, il suo identificativo
-        /// e l'impronta del suo certificato HTTPS.</summary>
+        /// <summary>Se l'Host è raggiungibile in rete locale, salva il suo topic ntfy, il suo identificativo,
+        /// l'impronta del suo certificato HTTPS e il router della rete di casa. Quello che è già salvato non si
+        /// cambia: l'identificativo dell'Host si legge senza PIN, quindi prima un pannello finto nella rete di un
+        /// bar o di un hotel poteva sostituire impronta e topic con i suoi. Si reimparano solo con "Cambia indirizzo".</summary>
         static void LearnHostIdentity(string baseUrl)
         {
             if (string.IsNullOrEmpty(baseUrl) || !baseUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase)) return;
@@ -1476,24 +1529,114 @@ namespace MinecraftControlCenter
                     string topic = ReadJsonString(json, "push_topic");
                     string id = ReadJsonString(json, "host_id");
                     string fp = ReadJsonString(json, "cert_fingerprint");
-                    if (Regex.IsMatch(topic, "^[A-Za-z0-9_-]{1,64}$") && Regex.IsMatch(id, "^[0-9a-f]{16}$"))
+                    string pk = ReadJsonString(json, "proof_key");
+                    if (!Regex.IsMatch(topic, "^[A-Za-z0-9_-]{1,64}$") || !Regex.IsMatch(id, "^[0-9a-f]{16}$")) return;
+                    if (!string.IsNullOrEmpty(hostId) && id != hostId) return;  // un altro Host
+                    if (string.IsNullOrEmpty(hostId)) hostId = id;
+                    if (string.IsNullOrEmpty(hostPushTopic)) hostPushTopic = topic;
+                    if (string.IsNullOrEmpty(hostCertFingerprint) && Regex.IsMatch(fp, "^[0-9a-f]{64}$")) hostCertFingerprint = fp;
+                    if (string.IsNullOrEmpty(hostProofKey) && Regex.IsMatch(pk, "^[0-9a-f]{64}$")) hostProofKey = pk;
+                    if (string.IsNullOrEmpty(homeGatewayMac)) homeGatewayMac = CurrentGatewayMac();
+                    SaveLauncherConfig("remote", remoteUrl);
+                }
+            }
+            catch { }
+        }
+
+        [DllImport("iphlpapi.dll", ExactSpelling = true)]
+        static extern int SendARP(uint destIp, uint srcIp, byte[] macAddr, ref uint macAddrLen);
+
+        /// <summary>MAC del router (gateway) della rete usata per uscire su internet, "" se non si legge.</summary>
+        static string CurrentGatewayMac()
+        {
+            try
+            {
+                IPAddress localIp = null;
+                using (Socket socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, 0))
+                {
+                    socket.Connect("8.8.8.8", 65530);
+                    IPEndPoint endPoint = socket.LocalEndPoint as IPEndPoint;
+                    if (endPoint != null) localIp = endPoint.Address;
+                }
+                if (localIp == null) return "";
+                foreach (System.Net.NetworkInformation.NetworkInterface ni in System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces())
+                {
+                    System.Net.NetworkInformation.IPInterfaceProperties props = ni.GetIPProperties();
+                    bool ownsIp = false;
+                    foreach (System.Net.NetworkInformation.UnicastIPAddressInformation ua in props.UnicastAddresses)
+                        if (ua.Address.Equals(localIp)) ownsIp = true;
+                    if (!ownsIp) continue;
+                    foreach (System.Net.NetworkInformation.GatewayIPAddressInformation gw in props.GatewayAddresses)
                     {
-                        hostPushTopic = topic;
-                        hostId = id;
-                        hostCertFingerprint = Regex.IsMatch(fp, "^[0-9a-f]{64}$") ? fp : "";
-                        SaveLauncherConfig("remote", remoteUrl);
+                        if (gw.Address.AddressFamily != AddressFamily.InterNetwork || gw.Address.Equals(IPAddress.Any)) continue;
+                        byte[] mac = new byte[6];
+                        uint len = (uint)mac.Length;
+                        if (SendARP(BitConverter.ToUInt32(gw.Address.GetAddressBytes(), 0), 0, mac, ref len) == 0 && len == 6)
+                            return BitConverter.ToString(mac).ToLowerInvariant();
                     }
                 }
             }
             catch { }
+            return "";
+        }
+
+        /// <summary>Questo PC è nella rete di casa dell'Host: il router è quello visto quando l'Host è stato trovato in rete locale.</summary>
+        static bool IsHomeNetwork()
+        {
+            return !string.IsNullOrEmpty(homeGatewayMac) && CurrentGatewayMac() == homeGatewayMac;
+        }
+
+        /// <summary>Indirizzo http della rete locale di un Host già conosciuto, ma non si sa se lì risponde davvero lui:
+        /// niente prova segreta valida, oppure (Host che non la conosce) router diverso da quello di casa o non ancora
+        /// noto. Lì potrebbe esserci chiunque, quindi non si apre e si cerca l'Host (con conferma se serve).</summary>
+        public static bool IsUntrustedLanUrl(string url)
+        {
+            if (!isRemoteMode || string.IsNullOrEmpty(hostId) || !IsPrivateLanUrl(url)) return false;
+            if (!url.StartsWith("http://", StringComparison.OrdinalIgnoreCase)) return false;
+            if (!string.IsNullOrEmpty(hostProofKey))
+            {
+                Uri u;
+                return !Uri.TryCreate(url, UriKind.Absolute, out u) || !VerifyKnownHost(u.GetLeftPart(UriPartial.Authority));
+            }
+            return !IsHomeNetwork();
+        }
+
+        /// <summary>Questo PC ha cambiato rete con la finestra aperta: se l'indirizzo di casa non è più sicuro si lascia la
+        /// pagina (che continuerebbe a mandargli il codice di accesso a ogni aggiornamento) e si cerca l'Host.</summary>
+        static void OnNetworkChanged()
+        {
+            string url = remoteUrl;
+            if (!isRemoteMode || mainWindow == null || !IsPrivateLanUrl(url)) return;
+            Thread.Sleep(3000);   // la nuova rete deve finire di collegarsi
+            if (!IsUntrustedLanUrl(url) || url != remoteUrl) return;
+            mainWindow.LeavePage();
+            TriggerAutoReconnectAsync(false);
+        }
+
+        /// <summary>Host trovato in chiaro nella rete locale, ma la rete di casa non è ancora nota: lo si chiede all'utente.</summary>
+        static bool ConfirmHomeNetwork(string url)
+        {
+            Func<DialogResult> ask = () => {
+                mainWindow.ShowAndActivate();   // domanda di sicurezza: anche con la finestra nascosta accanto all'orologio
+                return MessageBox.Show(mainWindow, LauncherText.T("disc.confirm_home", url),
+                    LauncherText.T("disc.confirm_home_title"), MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
+            };
+            try
+            {
+                if (mainWindow != null && mainWindow.IsHandleCreated)
+                    return (DialogResult)mainWindow.Invoke(ask) == DialogResult.Yes;
+                return MessageBox.Show(LauncherText.T("disc.confirm_home", url), LauncherText.T("disc.confirm_home_title"),
+                    MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) == DialogResult.Yes;
+            }
+            catch { return false; }
         }
 
         static void SaveLauncherConfig(string mode, string url)
         {
             try
             {
-                string json = string.Format("{{\r\n  \"mode\": \"{0}\",\r\n  \"remote_url\": \"{1}\",\r\n  \"push_topic\": \"{2}\",\r\n  \"host_id\": \"{3}\",\r\n  \"cert_fingerprint\": \"{4}\",\r\n  \"language\": \"{5}\"\r\n}}\r\n",
-                    mode, url.Replace("\\", "/"), hostPushTopic, hostId, hostCertFingerprint, AppLanguage);
+                string json = string.Format("{{\r\n  \"mode\": \"{0}\",\r\n  \"remote_url\": \"{1}\",\r\n  \"push_topic\": \"{2}\",\r\n  \"host_id\": \"{3}\",\r\n  \"cert_fingerprint\": \"{4}\",\r\n  \"home_gateway\": \"{5}\",\r\n  \"proof_key\": \"{6}\",\r\n  \"language\": \"{7}\"\r\n}}\r\n",
+                    mode, url.Replace("\\", "/"), hostPushTopic, hostId, hostCertFingerprint, homeGatewayMac, hostProofKey, AppLanguage);
                 File.WriteAllText(configPath, json);
             }
             catch (Exception ex)
@@ -1524,6 +1667,8 @@ namespace MinecraftControlCenter
                     hostPushTopic = "";  // nuovo Host: topic, identificativo e impronta vanno reimparati
                     hostId = "";
                     hostCertFingerprint = "";
+                    homeGatewayMac = "";
+                    hostProofKey = "";
                     SaveLauncherConfig("remote", remoteUrl);
                     string learnUrl = remoteUrl;
                     Task.Factory.StartNew(() => LearnHostIdentity(learnUrl));
@@ -1597,6 +1742,7 @@ namespace MinecraftControlCenter
                 if (mainWindow != null) mainWindow.Hide();
                 Control ui = mainWindow;
                 Task.Run(() => {
+                    WaitForBackupOrRestore(3600);
                     StopMinecraftServer(200);
                     Action exit = () => {
                         trayIcon.Visible = false;
@@ -1680,6 +1826,12 @@ namespace MinecraftControlCenter
             {
                 return true; // Già attivo
             }
+            // Pannello già avviato da qui ma lento ad aprire la porta (es. antivirus al primo avvio): "Riprova" aspetta
+            // lui. Prima ne avviava un secondo, che litigava con il primo per la porta e ne cancellava il registro
+            if (pythonProcess != null && !pythonProcess.HasExited)
+            {
+                return WaitForBackendPort();
+            }
 
             // Installazione normale: solo app.pyc (compilato, senza sorgente); app.py c'è solo nelle cartelle di sviluppo
             string appPyPath = Path.Combine(appDir, "app.py");
@@ -1740,8 +1892,12 @@ namespace MinecraftControlCenter
                 BackendError = LauncherText.T("err.python_start", ex.Message);
                 return false;
             }
+            return WaitForBackendPort();
+        }
 
-            // Attende fino a 45 secondi l'apertura della porta, fermandosi subito se il processo termina
+        /// <summary>Attende fino a 45 secondi l'apertura della porta del pannello, fermandosi subito se il processo termina.</summary>
+        static bool WaitForBackendPort()
+        {
             Stopwatch sw = Stopwatch.StartNew();
             while (sw.Elapsed.TotalSeconds < 45)
             {
@@ -1790,6 +1946,35 @@ namespace MinecraftControlCenter
                     }
                 }
                 catch { return; }
+            }
+        }
+
+        /// <summary>Aspetta la fine di un backup o di un ripristino del pannello di questo PC (al massimo maxSeconds).
+        /// Prima "Esci" chiudeva il programma a metà ripristino e il mondo restava in parte del backup e in parte di prima.</summary>
+        static void WaitForBackupOrRestore(int maxSeconds)
+        {
+            string url = "http://127.0.0.1:" + webPort + "/api/backup/status";
+            bool notified = false;
+            Stopwatch sw = Stopwatch.StartNew();
+            while (sw.Elapsed.TotalSeconds < maxSeconds)
+            {
+                try
+                {
+                    HttpWebRequest req = (HttpWebRequest)WebRequest.Create(url);
+                    req.Timeout = 3000;
+                    using (HttpWebResponse resp = (HttpWebResponse)req.GetResponse())
+                    using (StreamReader reader = new StreamReader(resp.GetResponseStream()))
+                    {
+                        if (!Regex.IsMatch(reader.ReadToEnd(), "\"active\"\\s*:\\s*true")) return;
+                    }
+                }
+                catch { return; }   // pannello non raggiungibile: niente da aspettare
+                if (!notified)
+                {
+                    notified = true;
+                    try { trayIcon.ShowBalloonTip(5000, "Voxarium", LauncherText.T("tray.waiting_backup"), ToolTipIcon.Info); } catch { }
+                }
+                Thread.Sleep(1000);
             }
         }
 
@@ -2013,22 +2198,53 @@ namespace MinecraftControlCenter
             // 1. Query ntfy for candidates: solo sul topic del proprio Host (imparato in rete locale), mai su un topic fisso
             List<string> ntfyCandidates = string.IsNullOrEmpty(hostPushTopic) ? new List<string>() : QueryNtfyCandidates(hostPushTopic);
 
+            // Host già conosciuto: in rete locale (http) risponde lui solo se lo dimostra con la prova segreta
+            // (VerifyKnownHost). Un Host che non la conosce ancora vale solo nella rete di casa (stesso router), oppure
+            // se l'utente conferma che è la rete di casa; fuori da una rete di casa nota solo l'indirizzo da internet con
+            // l'impronta del certificato. Prima bastava l'identificativo dell'Host, che si legge senza PIN, e un pannello
+            // finto nella rete di un bar o di un hotel riceveva il PIN.
+            bool paired = !string.IsNullOrEmpty(hostId);
+            bool proven = paired && !string.IsNullOrEmpty(hostProofKey);
+            bool atHome = paired && IsHomeNetwork();
+            bool awayFromKnownHome = paired && !atHome && !string.IsNullOrEmpty(homeGatewayMac);
+            if (awayFromKnownHome)
+            {
+                string remote = TestRemoteCandidates(ntfyCandidates, statusUpdate);
+                if (remote != null || !proven) return remote;
+            }
+            bool mustConfirm = paired && !proven && !atHome;
+            HashSet<string> declined = new HashSet<string>();   // "No" una volta sola per ricerca
+
             // First, test LAN candidates from ntfy (super fast if at home)
             foreach (string cand in ntfyCandidates)
             {
                 if (cand.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
                 {
                     if (statusUpdate != null) statusUpdate(LauncherText.T("disc.test_lan", cand));
-                    if (VerifyKnownHost(cand)) { LearnHostIdentity(cand); return cand; }
+                    if (VerifyKnownHost(cand) && AcceptLanHost(cand, mustConfirm, declined)) { LearnHostIdentity(cand); return cand; }
                 }
             }
 
             // 2. Fast local subnet scan (in case host changed local IP)
             if (statusUpdate != null) statusUpdate(LauncherText.T("disc.scan_wifi"));
             string lanFound = ScanLocalSubnetForServer(8080);
-            if (!string.IsNullOrEmpty(lanFound)) { LearnHostIdentity(lanFound); return lanFound; }
+            if (!string.IsNullOrEmpty(lanFound) && AcceptLanHost(lanFound, mustConfirm, declined)) { LearnHostIdentity(lanFound); return lanFound; }
 
             // 3. Test remote candidates from ntfy (for outside connection, HTTPS con impronta del certificato)
+            return awayFromKnownHome ? null : TestRemoteCandidates(ntfyCandidates, statusUpdate);
+        }
+
+        static bool AcceptLanHost(string url, bool mustConfirm, HashSet<string> declined)
+        {
+            if (!mustConfirm) return true;
+            if (declined.Contains(url)) return false;
+            if (ConfirmHomeNetwork(url)) return true;
+            declined.Add(url);
+            return false;
+        }
+
+        static string TestRemoteCandidates(List<string> ntfyCandidates, Action<string> statusUpdate)
+        {
             foreach (string cand in ntfyCandidates)
             {
                 if (cand.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
@@ -2037,24 +2253,51 @@ namespace MinecraftControlCenter
                     if (VerifyKnownHost(cand)) return cand;
                 }
             }
-
             return null;
         }
 
-        /// <summary>Come VerifyServerCandidate, ma se l'identificativo dell'Host è noto deve corrispondere.</summary>
+        /// <summary>Come VerifyServerCandidate, ma se l'identificativo dell'Host è noto deve corrispondere; in chiaro (http),
+        /// con la chiave della prova nota, l'Host deve anche rispondere alla domanda casuale con la prova segreta.</summary>
         public static bool VerifyKnownHost(string baseUrl)
         {
             if (!VerifyServerCandidate(baseUrl)) return false;
             if (string.IsNullOrEmpty(hostId)) return true;
+            bool needProof = baseUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrEmpty(hostProofKey);
+            string nonce = "";
+            if (needProof)
+            {
+                byte[] rnd = new byte[16];
+                using (RandomNumberGenerator rng = RandomNumberGenerator.Create()) rng.GetBytes(rnd);
+                nonce = BitConverter.ToString(rnd).Replace("-", "").ToLowerInvariant();
+            }
             try
             {
-                HttpWebRequest req = CreateHostRequest(baseUrl.TrimEnd('/') + "/api/status");
+                HttpWebRequest req = CreateHostRequest(baseUrl.TrimEnd('/') + "/api/status" + (needProof ? "?nonce=" + nonce : ""));
                 req.Timeout = 2500;
                 using (HttpWebResponse resp = (HttpWebResponse)req.GetResponse())
                 using (StreamReader reader = new StreamReader(resp.GetResponseStream()))
                 {
-                    return ReadJsonString(reader.ReadToEnd(), "host_id") == hostId;
+                    string json = reader.ReadToEnd();
+                    if (ReadJsonString(json, "host_id") != hostId) return false;
+                    return !needProof || ProofMatches(ReadJsonString(json, "host_proof"), nonce);
                 }
+            }
+            catch { return false; }
+        }
+
+        static bool ProofMatches(string proof, string nonce)
+        {
+            try
+            {
+                byte[] key = new byte[32];
+                for (int i = 0; i < 32; i++) key[i] = Convert.ToByte(hostProofKey.Substring(i * 2, 2), 16);
+                byte[] mac;
+                using (HMACSHA256 h = new HMACSHA256(key)) mac = h.ComputeHash(System.Text.Encoding.UTF8.GetBytes("host-proof|" + nonce));
+                string expected = BitConverter.ToString(mac).Replace("-", "").ToLowerInvariant();
+                if (proof == null || proof.Length != expected.Length) return false;
+                int diff = 0;
+                for (int i = 0; i < expected.Length; i++) diff |= proof[i] ^ expected[i];
+                return diff == 0;
             }
             catch { return false; }
         }

@@ -92,6 +92,12 @@ public final class PcTls {
         if (!n.equals(prefs.getString(PREF_CERT_FP, ""))) prefs.edit().putString(PREF_CERT_FP, n).apply();
     }
 
+    /** Come saveFingerprint, ma non sostituisce un'impronta già salvata (risposta arrivata in chiaro). */
+    public static void saveFingerprintIfMissing(Context ctx, String fp) {
+        if (ctx == null) return;
+        if (ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).getString(PREF_CERT_FP, "").isEmpty()) saveFingerprint(ctx, fp);
+    }
+
     private static String savedFingerprint() {
         if (sAppContext == null) return "";
         return sAppContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).getString(PREF_CERT_FP, "");

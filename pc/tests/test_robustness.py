@@ -391,6 +391,35 @@ class BackupRotationAndRestoreTest(unittest.TestCase):
             self.assertEqual(_read(os.path.join(self.server, "world", "region", f"r.{i}.mca")), f"regione {i} di adesso")
         self.assertEqual(_read(os.path.join(self.server, "world", "solo_adesso.dat")), "nuovo")
 
+    def test_restore_still_running_while_world_is_put_back(self):
+        """Durante la rimessa a posto del mondo il ripristino risulta ancora in corso: il server non si può avviare."""
+        for i in range(6):
+            self._write(f"world/region/r.{i}.mca", f"regione {i} del backup")
+        self._backup(time.time() - 3600)
+        for i in range(6):
+            self._write(f"world/region/r.{i}.mca", f"regione {i} di adesso")
+        real_open, real_replace = open, os.replace
+        count = {"n": 0}
+        running_during_rollback = []
+
+        def cancel_midway(path, mode="r", *a, **k):
+            if "w" in mode and str(path).endswith(".mca"):
+                count["n"] += 1
+                if count["n"] == 4:
+                    self.bm.cancel_requested = True
+            return real_open(path, mode, *a, **k)
+
+        def watch_replace(src, dst, *a, **k):
+            if self.bm.cancel_requested and "_prima_del_ripristino" in str(src):   # un file che torna al suo posto
+                running_during_rollback.append(self.bm.is_running)
+            return real_replace(src, dst, *a, **k)
+        with mock.patch("builtins.open", cancel_midway), mock.patch("os.replace", watch_replace):
+            self.bm.start_restore(is_server_stopped=True, source_path="desktop", confirm_other_server=True)
+            self._wait()
+        self.assertTrue(running_during_rollback)
+        self.assertTrue(all(running_during_rollback))
+        self.assertFalse(self.bm.is_running)
+
     def test_file_not_written_goes_back_in_place(self):
         self._write("world/level.dat", "mondo del backup")
         self._write("world/region.mca", "regione del backup")

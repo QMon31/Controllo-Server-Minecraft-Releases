@@ -116,6 +116,13 @@ def _pc_update_loop():
 
 threading.Thread(target=_pc_update_loop, daemon=True).start()
 upnp_mgr = UPnPManager()
+# Porta di Minecraft aperta sul router all'ultimo avvio: se adesso il server usa un'altra porta, quella vecchia si
+# chiude (prima restava aperta per sempre verso questo PC, perché il programma la dimenticava alla chiusura)
+try:
+    upnp_mgr.mc_internal_port = int(manager.config["upnp_mc_internal_port"])
+    upnp_mgr.mc_external_port = int(manager.config["upnp_mc_external_port"])
+except (KeyError, TypeError, ValueError):
+    upnp_mgr.mc_internal_port = upnp_mgr.mc_external_port = None
 forge_installer = ForgeServerInstaller(config_path=os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json"))
 forge_installer.on_server_ready = _on_installed_server_ready
 
@@ -710,6 +717,15 @@ def broadcast_network_update():
         asyncio.run_coroutine_threadsafe(_async_broadcast({"type": "network", "data": build_network_payload()}), loop)
 
 
+def _remember_minecraft_mapping():
+    """Porta di Minecraft aperta sul router (interna ed esterna) in config.json, per chiuderla al prossimo avvio se
+    nel frattempo la porta del server cambia."""
+    mapping = (upnp_mgr.mc_internal_port, upnp_mgr.mc_external_port)
+    if mapping != (manager.config.get("upnp_mc_internal_port"), manager.config.get("upnp_mc_external_port")):
+        manager.config["upnp_mc_internal_port"], manager.config["upnp_mc_external_port"] = mapping
+        manager.save_config()
+
+
 def sync_minecraft_port(force: bool = False) -> Optional[Dict[str, Any]]:
     """Apre sul router la porta del server scelto quando serve e avvisa i pannelli se porta o stato cambiano."""
     with _mc_port_lock:
@@ -736,6 +752,7 @@ def sync_minecraft_port(force: bool = False) -> Optional[Dict[str, Any]]:
             if not res.get("success"):
                 st["last_open"] = 0.0
                 print(f"[UPnP] Porta Minecraft {port} non aperta: {res.get('message')}")
+            _remember_minecraft_mapping()
         st["port"] = port
         active = upnp_mgr.get_status(port).get("active")
         notify = changed or force or active != st["active"]
@@ -769,7 +786,9 @@ async def status_broadcast_loop():
         try:
             await asyncio.sleep(2.0)
             if active_websockets:
-                status = manager.get_full_status()
+                # In un thread: lo stato aspetta il lucchetto del gestore (un avvio, un comando RCON lento con il
+                # server bloccato) e qui fermava tutto il pannello, per ogni pagina aperta
+                status = await asyncio.to_thread(manager.get_full_status)
                 await _async_broadcast({"type": "status", "data": status})
         except asyncio.CancelledError:
             break
@@ -887,6 +906,18 @@ def _host_id() -> str:
     import hashlib
     return hashlib.sha256(("host-id|" + str(manager.config.get("push_secret", ""))).encode("utf-8")).hexdigest()[:16]
 
+def _host_proof_key() -> bytes:
+    """Chiave con cui questo PC dimostra di essere lui a telefono e PC Remoti in rete locale. Deriva dal segreto ntfy:
+    l'app la calcola da quel segreto (ricevuto con il PIN), il Launcher la riceve da /api/discovery (solo rete di casa).
+    L'identificativo host_id invece si legge senza PIN, anche da internet, quindi da solo non prova niente."""
+    import hashlib, hmac
+    return hmac.new(str(manager.config.get("push_secret", "")).encode("utf-8"), b"voxarium-host-proof-key",
+                    hashlib.sha256).digest()
+
+def _host_proof(nonce: str) -> str:
+    import hashlib, hmac
+    return hmac.new(_host_proof_key(), ("host-proof|" + nonce).encode("utf-8"), hashlib.sha256).hexdigest()
+
 # Percorsi del PC (con il nome utente di Windows) che gli indirizzi pubblici mostrano solo a chi ha accesso
 PRIVATE_PATH_KEYS = ("server_dir", "target_path", "cloud_sync_dir")
 
@@ -928,9 +959,21 @@ def hide_private_paths(data: Dict[str, Any], request: Request) -> Dict[str, Any]
 
 @app.get("/api/status")
 def get_status(request: Request):
-    st = manager.get_full_status()
+    st = dict(manager.get_full_status())
     st["is_local_client"] = is_local_request(request)
     st["host_id"] = _host_id()
+    # Prova che risponde questo PC (domanda casuale "nonce" di app o PC Remoto): solo in rete locale. Da internet un
+    # impostore in un'altra rete potrebbe girare a questo PC la domanda ricevuta e rimandare indietro la risposta
+    nonce = request.query_params.get("nonce", "")
+    if re.fullmatch(r"[0-9a-f]{16,64}", nonce) and not is_internet_request(request):
+        st["host_proof"] = _host_proof(nonce)
+    if not has_admin_access(request):
+        # Chat, errori della console e ultimo crash solo con il PIN, come /api/chat e /api/errors: prima chiunque
+        # (anche da internet) li leggeva qui, con percorsi del PC, nome utente di Windows e IP nelle righe di errore
+        st.pop("chat", None)
+        st.pop("errors", None)
+        if isinstance(st.get("crash_protection"), dict):
+            st["crash_protection"] = dict(st["crash_protection"], latest_crash=None)
     return hide_private_paths(st, request)
 
 @app.get("/api/discovery")
@@ -946,7 +989,8 @@ def get_discovery(request: Request):
     if is_internet_request(request) or request.headers.get("x-forwarded-for") or not is_private:
         raise HTTPException(status_code=403, detail="Disponibile solo dalla rete locale dell'Host.")
     return {"push_topic": manager.config.get("push_topic", ""), "host_id": _host_id(),
-            "cert_fingerprint": remote_access.fingerprint, "remote_url": remote_access.url}
+            "cert_fingerprint": remote_access.fingerprint, "remote_url": remote_access.url,
+            "proof_key": _host_proof_key().hex()}
 
 _cached_network_payload = None
 _cached_network_payload_time = 0
@@ -1457,14 +1501,22 @@ def api_pc_update_check(request: Request):
     verify_admin_access(request)
     return pc_updater.check_for_update(force=True)
 
+def _pc_update_blocker() -> Optional[str]:
+    if not server_fully_stopped():
+        return "Spegni il server Minecraft prima di aggiornare il programma."
+    if backup_mgr.is_running:
+        return "Attendi la fine del backup o del ripristino in corso."
+    return None
+
+pc_updater.install_blocker = _pc_update_blocker
+
 @app.post("/api/pc-update/install")
 def api_pc_update_install(request: Request):
     verify_admin_access(request)
     verify_host_only_access(request)
-    if not server_fully_stopped():
-        raise HTTPException(status_code=409, detail="Spegni il server Minecraft prima di aggiornare il programma.")
-    if backup_mgr.is_running:
-        raise HTTPException(status_code=409, detail="Attendi la fine del backup o del ripristino in corso.")
+    blocked = _pc_update_blocker()
+    if blocked:
+        raise HTTPException(status_code=409, detail=blocked)
     res = pc_updater.download_and_run_installer()
     if res.get("status") == "error":
         raise HTTPException(status_code=400, detail=res.get("message"))
@@ -1545,6 +1597,7 @@ def update_config(req: ConfigUpdateRequest, request: Request):
     with manager.lock:
         current = manager.config
         old_dir = (current.get("server_dir") or "").strip()
+        new_dir = None
         if req.server_dir is not None:
             new_dir = req.server_dir.strip()
             if not is_safe_server_path(new_dir):
@@ -1554,7 +1607,6 @@ def update_config(req: ConfigUpdateRequest, request: Request):
                     raise HTTPException(status_code=409, detail="Impossibile cambiare la cartella del server mentre il server è in esecuzione. Spegnilo prima.")
                 if backup_mgr.is_running:
                     raise HTTPException(status_code=409, detail="Attendi la fine del backup o del ripristino in corso.")
-            backup_mgr.server_dir = os.path.abspath(new_dir) if new_dir else ""
         if req.server_run_bat is not None:
             if not is_safe_server_path(req.server_run_bat):
                 raise HTTPException(status_code=400, detail="Percorso file di avvio non consentito per la sicurezza del sistema.")
@@ -1584,9 +1636,15 @@ def update_config(req: ConfigUpdateRequest, request: Request):
         if new_port is not None and current.get("server_dir") and int(new_port) != manager.get_server_port() and backup_mgr.is_running:
             raise HTTPException(status_code=409, detail="Attendi la fine del backup o del ripristino in corso.")
         pin_changed = "admin_pin" in update_data and update_data["admin_pin"] != str(current.get("admin_pin", "1234")).strip()
+        # Solo dopo tutti i controlli: prima un PIN o una porta non validi facevano rifiutare il salvataggio, ma
+        # backup e ripristino lavoravano già sulla cartella nuova mentre il resto del programma restava sulla vecchia
+        if new_dir is not None:
+            backup_mgr.server_dir = os.path.abspath(new_dir) if new_dir else ""
         for k, v in update_data.items():
             current[k] = v
         manager.save_config(current)
+        if new_dir and new_dir != old_dir:
+            _sync_active_instance_with_config()
         if pin_changed:
             valid_auth_tokens.revoke_all_except(request.headers.get("X-Admin-Token"))
             _close_revoked_websockets()
@@ -2002,10 +2060,11 @@ async def websocket_endpoint(websocket: WebSocket):
     websocket.state.internet = internet
     active_websockets.append(websocket)
     try:
-        initial_status = manager.get_full_status()
-        with manager.lock:
-            recent_logs = list(manager.log_buffer)[-100:]
-            log_seq = manager.log_seq
+        def _initial():
+            st = manager.get_full_status()
+            with manager.lock:
+                return st, list(manager.log_buffer)[-100:], manager.log_seq
+        initial_status, recent_logs, log_seq = await asyncio.to_thread(_initial)   # come sopra: mai nel ciclo principale
         recent_chat = list(manager.chat_messages)[-30:]
         recent_errors = list(manager.errors_list)[-30:]
 
@@ -2325,6 +2384,58 @@ def _sync_config_with_active_instance():
     if active.get("id") and active.get("server_dir") and os.path.isdir(active["server_dir"]):
         instance_manager.switch_instance(active["id"], manager=manager)
         backup_mgr.server_dir = manager.config.get("server_dir", "")
+
+
+def _sync_active_instance_with_config():
+    """Cartella del server cambiata dalle Impostazioni: diventa anche il server attivo dell'elenco dei server. Prima
+    restava attivo quello vecchio, con tipo e versione usati dallo Store (mod del tipo sbagliato) e per scegliere Java."""
+    s_dir = (manager.config.get("server_dir") or "").strip()
+    if not s_dir:
+        return
+    wanted = os.path.normcase(os.path.abspath(s_dir))
+
+    def _find(instances):
+        return next((i for i in instances if i.get("server_dir")
+                     and os.path.normcase(os.path.abspath(i["server_dir"])) == wanted), None)
+
+    def _inside(path):
+        try:
+            return bool(path) and os.path.commonpath([wanted, os.path.normcase(os.path.abspath(path))]) == wanted
+        except ValueError:
+            return False
+
+    try:
+        cfg_bat = (manager.config.get("server_run_bat") or "").strip()
+        instances = instance_manager.load_instances_data()
+        target = _find(instances)
+        if target is None:
+            det = instance_manager.detect_server_details(s_dir)
+            det = det if det.get("success") else {}
+            instance_manager.add_instance(
+                name=det.get("suggested_name") or os.path.basename(os.path.normpath(s_dir)) or "Server",
+                server_dir=s_dir,
+                server_run_bat=cfg_bat if _inside(cfg_bat) else (det.get("server_run_bat") or ""),
+                server_command=det.get("server_command") or manager.config.get("server_command") or "",
+                server_port=manager.get_server_port(),
+                server_type=det.get("server_type") or "",
+                mc_version=det.get("mc_version") or "",
+            )
+            instances = instance_manager.load_instances_data()
+            target = _find(instances)
+            if target is None:
+                return
+        # Il file di avvio scritto nelle Impostazioni vale se è nella cartella nuova; altrimenti (era quello del
+        # server vecchio) si usa quello del server attivato
+        if _inside(cfg_bat):
+            target["server_run_bat"] = cfg_bat
+        elif target.get("server_run_bat"):
+            manager.config["server_run_bat"] = target["server_run_bat"]
+            manager.save_config()
+        for inst in instances:
+            inst["is_active"] = inst is target
+        instance_manager.save_instances_data(instances)
+    except Exception as e:
+        print(f"[Istanze] Server attivo non aggiornato dopo il cambio di cartella: {e}")
 
 
 def get_mods_dir() -> str:

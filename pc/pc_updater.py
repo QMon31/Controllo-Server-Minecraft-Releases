@@ -16,7 +16,7 @@ import tempfile
 import threading
 import time
 import urllib.request
-from typing import Any, Dict
+from typing import Any, Callable, Dict, Optional
 
 from pc_version import LEGACY_UPDATE_REPO, PC_BUILD, PC_VERSION, UPDATE_REPO
 
@@ -35,6 +35,10 @@ RELEASES_API_URL = f"https://api.github.com/repos/{UPDATE_REPO}/releases?per_pag
 RELEASES_MAX_PAGES = 10
 
 _lock = threading.Lock()
+# Motivo per non installare adesso (server acceso, backup o ripristino in corso) o None; impostato da app.py.
+# Si controlla anche a download finito: l'installer chiude il programma, e prima un ripristino avviato durante il
+# download si interrompeva a metà
+install_blocker = None  # type: Optional[Callable[[], Optional[str]]]
 _state: Dict[str, Any] = {
     "checked_at": 0.0,
     "available": False,
@@ -148,6 +152,9 @@ def _download_worker(manifest: Dict[str, Any]):
             raise ValueError("verifica SHA-256 dell'installer non riuscita")
         with _lock:
             _state["progress"] = 100
+        blocked = install_blocker() if install_blocker else None
+        if blocked:
+            raise RuntimeError(blocked)
         if IS_LINUX:
             _run_linux_update(dest)
         else:

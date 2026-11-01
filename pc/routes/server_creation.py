@@ -61,6 +61,10 @@ def api_forge_install(req: ForgeInstallRequest, request: Request):
     port_error = core.minecraft_port_error(req.port)
     if port_error:
         raise HTTPException(status_code=400, detail=port_error)
+    # Stesso limite delle Impostazioni: prima un server con più RAM di quella del PC veniva creato e poi non partiva
+    host_gb = manager._host_ram_gb()
+    if req.ram_gb < 1 or req.ram_gb > max(1, host_gb - 1):
+        raise HTTPException(status_code=400, detail=f"RAM non valida: scegli tra 1 e {max(1, host_gb - 1)} GB (il PC ne ha {host_gb}).")
     success = forge_installer.start_installation(
         target_dir=req.target_dir,
         server_type=req.server_type,

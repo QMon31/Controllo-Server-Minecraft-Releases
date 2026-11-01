@@ -17,8 +17,8 @@ import threading
 # Java e gli installer Forge/NeoForge senza finestra cmd (il pannello gira senza console)
 NO_WINDOW = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
 from typing import Callable, Dict, Any, Optional, List
-from platform_utils import (LAUNCH_SCRIPT, FORGE_ARGS_FILE, download_file, read_json_with_backup, write_json_atomic,
-                            write_launch_script)
+from platform_utils import (LAUNCH_SCRIPT, FORGE_ARGS_FILE, download_file, read_json_with_backup, refresh_path_from_system,
+                            write_json_atomic, write_launch_script)
 
 USER_AGENT = "Voxarium (+https://github.com/QMon31/Voxarium)"
 
@@ -622,6 +622,8 @@ class ForgeServerInstaller:
     @staticmethod
     def java_major(java_cmd: Optional[str] = None) -> Optional[int]:
         """Versione principale della Java del PC (8, 17, 21, 25...); None se non c'è o non si legge."""
+        if not java_cmd:
+            refresh_path_from_system()   # Java installata a programma aperto
         java_cmd = java_cmd or shutil.which("java")
         if not java_cmd:
             return None
@@ -637,6 +639,7 @@ class ForgeServerInstaller:
 
     def check_prerequisites(self, force_refresh: bool = False) -> Dict[str, Any]:
         """Checks Java installation, version, suggests a default path, and returns version lists for all types."""
+        refresh_path_from_system()   # Java installata a programma aperto
         java_cmd = shutil.which("java")
         java_ok = False
         java_ver_str = "Non trovato"

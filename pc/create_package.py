@@ -11,6 +11,7 @@ py_files = [
     "server_manager.py",
     "backup_manager.py",
     "mc_ping.py",
+    "eco_wake.py",
     "remote_access.py",
     "upnp_manager.py",
     "server_installer.py",

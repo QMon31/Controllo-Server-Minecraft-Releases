@@ -1,0 +1,1 @@
+PIN and access code protected on outside Wi-Fi: the home PC is recognised with a secret proof (needs PC program 4.23.0); widget with the 1234 PIN at home.

@@ -161,6 +161,44 @@ def write_launch_script(target_dir: str, label: str, launch_cmd: str) -> str:
 JAVA_NAMES = ("java", "java.exe", "javaw", "javaw.exe")
 
 
+def refresh_path_from_system() -> None:
+    """Rilegge da Windows il PATH (e JAVA_HOME) salvati adesso. Un programma aperto tiene quelli di quando è partito:
+    una Java installata dopo (Adoptium, Microsoft...) non si trovava finché non si chiudeva e riapriva il programma.
+    Le cartelle del PATH attuale che Windows non elenca restano, in fondo. Su Linux non fa nulla."""
+    if not IS_WINDOWS:
+        return
+    try:
+        import winreg
+    except ImportError:
+        return
+
+    def _read(root, key: str, name: str) -> str:
+        try:
+            with winreg.OpenKey(root, key) as k:
+                val, _ = winreg.QueryValueEx(k, name)
+            return winreg.ExpandEnvironmentStrings(str(val)) if val else ""
+        except OSError:
+            return ""
+
+    machine_key = r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment"
+    # Stesso ordine di Windows: prima le cartelle di sistema, poi quelle dell'utente
+    listed = (_read(winreg.HKEY_LOCAL_MACHINE, machine_key, "Path") + ";" +
+              _read(winreg.HKEY_CURRENT_USER, "Environment", "Path")).split(";")
+    if not any(p.strip() for p in listed):
+        return
+    merged, seen = [], set()
+    for p in listed + os.environ.get("PATH", "").split(";"):
+        key = os.path.normcase(p.strip().rstrip("\\"))
+        if key and key not in seen:
+            seen.add(key)
+            merged.append(p.strip())
+    os.environ["PATH"] = ";".join(merged)
+    java_home = _read(winreg.HKEY_CURRENT_USER, "Environment", "JAVA_HOME") or \
+        _read(winreg.HKEY_LOCAL_MACHINE, machine_key, "JAVA_HOME")
+    if java_home:
+        os.environ["JAVA_HOME"] = java_home
+
+
 def java_token_end(line: str) -> int:
     """Fine del primo elemento della riga: il programma java, anche tra virgolette con spazi ("C:/Program Files/...")."""
     s = line

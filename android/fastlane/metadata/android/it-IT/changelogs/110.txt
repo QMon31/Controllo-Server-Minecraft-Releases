@@ -1,0 +1,1 @@
+PIN e codice di accesso protetti sui Wi-Fi esterni: il PC di casa si riconosce con una prova segreta (serve il programma PC 4.23.0); widget con il PIN 1234 in casa.

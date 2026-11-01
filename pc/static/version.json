@@ -1,8 +1,8 @@
 {
-  "version_code": 109,
-  "version_name": "4.13.3",
+  "version_code": 110,
+  "version_name": "4.13.4",
   "download_url": "/static/Controllo_Server_Minecraft.apk",
-  "release_notes": "Spegni server e fai backup ora fa davvero il backup; stato del server aggiornato in tutte le sezioni; errori della whitelist visibili; regole di gioco con i valori veri, anche su Minecraft 1.21.11 e successivi.",
+  "release_notes": "Sicurezza sui Wi-Fi esterni: il PC di casa si riconosce con una prova segreta e PIN e codice di accesso non vanno più a un altro dispositivo; widget con il PIN 1234 in casa.",
   "min_sdk": 26,
   "target_sdk": 35
 }

@@ -13,6 +13,18 @@ from app import backup_mgr, get_mods_dir, get_server_dir_path, manager, save_upl
 
 router = APIRouter()
 
+# ID della mod letto dal .jar, per percorso: (data di modifica, dimensione, id). Si rilegge solo se il file cambia
+_MOD_ID_CACHE = {}
+
+
+def _mod_id(fpath: str, size: int, mtime: float) -> str:
+    cached = _MOD_ID_CACHE.get(fpath)
+    if cached and cached[0] == mtime and cached[1] == size:
+        return cached[2]
+    mod_id = str(mod_info.read_jar_metadata(fpath).get("mod_id") or "").strip().lower()
+    _MOD_ID_CACHE[fpath] = (mtime, size, mod_id)
+    return mod_id
+
 
 def _require_mods_writable() -> str:
     """Blocca le modifiche a mods/ durante backup/ripristino o a server acceso, o senza server collegato."""
@@ -120,9 +132,18 @@ def api_list_mods(request: Request):
     # Duplicates & conflicts detection (same stem or multiple files for same mod)
     from collections import Counter
     stem_counts = Counter(it["stem"] for it in items)
+    # Stessa mod in due file attivi con nomi diversi (es. create-0.5.0.jar e create-0.5.1.jar): Forge e Fabric si
+    # fermano all'avvio. Prima si riconosceva solo lo stesso file presente attivo e disattivato
+    files_by_id = {}
+    for it in items:
+        if it["enabled"]:
+            it["mod_id"] = _mod_id(os.path.join(mods_dir, it["filename"]), it["size_bytes"], it["mtime"])
+            if it["mod_id"]:
+                files_by_id.setdefault(it["mod_id"], []).append(it["filename"])
     duplicate_count = 0
     for it in items:
-        is_dup = stem_counts[it["stem"]] > 1
+        it["duplicate_with"] = [f for f in files_by_id.get(it.get("mod_id") or "", []) if f != it["filename"]]
+        is_dup = stem_counts[it["stem"]] > 1 or bool(it["duplicate_with"])
         it["is_duplicate"] = is_dup
         if is_dup:
             duplicate_count += 1

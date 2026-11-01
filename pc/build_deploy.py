@@ -77,6 +77,7 @@ FILES_TO_SYNC = [
     "platform_utils.py",
     "remote_access.py",
     "mc_ping.py",
+    "eco_wake.py",
     "Launcher.cs",
     "Installer.cs",
     "InstallerI18n.cs",

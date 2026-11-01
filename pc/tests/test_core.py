@@ -117,7 +117,7 @@ class StaleInstanceTest(unittest.TestCase):
 
 
 class ServerManagerConfigTest(unittest.TestCase):
-    FILES = ["server_manager.py", "instance_manager.py", "mc_ping.py", "platform_utils.py"]
+    FILES = ["server_manager.py", "instance_manager.py", "mc_ping.py", "eco_wake.py", "platform_utils.py"]
 
     def _manager(self, config):
         d = _sandbox(self.FILES, config=config)
@@ -439,9 +439,11 @@ class InternetAccessTest(unittest.TestCase):
             src = fh.read()
         wanted = ("is_internet_request", "is_local_request", "verify_admin_access", "pin_is_default",
                   "has_admin_access", "hide_private_paths", "is_public_client_ip", "public_network_payload",
-                  "host_is_direct_address")
+                  "host_is_direct_address", "_host_id", "_host_proof_key", "_host_proof", "get_status")
         fns = [n for n in ast.parse(src).body if isinstance(n, ast.FunctionDef) and n.name in wanted]
-        cls.config = {"admin_pin": "583921", "require_pin_for_remote": True}
+        for n in fns:
+            n.decorator_list = []                    # @app.get(...): qui serve solo la funzione
+        cls.config = {"admin_pin": "583921", "require_pin_for_remote": True, "push_secret": "ab" * 32}
 
         class HTTPException(Exception):
             def __init__(self, status_code, detail=""):
@@ -450,9 +452,14 @@ class InternetAccessTest(unittest.TestCase):
         class Manager:
             config = cls.config
 
+            @staticmethod
+            def get_full_status():
+                return {"state": "ONLINE", "chat": {"recent": ["<Steve> ciao"]}, "errors": {"recent": [{"raw": "C:/Users/x"}]},
+                        "crash_protection": {"paused": False, "latest_crash": {"reason": "x"}}}
+
         cls.HTTPException = HTTPException
         import socket
-        cls.ns = {"socket": socket, "REMOTE_PORT": 8443, "manager": Manager, "valid_auth_tokens": {"tok"}, "HTTPException": HTTPException,
+        cls.ns = {"socket": socket, "re": re, "REMOTE_PORT": 8443, "manager": Manager, "valid_auth_tokens": {"tok"}, "HTTPException": HTTPException,
                   "is_default_pin": is_default_pin, "DEFAULT_PIN_INTERNET_MSG": "", "Request": object,
                   "Dict": dict, "Any": object, "PRIVATE_PATH_KEYS": ("server_dir", "target_path", "cloud_sync_dir")}
         exec(compile(ast.Module(body=fns, type_ignores=[]), "app.py", "exec"), cls.ns)
@@ -499,6 +506,32 @@ class InternetAccessTest(unittest.TestCase):
         self.assertEqual(hide(dict(st), self._req(8080, "192.168.1.20")), {"state": "ONLINE"})
         self.assertEqual(hide(dict(st), self._req(8080)), st)                                  # PC Host
         self.assertEqual(hide(dict(st), self._req(8443, "81.0.0.9", {"X-Admin-Token": "tok"})), st)
+
+    def test_status_proof_only_from_home_and_chat_only_with_pin(self):
+        import hashlib, hmac
+        nonce = "0123456789abcdef"
+        key = hmac.new(("ab" * 32).encode(), b"voxarium-host-proof-key", hashlib.sha256).digest()
+        expected = hmac.new(key, ("host-proof|" + nonce).encode(), hashlib.sha256).hexdigest()
+
+        def status(port, client, headers=None, n=nonce):
+            r = self._req(port, client, headers)
+            r.query_params = {"nonce": n}
+            return self.ns["get_status"](r)
+
+        # Telefono in casa senza token: prova sì (è il nostro PC), chat/errori/ultimo crash no
+        home = status(8080, "192.168.1.20")
+        self.assertEqual(home["host_proof"], expected)
+        self.assertNotIn("chat", home)
+        self.assertNotIn("errors", home)
+        self.assertIsNone(home["crash_protection"]["latest_crash"])
+        # Da internet nessuna prova (un impostore in un'altra rete potrebbe girarla a questo PC), anche con il token
+        self.assertNotIn("host_proof", status(8443, "81.0.0.9"))
+        self.assertNotIn("chat", status(8443, "81.0.0.9"))
+        with_token = status(8443, "81.0.0.9", {"X-Admin-Token": "tok"})
+        self.assertNotIn("host_proof", with_token)
+        self.assertIn("chat", with_token)
+        self.assertIn("errors", status(8080, "127.0.0.1"))                       # PC Host
+        self.assertNotIn("host_proof", status(8080, "192.168.1.20", n="x'<"))    # domanda non valida
 
     def test_default_pin_blocks_internet(self):
         self.config["admin_pin"] = "1234"
@@ -1124,7 +1157,7 @@ class FirstInstallNamesTest(unittest.TestCase):
 
 class PanelFixesOct26Test(unittest.TestCase):
     """Correzioni del 26/10: RAM, porta, file manager senza server, primo server attivo, UPnP, Store."""
-    FILES = ["server_manager.py", "instance_manager.py", "mc_ping.py", "platform_utils.py", "file_manager.py"]
+    FILES = ["server_manager.py", "instance_manager.py", "mc_ping.py", "eco_wake.py", "platform_utils.py", "file_manager.py"]
 
     def setUp(self):
         self.d = _sandbox(self.FILES, instances=[], config={"server_dir": ""})
@@ -1370,7 +1403,7 @@ class StatusServerPortTest(unittest.TestCase):
     """/api/status manda la porta vera del server (server.properties): l'app mostrava sempre la sua predefinita 32769."""
 
     def test_status_has_real_port(self):
-        d = _sandbox(["server_manager.py", "instance_manager.py", "mc_ping.py", "platform_utils.py"], instances=[])
+        d = _sandbox(["server_manager.py", "instance_manager.py", "mc_ping.py", "eco_wake.py", "platform_utils.py"], instances=[])
         try:
             srv = os.path.join(d, "srv")
             os.makedirs(srv)
@@ -1401,7 +1434,7 @@ class McCpuPercentTest(unittest.TestCase):
     """La CPU di Minecraft è in percentuale di tutta la CPU (psutil la dà per un solo core: 466% su 8 core)."""
 
     def setUp(self):
-        self.d = _sandbox(["server_manager.py", "instance_manager.py", "mc_ping.py", "platform_utils.py"], instances=[], config={"server_dir": ""})
+        self.d = _sandbox(["server_manager.py", "instance_manager.py", "mc_ping.py", "eco_wake.py", "platform_utils.py"], instances=[], config={"server_dir": ""})
         self.sm = _load(self.d, "server_manager")
 
     def tearDown(self):
@@ -1428,7 +1461,7 @@ class ErrorClassificationTest(unittest.TestCase):
     """Scheda Errori: conta il livello vero della riga, non la parola "Error" o un'eccezione citata in un WARN."""
 
     def setUp(self):
-        self.d = _sandbox(["server_manager.py", "instance_manager.py", "mc_ping.py", "platform_utils.py"], instances=[], config={"server_dir": ""})
+        self.d = _sandbox(["server_manager.py", "instance_manager.py", "mc_ping.py", "eco_wake.py", "platform_utils.py"], instances=[], config={"server_dir": ""})
         self.sm = _load(self.d, "server_manager")
         self.m = self.sm.ServerManager(config_path=os.path.join(self.d, "config.json"))
 
@@ -1504,7 +1537,7 @@ class BackupPhasesAndStartGuardTest(unittest.TestCase):
     """Copia su Google Drive con avanzamento fino al 100%, e server che non parte durante backup o ripristino."""
 
     def setUp(self):
-        self.d = _sandbox(["backup_manager.py", "server_manager.py", "instance_manager.py", "mc_ping.py", "platform_utils.py"],
+        self.d = _sandbox(["backup_manager.py", "server_manager.py", "instance_manager.py", "mc_ping.py", "eco_wake.py", "platform_utils.py"],
                           instances=[], config={"server_dir": ""})
         self.bm = _load(self.d, "backup_manager")
         self.sm = _load(self.d, "server_manager")
@@ -1757,7 +1790,7 @@ class StopDuringRestartTest(unittest.TestCase):
     """Arresto chiesto durante un riavvio: il riavvio si annulla (prima il server si riaccendeva da solo)."""
 
     def setUp(self):
-        self.d = _sandbox(["server_manager.py", "instance_manager.py", "mc_ping.py", "platform_utils.py"],
+        self.d = _sandbox(["server_manager.py", "instance_manager.py", "mc_ping.py", "eco_wake.py", "platform_utils.py"],
                           instances=[], config={"server_dir": ""})
         self.sm = _load(self.d, "server_manager")
         self.m = self.sm.ServerManager(config_path=os.path.join(self.d, "config.json"))
@@ -2157,6 +2190,1007 @@ class CodeAuditFixesTest(unittest.TestCase):
         body = src[src.index("static void KillPythonBackend()"):src.index("static string PromptInput(")]
         self.assertIn('Process.GetProcessesByName("python")', body)
         self.assertIn('Path.Combine(appDir, "runtime")', body)
+
+
+class SettingsDirAndInterruptedRestoreTest(unittest.TestCase):
+    """Cartella del server cambiata dalle Impostazioni e ripristino interrotto (programma chiuso a metà)."""
+
+    def _settings_env(self, td):
+        import app as app_mod
+        import instance_manager
+        dir_a, dir_b = os.path.join(td, "ServerA"), os.path.join(td, "ServerB")
+        for d in (dir_a, dir_b):
+            os.makedirs(d)
+            with open(os.path.join(d, "server.properties"), "w", encoding="utf-8") as f:
+                f.write("server-port=25565\n")
+        inst_file = os.path.join(td, "instances.json")
+        with open(inst_file, "w", encoding="utf-8") as f:
+            json.dump([{"id": "a", "name": "A", "server_dir": dir_a, "server_type": "forge", "mc_version": "1.20.1",
+                        "server_port": 25565, "is_active": True}], f)
+        cfg = {**app_mod.manager.config, "server_dir": dir_a, "server_run_bat": os.path.join(dir_a, "run.bat")}
+        patches = [
+            mock.patch.object(app_mod, "verify_admin_access"),
+            mock.patch.object(app_mod.manager, "config", cfg),
+            mock.patch.object(app_mod.manager, "save_config"),
+            mock.patch.object(app_mod.manager, "state", "STOPPED"),
+            mock.patch.object(app_mod.manager, "get_server_port", return_value=25565),
+            mock.patch.object(app_mod.backup_mgr, "is_running", False),
+            mock.patch.object(app_mod.backup_mgr, "server_dir", os.path.abspath(dir_a)),
+            mock.patch.object(app_mod, "request_minecraft_port_sync"),
+            mock.patch.object(instance_manager, "INSTANCES_FILE", inst_file),
+        ]
+        for p in patches:
+            p.start()
+            self.addCleanup(p.stop)
+        req = mock.Mock()
+        req.headers = {}
+        return app_mod, instance_manager, dir_a, dir_b, req
+
+    def test_rejected_settings_do_not_move_backup_dir(self):
+        from fastapi import HTTPException
+        with tempfile.TemporaryDirectory() as td:
+            app_mod, _im, dir_a, dir_b, req = self._settings_env(td)
+            with self.assertRaises(HTTPException) as ctx:
+                app_mod.update_config(app_mod.ConfigUpdateRequest(server_dir=dir_b, server_port=80), req)
+            self.assertEqual(ctx.exception.status_code, 400)
+            self.assertEqual(app_mod.manager.config["server_dir"], dir_a)
+            self.assertEqual(os.path.normcase(app_mod.backup_mgr.server_dir), os.path.normcase(os.path.abspath(dir_a)))
+
+    def test_settings_dir_change_activates_matching_instance(self):
+        with tempfile.TemporaryDirectory() as td:
+            app_mod, im, dir_a, dir_b, req = self._settings_env(td)
+            app_mod.update_config(app_mod.ConfigUpdateRequest(server_dir=dir_b), req)
+            self.assertEqual(os.path.normcase(app_mod.backup_mgr.server_dir), os.path.normcase(os.path.abspath(dir_b)))
+            active = im.get_active_instance()
+            self.assertEqual(os.path.normcase(active["server_dir"]), os.path.normcase(dir_b))
+            self.assertNotEqual(active.get("server_type"), "forge")   # non resta il tipo del server vecchio
+            # Il file di avvio del server vecchio non resta nella configurazione del nuovo
+            self.assertFalse(app_mod.manager.config["server_run_bat"].startswith(dir_a))
+            # Tornando alla cartella di prima si riattiva il server già in elenco, senza doppioni
+            app_mod.update_config(app_mod.ConfigUpdateRequest(server_dir=dir_a), req)
+            active = im.get_active_instance()
+            self.assertEqual(active["id"], "a")
+            self.assertEqual(len(im.load_instances_data()), 2)
+
+    def test_interrupted_restore_blocks_start_and_keeps_previous_world(self):
+        import backup_manager as bm
+        with tempfile.TemporaryDirectory() as td:
+            server, desk = os.path.join(td, "server"), os.path.join(td, "desktop")
+            region = os.path.join(server, "world", "region")
+            os.makedirs(region)
+            os.makedirs(desk)
+            names = [f"r.{i}.0.mca" for i in range(3)]
+            for n in names:
+                with open(os.path.join(region, n), "w", encoding="utf-8") as f:
+                    f.write("VECCHIO")
+            m = bm.BackupManager(server, desktop_dir=desk)
+            self.assertEqual(m.start_backup(is_server_stopped=True)["status"], "success")
+            while m.is_running:
+                time.sleep(0.02)
+            for n in names:
+                with open(os.path.join(region, n), "w", encoding="utf-8") as f:
+                    f.write("ATTUALE")
+            # Ripristino interrotto dopo il primo file: il file di prima è nella cartella di sicurezza, nel server c'è
+            # quello del backup, il segno è rimasto
+            safety = server + bm.RESTORE_SAFETY_SUFFIX
+            os.makedirs(os.path.join(safety, "world", "region"))
+            shutil.move(os.path.join(region, names[0]), os.path.join(safety, "world", "region", names[0]))
+            with open(os.path.join(region, names[0]), "w", encoding="utf-8") as f:
+                f.write("VECCHIO")
+            with open(os.path.join(safety, bm.RESTORE_MARKER_NAME), "w", encoding="utf-8") as f:
+                f.write("x")
+
+            m = bm.BackupManager(server, desktop_dir=desk)   # programma riaperto
+            self.assertEqual(m.busy_message(), bm.RESTORE_INTERRUPTED_MSG)
+            # Niente backup del mondo a metà: diventerebbe l'ultimo backup
+            res = m.start_backup(is_server_stopped=True)
+            self.assertEqual((res["status"], res["message"]), ("error", bm.RESTORE_INTERRUPTED_BACKUP_MSG))
+            self.assertEqual(m.start_restore(is_server_stopped=True)["status"], "success")
+            while m.is_running:
+                time.sleep(0.02)
+            for n in names:
+                with open(os.path.join(region, n), encoding="utf-8") as f:
+                    self.assertEqual(f.read(), "VECCHIO")
+                # Tutti i file di prima sono nella cartella di sicurezza, anche quello messo da parte la prima volta
+                with open(os.path.join(safety, "world", "region", n), encoding="utf-8") as f:
+                    self.assertEqual(f.read(), "ATTUALE")
+            self.assertIsNone(m.busy_message())
+            self.assertFalse(os.path.exists(os.path.join(safety, bm.RESTORE_MARKER_NAME)))
+
+    def test_launcher_exit_waits_for_backup_or_restore(self):
+        with open(os.path.join(ROOT, "Launcher.cs"), encoding="utf-8") as f:
+            src = f.read()
+        start = src.index('LauncherText.T("tray.stopping")')
+        exit_handler = src[start:src.index("trayIcon.ContextMenu = menu;", start)]
+        self.assertLess(exit_handler.index("WaitForBackupOrRestore("), exit_handler.index("KillPythonBackend()"))
+        self.assertIn('"/api/backup/status"', src)
+        self.assertEqual(src.count('"tray.waiting_backup"'), 7)   # 6 lingue + uso
+
+    def test_file_manager_cannot_rename_server_root(self):
+        import file_manager
+        with tempfile.TemporaryDirectory() as td:
+            srv = os.path.join(td, "MioServer")
+            os.makedirs(srv)
+            for rel in ("", "/", "\\"):
+                self.assertFalse(file_manager.rename_item(srv, rel, "Rinominato")["success"])
+            self.assertEqual(os.listdir(td), ["MioServer"])
+
+    def test_postponed_restart_warns_players_again(self):
+        import server_manager as sm
+        with tempfile.TemporaryDirectory() as td:
+            m = sm.ServerManager(config_path=os.path.join(td, "config.json"))
+            sent = []
+            m.send_command = lambda c: sent.append(c) or {"status": "success"}
+            m._background_slp_query = lambda port: None   # nessun ping a un server vero
+            m.state, m.scheduled_enabled = "ONLINE", True
+            m.eco_mode_enabled = m.anti_lag_enabled = False
+            m.scheduled_remaining_seconds = 301
+            tick = {"query_counter": 0}
+            for _ in range(60):
+                m._ticker_step(tick)
+            self.assertIn("w5m", m.warning_sent_flags)
+            m.postpone_scheduled_restart(30)   # ora mancano 34 minuti
+            sent.clear()
+            while m.scheduled_remaining_seconds > 299:
+                m._ticker_step(tick)
+            self.assertEqual(sum("15 minuti" in c for c in sent), 1)
+            self.assertEqual(sum("10 minuti" in c for c in sent), 1)
+            self.assertEqual(sum("tra 5 minuti" in c for c in sent), 1)
+            # Un valore negativo non fa ripartire subito il server
+            before = m.scheduled_remaining_seconds
+            m.postpone_scheduled_restart(-1000)
+            self.assertGreater(m.scheduled_remaining_seconds, before)
+
+    @unittest.skipUnless(os.name == "nt", "PATH di Windows")
+    def test_java_installed_while_program_open_is_found(self):
+        import winreg
+        import platform_utils
+        import server_installer
+        with tempfile.TemporaryDirectory() as td:
+            new_java = os.path.join(td, "jdk-25", "bin")
+            os.makedirs(new_java)
+            with open(os.path.join(new_java, "java.exe"), "wb"):
+                pass
+            old_dir = os.path.join(td, "solo_del_programma")   # c'era all'avvio, Windows non la elenca
+            os.makedirs(old_dir)
+
+            def fake_query(key, name):
+                if name == "Path":
+                    return (new_java + r";C:\Windows", winreg.REG_EXPAND_SZ)
+                raise OSError("assente")
+
+            with mock.patch.dict(os.environ, {"PATH": old_dir + r";C:\Windows"}), \
+                    mock.patch.object(winreg, "QueryValueEx", side_effect=fake_query):
+                self.assertIsNone(shutil.which("java"))   # PATH di quando il programma è partito
+                with mock.patch.object(server_installer.subprocess, "run") as run:
+                    run.return_value = mock.Mock(stderr='openjdk version "25.0.1"', stdout="")
+                    self.assertEqual(server_installer.ForgeServerInstaller.java_major(), 25)
+                self.assertEqual(os.path.normcase(shutil.which("java")),
+                                 os.path.normcase(os.path.join(new_java, "java.exe")))
+                parts = os.environ["PATH"].split(";")
+                self.assertIn(old_dir, parts)   # le cartelle aggiunte all'avvio restano
+                self.assertEqual(sum(os.path.normcase(p) == os.path.normcase(r"C:\Windows") for p in parts), 1)
+                platform_utils.refresh_path_from_system()
+                self.assertEqual(os.environ["PATH"].split(";").count(new_java), 1)   # niente doppioni
+
+    def test_ram_setting_applies_without_run_bat(self):
+        import server_manager as sm
+        with tempfile.TemporaryDirectory() as td:
+            srv = os.path.join(td, "Vanilla")
+            os.makedirs(srv)
+            open(os.path.join(srv, "server.jar"), "wb").close()
+            m = sm.ServerManager(config_path=os.path.join(td, "config.json"))
+            m.config.update({"server_dir": srv, "server_run_bat": "",
+                             "server_command": "java -Xms2G -Xmx2G -jar server.jar nogui"})
+            m._host_ram_gb = lambda: 16
+            import instance_manager
+            inst_file = os.path.join(td, "instances.json")
+            with open(inst_file, "w", encoding="utf-8") as f:
+                json.dump([{"id": "v", "server_dir": srv, "is_active": True,
+                            "server_command": "java -Xms2G -Xmx2G -jar server.jar nogui"}], f)
+            with mock.patch.object(instance_manager, "INSTANCES_FILE", inst_file):
+                self.assertEqual(m.save_jvm_tuning(8, False)["status"], "success")
+                # Anche nell'elenco dei server: al cambio di server config.json si riscrive da lì
+                self.assertIn("-Xmx8G", instance_manager.get_active_instance()["server_command"])
+            self.assertIn("-Xmx8G", m.get_launch_command())
+            # Comando di un .jar che non c'è: resta l'avvio standard di server.jar
+            m.config["server_command"] = "java -Xmx3G -jar non_esiste.jar nogui"
+            self.assertEqual(m.get_launch_command(), ["java", "-Xmx4G", "-Xms2G", "-jar", "server.jar", "nogui"])
+
+    def test_failed_restart_does_not_stay_restarting(self):
+        import server_manager as sm
+        with tempfile.TemporaryDirectory() as td:
+            m = sm.ServerManager(config_path=os.path.join(td, "config.json"))
+            m.config["server_dir"] = os.path.join(td, "disco_scollegato")
+            m.state = "RESTARTING"
+            with mock.patch.object(m, "_find_running_minecraft_proc", return_value=None), \
+                    mock.patch.object(sm, "query_server_status", return_value={"online": False}), \
+                    mock.patch.object(sm.time, "sleep"):
+                m._delayed_restart_worker(0)
+            self.assertEqual(m.state, "STOPPED")
+
+    def test_pc_update_not_launched_if_server_started_during_download(self):
+        import hashlib
+        import io as _io
+        import pc_updater
+        data = b"installer finto"
+        resp = mock.MagicMock()
+        resp.__enter__.return_value = resp
+        resp.headers = {"Content-Length": str(len(data))}
+        resp.read.side_effect = _io.BytesIO(data).read
+        manifest = {"build": 999999, "setup_url": "https://example.invalid/x",
+                    "sha256": hashlib.sha256(data).hexdigest()}
+        with mock.patch.object(pc_updater, "_http_get", return_value=resp), \
+                mock.patch.object(pc_updater, "install_blocker", lambda: "Spegni il server Minecraft prima di aggiornare il programma."), \
+                mock.patch.object(pc_updater.subprocess, "Popen") as popen, \
+                mock.patch.object(pc_updater, "_run_linux_update") as linux_update, \
+                mock.patch.dict(pc_updater._state, {"error": None, "downloading": True}):
+            pc_updater._download_worker(manifest)
+            self.assertFalse(popen.called or linux_update.called)
+            self.assertIn("Spegni il server", pc_updater._state["error"])
+        ext = ".tar.gz" if pc_updater.IS_LINUX else ".exe"
+        try:
+            os.remove(os.path.join(tempfile.gettempdir(), f"Setup_Voxarium_b999999{ext}"))
+        except OSError:
+            pass
+
+    def test_ping_keeps_players_missing_from_partial_sample(self):
+        import server_manager as sm
+        with tempfile.TemporaryDirectory() as td:
+            m = sm.ServerManager(config_path=os.path.join(td, "config.json"))
+            m.state = "ONLINE"
+            m.psutil_proc = mock.Mock(is_running=lambda: True)
+            for n in ("Alice", "Bob", "Carlo"):
+                m.players[n] = {"name": n, "joined_at": 0, "joined_str": ""}
+            anon = {"name": "Anonymous Player", "id": "00000000-0000-0000-0000-000000000000"}
+            # Bob ha tolto "Consenti elenchi server": nel ping è anonimo, ma è ancora collegato
+            ping = {"online": True, "players_online": 3,
+                    "players_sample": [{"name": "Alice"}, anon, {"name": "Carlo"}]}
+            with mock.patch.object(sm, "query_server_status", return_value=ping):
+                m._background_slp_query(25565)
+            self.assertEqual(sorted(m.players), ["Alice", "Bob", "Carlo"])
+            # Elenco completo: chi non c'è più viene tolto
+            ping = {"online": True, "players_online": 1, "players_sample": [{"name": "Alice"}]}
+            with mock.patch.object(sm, "query_server_status", return_value=ping):
+                m._background_slp_query(25565)
+            self.assertEqual(sorted(m.players), ["Alice"])
+
+    def test_eco_mode_counts_anonymous_players(self):
+        import server_manager as sm
+        with tempfile.TemporaryDirectory() as td:
+            m = sm.ServerManager(config_path=os.path.join(td, "config.json"))
+            m._background_slp_query = lambda port: None
+            m.state, m.scheduled_enabled, m.anti_lag_enabled = "ONLINE", False, False
+            m.eco_mode_enabled, m.eco_mode_minutes = True, 5
+            m.players.clear()
+            m.server_info = {"online": True, "players_online": 1}   # un giocatore anonimo
+            m.server_empty_since = time.time() - 3600
+            with mock.patch.object(m, "_graceful_stop_worker") as stop, \
+                    mock.patch.object(m, "send_push_notification"):
+                m._ticker_step({"query_counter": 0})
+                time.sleep(0.1)
+            self.assertFalse(stop.called)
+            self.assertIsNone(m.server_empty_since)
+
+    def test_failed_ping_does_not_empty_player_list(self):
+        import server_manager as sm
+        with tempfile.TemporaryDirectory() as td:
+            m = sm.ServerManager(config_path=os.path.join(td, "config.json"))
+            m.state = "ONLINE"
+            m.players["Bob"] = {"name": "Bob", "joined_at": time.time(), "joined_str": ""}
+            m.server_info = {"online": False, "players_online": 0, "error": "timed out"}   # server in lag
+            m.get_full_status()
+            self.assertIn("Bob", m.players)
+            m.server_info = {"online": True, "players_online": 0}   # tutti usciti davvero
+            m.get_full_status()
+            self.assertEqual(m.players, {})
+
+    def test_new_server_ram_limited_to_pc_ram(self):
+        from fastapi import HTTPException
+        import app as app_mod
+        from routes import server_creation
+        with tempfile.TemporaryDirectory() as td:
+            with mock.patch.object(server_creation, "verify_admin_access"), \
+                    mock.patch.object(server_creation, "verify_host_only_access"), \
+                    mock.patch.object(app_mod.manager, "state", "STOPPED"), \
+                    mock.patch.object(app_mod.backup_mgr, "is_running", False), \
+                    mock.patch.object(app_mod.manager, "_host_ram_gb", return_value=8), \
+                    mock.patch.object(server_creation.forge_installer, "start_installation") as start:
+                with self.assertRaises(HTTPException) as ctx:
+                    server_creation.api_forge_install(app_mod.ForgeInstallRequest(
+                        target_dir=os.path.join(td, "Nuovo"), server_type="vanilla", mc_version="1.21.1",
+                        ram_gb=8, port=25565), None)
+                self.assertEqual(ctx.exception.status_code, 400)
+                self.assertFalse(start.called)
+
+    def test_old_minecraft_port_closed_on_router_after_restart(self):
+        import app as app_mod
+        import upnp_manager
+        cfg = {**app_mod.manager.config, "server_dir": ROOT}
+        opened = []
+        fake_open = lambda ext, **kw: opened.append((ext, kw.get("internal_port"))) or {"success": True}
+        with mock.patch.object(app_mod.manager, "config", cfg), \
+                mock.patch.object(app_mod.manager, "save_config"), \
+                mock.patch.object(app_mod.manager, "remember_server_port"), \
+                mock.patch.object(app_mod.manager, "get_server_port", return_value=25565), \
+                mock.patch.object(app_mod, "upnp_mgr", upnp_manager.UPnPManager()), \
+                mock.patch.object(app_mod, "broadcast_network_update"), \
+                mock.patch.dict(app_mod._mc_port_state, {"port": None, "last_open": 0.0, "retry_at": 0.0, "active": None}):
+            with mock.patch.object(app_mod.upnp_mgr, "open_port", side_effect=fake_open), \
+                    mock.patch.object(app_mod.upnp_mgr, "get_status", return_value={"active": True}):
+                app_mod.sync_minecraft_port(force=True)
+            self.assertEqual((cfg["upnp_mc_internal_port"], cfg["upnp_mc_external_port"]), (25565, 25565))
+
+            # Programma riaperto con il server sulla porta 25566: la mappatura della 25565 si chiude
+            fresh = upnp_manager.UPnPManager()
+            fresh.mc_internal_port, fresh.mc_external_port = cfg["upnp_mc_internal_port"], cfg["upnp_mc_external_port"]
+            with mock.patch.object(fresh, "open_port", side_effect=fake_open), \
+                    mock.patch.object(fresh, "close_port") as close_port:
+                self.assertTrue(fresh.open_minecraft_port(25566)["success"])
+            close_port.assert_called_once_with(25565)
+
+    def test_server_start_rereads_path(self):
+        with open(os.path.join(ROOT, "server_manager.py"), encoding="utf-8") as f:
+            src = f.read()
+        body = src[src.index("    def start_server(self)"):src.index("    def uses_new_gamerule_names")]
+        self.assertLess(body.index("refresh_path_from_system()"), body.index("with self.lock:"))
+
+
+def _free_port() -> int:
+    import socket
+    s = socket.socket()
+    s.bind(("127.0.0.1", 0))
+    port = s.getsockname()[1]
+    s.close()
+    return port
+
+
+def _mc_login(port: int, name: str, protocol: int = 767) -> str:
+    """Prova a entrare come farebbe il gioco (handshake + inizio del login); restituisce il testo della disconnessione."""
+    import json as _json
+    import socket
+    import uuid as _uuid
+    import eco_wake as ew
+    with socket.create_connection(("127.0.0.1", port), timeout=5) as c:
+        hs = ew._pack_varint(protocol) + ew._pack_string("localhost") + port.to_bytes(2, "big") + ew._pack_varint(2)
+        c.sendall(ew._packet(0x00, hs))
+        c.sendall(ew._packet(0x00, ew._pack_string(name) + _uuid.uuid4().bytes))
+        packet_id, data = ew._read_packet(c)
+        text, _ = ew._read_string_buf(data, 0)
+        assert packet_id == 0x00
+        return _json.loads(text)["text"]
+
+
+class CrashLoopTest(unittest.TestCase):
+    def test_modpack_crash_loop_pauses_auto_restart(self):
+        import server_manager as sm
+        with tempfile.TemporaryDirectory() as td:
+            cfg = os.path.join(td, "config.json")
+            with open(cfg, "w", encoding="utf-8") as f:
+                json.dump({"crash_window_seconds": 180}, f)   # valore predefinito delle versioni precedenti
+            m = sm.ServerManager(config_path=cfg)
+            m.running = False
+            self.assertEqual(m.crash_window_seconds, 900)
+            now = time.time()
+            # Come la notte del 01/11: un crash ogni ~130 s (riavvio, avvio, 60 s di blocco del watchdog)
+            m.crash_history.extend([{"timestamp": now - 260, "exit_code": 1}, {"timestamp": now - 130, "exit_code": 1}])
+            m.auto_restart_on_crash, m.intentional_stop = True, False
+            m.process = mock.Mock(wait=mock.Mock(return_value=1))
+            with mock.patch.object(m, "_find_running_minecraft_proc", return_value=None), \
+                    mock.patch.object(m, "send_push_notification"), \
+                    mock.patch.object(m, "_crash_auto_restart_worker") as restart:
+                m._monitor_exit()
+                time.sleep(0.05)
+            self.assertTrue(m.auto_restart_paused)
+            self.assertFalse(restart.called)
+
+
+class EventLoopStatusTest(unittest.TestCase):
+    def test_full_status_never_computed_on_event_loop(self):
+        """get_full_status aspetta il lucchetto del gestore: nel ciclo principale fermava tutto il pannello."""
+        import ast
+        with open(os.path.join(ROOT, "app.py"), encoding="utf-8") as f:
+            tree = ast.parse(f.read())
+
+        def direct_calls(node):
+            for child in ast.iter_child_nodes(node):
+                if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+                    continue   # funzione interna: si esegue nel thread a cui viene passata
+                if isinstance(child, ast.Call) and isinstance(child.func, ast.Attribute) \
+                        and child.func.attr == "get_full_status":
+                    yield child.lineno
+                yield from direct_calls(child)
+
+        bad = [(fn.name, line) for fn in ast.walk(tree) if isinstance(fn, ast.AsyncFunctionDef)
+               for line in direct_calls(fn)]
+        self.assertEqual(bad, [])
+
+
+class AttachedServerExitTest(unittest.TestCase):
+    """Server riagganciato (pannello riavviato con Minecraft acceso): crash e stop voluto."""
+
+    def _run(self, log_lines):
+        import server_manager as sm
+        td = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, td, True)
+        m = sm.ServerManager(config_path=os.path.join(td, "config.json"))
+        m.running = False
+        proc = mock.Mock(pid=4321, is_running=mock.Mock(return_value=False))
+        m.psutil_proc, m.state, m.intentional_stop, m.auto_restart_on_crash = proc, "ONLINE", False, True
+        m._mc_stop_seen = m._mc_crash_seen = False
+        for line in log_lines:
+            m._parse_log_line(line)
+        with mock.patch.object(m, "send_push_notification") as push, \
+                mock.patch.object(m, "_crash_auto_restart_worker") as restart, \
+                mock.patch.object(sm.time, "sleep"):
+            m._monitor_attached_proc(proc)
+        return m, push, restart
+
+    def test_crash_of_attached_server_is_handled_like_any_crash(self):
+        m, push, restart = self._run([
+            "[01nov2026 00:44:12.100] [Server Watchdog/FATAL] [net.minecraft.server.dedicated.ServerWatchdog/]: "
+            "A single server tick took 60.00 seconds (should be max 0.05)",
+            "[01nov2026 00:44:12.200] [Server Watchdog/ERROR] [net.minecraft.server.dedicated.ServerWatchdog/]: "
+            "This crash report has been saved to: C:\\Server\\crash-reports\\crash.txt",
+        ])
+        self.assertEqual(m.state, "CRASHED")
+        self.assertEqual(len(m.crash_history), 1)
+        self.assertTrue(push.called)          # prima: nessuna notifica
+        self.assertTrue(restart.called)       # prima: nessun riavvio automatico
+
+    def test_restart_of_attached_server_starts_it_again(self):
+        import threading
+        import server_manager as sm
+        real_sleep = time.sleep
+        with tempfile.TemporaryDirectory() as td:
+            m = sm.ServerManager(config_path=os.path.join(td, "config.json"))
+            m.running = False
+            alive = {"v": True}
+            proc = mock.Mock(pid=4321, is_running=lambda: alive["v"], children=lambda recursive=True: [])
+
+            def fake_command(cmd):
+                if cmd == "stop":
+                    alive["v"] = False   # Minecraft si chiude dopo lo stop
+                return {"status": "success"}
+
+            started = threading.Event()
+            m.psutil_proc, m.state = proc, "ONLINE"
+            m.running = True   # il controllo del processo riagganciato gira finché il programma è acceso
+            self.addCleanup(setattr, m, "running", False)
+            with mock.patch.object(m, "send_command", side_effect=fake_command), \
+                    mock.patch.object(m, "_find_running_minecraft_proc", return_value=None), \
+                    mock.patch.object(sm, "query_server_status", return_value={"online": False}), \
+                    mock.patch.object(m, "start_server", side_effect=lambda: started.set() or {"status": "success"}), \
+                    mock.patch.object(sm.time, "sleep", lambda s: real_sleep(min(s, 0.05))):
+                threading.Thread(target=m._monitor_attached_proc, args=(proc,), daemon=True).start()
+                m.restart_server("Riavvio manuale")
+                self.assertTrue(started.wait(5), f"il server non è stato riavviato (stato {m.state})")
+
+    def test_restart_of_server_started_by_panel_starts_it_again(self):
+        import threading
+        import server_manager as sm
+        real_sleep = time.sleep
+        with tempfile.TemporaryDirectory() as td:
+            m = sm.ServerManager(config_path=os.path.join(td, "config.json"))
+            m.running = False
+            exited = threading.Event()
+
+            class FakePopen:
+                def poll(self):
+                    return 0 if exited.is_set() else None
+
+                def wait(self):
+                    exited.wait()
+                    return 0
+
+            def fake_command(cmd):
+                if cmd == "stop":
+                    exited.set()
+                return {"status": "success"}
+
+            started = []
+            m.process, m.state = FakePopen(), "ONLINE"
+            with mock.patch.object(m, "send_command", side_effect=fake_command), \
+                    mock.patch.object(m, "_find_running_minecraft_proc", return_value=None), \
+                    mock.patch.object(sm, "query_server_status", return_value={"online": False}), \
+                    mock.patch.object(m, "start_server", side_effect=lambda: started.append(1) or {"status": "success"}), \
+                    mock.patch.object(sm.time, "sleep", lambda s: real_sleep(min(s, 0.05))):
+                threading.Thread(target=m._monitor_exit, daemon=True).start()
+                m.restart_server("Riavvio manuale")
+                for _ in range(100):
+                    if started:
+                        break
+                    real_sleep(0.05)
+                real_sleep(0.3)   # un eventuale secondo riavvio avrebbe il tempo di partire
+            self.assertEqual(started, [1])   # riavviato, una volta sola
+
+    def _ticker_run(self, attached, monitor_first=False):
+        """Fa scattare dal ciclo di ogni secondo il riavvio programmato o lo spegnimento Eco e lo segue fino alla fine."""
+        import threading
+        import server_manager as sm
+        real_sleep = time.sleep
+        td = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, td, True)
+        m = sm.ServerManager(config_path=os.path.join(td, "config.json"))
+        m.running = False
+        exited = threading.Event()
+
+        seen_at = {}
+
+        def dead_for_stop_loop():
+            # monitor_first: l'arresto vede la chiusura 0,3 s dopo il controllo del processo (come nell'uso reale)
+            if not exited.is_set():
+                return False
+            return not monitor_first or time.monotonic() - seen_at["t"] > 0.3
+
+        class FakePopen:
+            def poll(self):
+                return 0 if dead_for_stop_loop() else None
+
+            def wait(self):
+                exited.wait()
+                return 0
+
+        proc = mock.Mock(pid=4321, is_running=lambda: not exited.is_set(), children=lambda recursive=True: [])
+
+        def fake_command(cmd):
+            if cmd == "stop":
+                seen_at["t"] = time.monotonic()
+                exited.set()
+            return {"status": "success"}
+
+        started = []
+        m.state = "ONLINE"
+        if attached:
+            m.psutil_proc = proc
+        else:
+            m.process = FakePopen()
+        m._background_slp_query = lambda port: None
+        patches = [mock.patch.object(m, "send_command", side_effect=fake_command),
+                   mock.patch.object(m, "send_push_notification"),
+                   mock.patch.object(m, "_find_running_minecraft_proc", return_value=None),
+                   mock.patch.object(sm, "query_server_status", return_value={"online": False}),
+                   mock.patch.object(m, "start_server", side_effect=lambda: started.append(1) or {"status": "success"}),
+                   mock.patch.object(sm.time, "sleep", lambda s: real_sleep(min(s, 0.05)))]
+        for p in patches:
+            p.start()
+            self.addCleanup(p.stop)
+        m.running = True
+        self.addCleanup(setattr, m, "running", False)
+        if attached:
+            threading.Thread(target=m._monitor_attached_proc, args=(proc,), daemon=True).start()
+        else:
+            threading.Thread(target=m._monitor_exit, daemon=True).start()
+        return m, started, real_sleep
+
+    def _settle(self, m, cond, real_sleep):
+        for _ in range(100):
+            if cond():
+                break
+            real_sleep(0.05)
+        real_sleep(0.3)
+
+    def test_scheduled_restart_restarts_attached_and_normal_server(self):
+        for attached, monitor_first in ((True, False), (False, False), (False, True)):
+            with self.subTest(attached=attached, monitor_first=monitor_first):
+                m, started, real_sleep = self._ticker_run(attached, monitor_first)
+                m.scheduled_enabled, m.eco_mode_enabled, m.anti_lag_enabled = True, False, False
+                m.scheduled_remaining_seconds = 1
+                m._ticker_step({"query_counter": 0})   # timer a zero: riavvio programmato
+                self._settle(m, lambda: started, real_sleep)
+                self.assertEqual(started, [1])
+
+    def test_eco_shutdown_stops_attached_and_normal_server_and_pauses(self):
+        for attached, monitor_first in ((True, False), (False, False), (False, True)):
+            with self.subTest(attached=attached, monitor_first=monitor_first):
+                m, started, real_sleep = self._ticker_run(attached, monitor_first)
+                m.config["server_dir"] = tempfile.gettempdir()
+                m.scheduled_enabled, m.anti_lag_enabled = False, False
+                m.eco_mode_enabled, m.eco_mode_minutes = True, 5
+                m.players.clear()
+                m.server_info = {"online": True, "players_online": 0}
+                m.server_empty_since = time.time() - 3600
+                with mock.patch.object(m, "_eco_wake_tick"):
+                    m._ticker_step({"query_counter": 0})
+                    self._settle(m, lambda: m.state == "STOPPED", real_sleep)
+                self.assertEqual(m.state, "STOPPED")
+                self.assertEqual(started, [])                # spento, non riavviato
+                self.assertTrue(m.eco_sleeping)              # in pausa: il custode prende la porta
+
+    def test_stop_during_restart_countdown_cancels_the_restart(self):
+        import server_manager as sm
+        real_sleep = time.sleep
+        with tempfile.TemporaryDirectory() as td:
+            m = sm.ServerManager(config_path=os.path.join(td, "config.json"))
+            m.running = False
+            m.process = mock.Mock(poll=mock.Mock(return_value=None))
+            m.state = "ONLINE"
+            stops = []
+            with mock.patch.object(m, "send_command", return_value={"status": "success"}), \
+                    mock.patch.object(m, "_graceful_stop_worker", side_effect=lambda reason: stops.append(reason)), \
+                    mock.patch.object(sm.time, "sleep", lambda s: real_sleep(min(s, 0.02))):
+                m.restart_server("Riavvio dal pannello", warning_countdown=10)
+                m.stop_server()   # Arresta durante i 10 secondi di avviso
+                real_sleep(0.6)   # il conto alla rovescia arriva alla fine
+            self.assertEqual(len(stops), 1)   # solo l'arresto chiesto: il riavvio è annullato
+
+    def test_restart_countdown_without_stop_still_restarts(self):
+        import server_manager as sm
+        real_sleep = time.sleep
+        with tempfile.TemporaryDirectory() as td:
+            m = sm.ServerManager(config_path=os.path.join(td, "config.json"))
+            m.running = False
+            m.process = mock.Mock(poll=mock.Mock(return_value=None))
+            m.state = "ONLINE"
+            stops = []
+            with mock.patch.object(m, "send_command", return_value={"status": "success"}), \
+                    mock.patch.object(m, "_graceful_stop_worker", side_effect=lambda reason: stops.append(reason)), \
+                    mock.patch.object(sm.time, "sleep", lambda s: real_sleep(min(s, 0.02))):
+                m.restart_server("Riavvio dal pannello", warning_countdown=10)
+                real_sleep(0.6)
+            self.assertEqual(stops, ["Riavvio dal pannello"])
+
+    def test_panel_stop_of_attached_server_logged_once(self):
+        import server_manager as sm
+        with tempfile.TemporaryDirectory() as td:
+            m = sm.ServerManager(config_path=os.path.join(td, "config.json"))
+            m.running = False
+            proc = mock.Mock(pid=4321, is_running=mock.Mock(return_value=False))
+            # _graceful_stop_worker ha già segnato STOPPED e scritto il messaggio
+            m.psutil_proc, m.state, m.intentional_stop = proc, "STOPPED", True
+            m.add_log("[Pannello] Server arrestato con successo.")
+            with mock.patch.object(sm.time, "sleep"):
+                m._monitor_attached_proc(proc)
+            self.assertEqual(sum("arrestato con successo" in l for l in m.log_buffer), 1)
+
+    def test_stop_command_of_attached_server_is_not_a_crash(self):
+        m, push, restart = self._run([
+            "[01nov2026 01:20:00.000] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: [M0n31: Stopping the server]",
+            "[01nov2026 01:20:00.100] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: Stopping server",
+        ])
+        self.assertEqual(m.state, "STOPPED")
+        self.assertEqual(m.crash_history, [])
+        self.assertFalse(push.called or restart.called)
+
+
+class Metrics24hTest(unittest.TestCase):
+    def test_history_covers_24_hours_and_stays_out_of_status(self):
+        import re as _re
+        import server_manager as sm
+        with open(os.path.join(ROOT, "server_manager.py"), encoding="utf-8") as f:
+            src = f.read()
+        step = float(_re.search(r"_last_24h_snapshot_time\) >= ([0-9.]+)", src).group(1))
+        with tempfile.TemporaryDirectory() as td:
+            m = sm.ServerManager(config_path=os.path.join(td, "config.json"))
+            m.running = False
+            self.assertGreaterEqual(m.metrics_history_24h.maxlen * step, 24 * 3600)
+            # Lo stato va a ogni pagina ogni 2 s: lo storico di un giorno si chiede a /api/metrics/history-24h
+            self.assertNotIn("metrics_history_24h", m.get_full_status())
+
+
+class LatePingAfterStopTest(unittest.TestCase):
+    def test_one_late_ping_does_not_bring_stopped_server_back_online(self):
+        import server_manager as sm
+        with tempfile.TemporaryDirectory() as td:
+            m = sm.ServerManager(config_path=os.path.join(td, "config.json"))
+            m.running = False
+            online = {"online": True, "players_online": 0, "players_sample": []}
+            offline = {"online": False}
+            with mock.patch.object(m, "_find_running_minecraft_proc", return_value=None):
+                # Server appena fermato dal pannello; il ping partito prima della chiusura risponde "acceso"
+                m.state = "STOPPED"
+                with mock.patch.object(sm, "query_server_status", return_value=online):
+                    m._background_slp_query(25565)
+                self.assertEqual(m.state, "STOPPED")
+                with mock.patch.object(sm, "query_server_status", return_value=offline):
+                    m._background_slp_query(25565)
+                self.assertEqual(m.state, "STOPPED")
+                # Server avviato fuori dal pannello: due ping di fila lo riconoscono
+                with mock.patch.object(sm, "query_server_status", return_value=online):
+                    m._background_slp_query(25565)
+                    m._background_slp_query(25565)
+                self.assertEqual(m.state, "ONLINE")
+                # Il contatore non resta carico: dopo un nuovo arresto un solo ping tardivo non basta
+                m.state = "STOPPED"
+                with mock.patch.object(sm, "query_server_status", return_value=online):
+                    m._background_slp_query(25565)
+                self.assertEqual(m.state, "STOPPED")
+
+
+class JavaMissingTest(unittest.TestCase):
+    def test_start_without_java_says_what_to_do(self):
+        import server_manager as sm
+        with tempfile.TemporaryDirectory() as td:
+            srv = os.path.join(td, "server")
+            os.makedirs(srv)
+            open(os.path.join(srv, "server.jar"), "wb").close()
+            m = sm.ServerManager(config_path=os.path.join(td, "config.json"))
+            m.running = False
+            m.config.update({"server_dir": srv, "server_run_bat": "", "server_command": ""})
+            with mock.patch.object(sm.subprocess, "Popen", side_effect=FileNotFoundError(2, "Impossibile trovare il file specificato")), \
+                    mock.patch.object(sm, "refresh_path_from_system"), \
+                    mock.patch.object(m, "_find_running_minecraft_proc", return_value=None), \
+                    mock.patch.object(sm, "query_server_status", return_value={"online": False}):
+                res = m.start_server()
+            self.assertEqual(res, {"status": "error", "message": sm.JAVA_NOT_FOUND_MSG})
+            self.assertEqual(m.state, "STOPPED")
+
+
+class BedrockPlayersTest(unittest.TestCase):
+    def test_bedrock_player_join_chat_and_leave(self):
+        import server_manager as sm
+        with tempfile.TemporaryDirectory() as td:
+            m = sm.ServerManager(config_path=os.path.join(td, "config.json"))
+            m.running = False
+            with mock.patch.object(m, "send_push_notification"):
+                m._parse_log_line("[12:00:00] [Server thread/INFO]: .Steve joined the game")
+                self.assertIn(".Steve", m.players)
+                m._parse_log_line("[12:00:05] [Server thread/INFO]: <.Steve> ciao a tutti")
+                self.assertEqual(m.chat_messages[-1]["sender"], ".Steve")
+                m._parse_log_line("[12:01:00] [Server thread/INFO]: .Steve left the game")
+                self.assertNotIn(".Steve", m.players)
+                # Una frase in chat non fa entrare nessuno
+                m._parse_log_line("[12:02:00] [Server thread/INFO]: <Bob> x: Alice joined the game")
+                self.assertNotIn("Alice", m.players)
+
+
+class LauncherRetryTest(unittest.TestCase):
+    def test_retry_waits_for_backend_already_starting(self):
+        with open(os.path.join(ROOT, "Launcher.cs"), encoding="utf-8") as f:
+            src = f.read()
+        body = src[src.index("public static bool StartPythonBackend()"):src.index("static bool WaitForBackendPort()")]
+        # Con il pannello già avviato e ancora vivo si aspetta lui: niente secondo processo né registro cancellato
+        guard = body.index("pythonProcess != null && !pythonProcess.HasExited")
+        self.assertLess(guard, body.index("Process.Start(psi)"))
+        self.assertLess(guard, body.index("FileMode.Create"))
+
+
+class DuplicateModsTest(unittest.TestCase):
+    """Stessa mod in due file con nomi diversi (stesso ID nel .jar): segnalata come doppione nella lista delle mod."""
+
+    @staticmethod
+    def _forge_jar(path, mod_id):
+        with zipfile.ZipFile(path, "w") as z:
+            z.writestr("META-INF/mods.toml", f'modLoader="javafml"\n[[mods]]\nmodId="{mod_id}"\nversion="1.0"\n')
+
+    def test_same_mod_id_in_two_files_flagged(self):
+        import app as app_mod
+        from routes import mods as mods_routes
+        with tempfile.TemporaryDirectory() as td:
+            mods_dir = os.path.join(td, "mods")
+            os.makedirs(mods_dir)
+            self._forge_jar(os.path.join(mods_dir, "create-1.20.1-0.5.0.jar"), "create")
+            self._forge_jar(os.path.join(mods_dir, "create-1.20.1-0.5.1.jar"), "create")
+            self._forge_jar(os.path.join(mods_dir, "create_enchantment_industry-1.2.9.jar"), "create_enchantment_industry")
+            self._forge_jar(os.path.join(mods_dir, "jei-15.2.jar.disabled"), "jei")
+            self._forge_jar(os.path.join(mods_dir, "jei-15.3.jar"), "jei")   # versione vecchia disattivata: va bene
+            with mock.patch.object(mods_routes, "verify_admin_access"), \
+                    mock.patch.object(mods_routes, "get_mods_dir", return_value=mods_dir), \
+                    mock.patch.object(mods_routes, "get_server_dir_path", return_value=td), \
+                    mock.patch.object(mods_routes.instance_manager, "get_active_instance", return_value={}):
+                res = mods_routes.api_list_mods(None)
+                by_name = {m["filename"]: m for m in res["mods"]}
+                self.assertTrue(by_name["create-1.20.1-0.5.0.jar"]["is_duplicate"])
+                self.assertEqual(by_name["create-1.20.1-0.5.0.jar"]["duplicate_with"], ["create-1.20.1-0.5.1.jar"])
+                self.assertTrue(by_name["create-1.20.1-0.5.1.jar"]["is_duplicate"])
+                self.assertFalse(by_name["create_enchantment_industry-1.2.9.jar"]["is_duplicate"])
+                self.assertFalse(by_name["jei-15.3.jar"]["is_duplicate"])
+                self.assertFalse(by_name["jei-15.2.jar.disabled"]["is_duplicate"])
+                self.assertEqual(res["duplicate_count"], 2)
+                # I .jar non cambiati non si riaprono alla richiesta successiva
+                with mock.patch.object(mods_routes.mod_info, "read_jar_metadata") as reader:
+                    mods_routes.api_list_mods(None)
+                    self.assertFalse(reader.called)
+        del app_mod
+
+
+class EcoWakeTest(unittest.TestCase):
+    """Custode della Modalità Eco: il server spento per inattività si avvia quando un giocatore prova a entrare."""
+
+    def test_server_list_shows_paused_without_waking(self):
+        import eco_wake
+        import mc_ping
+        port = _free_port()
+        calls = []
+        w = eco_wake.EcoWakeListener(port, "", lambda n: calls.append(n) or ("x", True))
+        w.start()
+        try:
+            res = mc_ping.query_server_status(port=port, timeout=3)
+            self.assertTrue(res["online"])
+            self.assertIn("In pausa", res["motd"])
+            self.assertEqual(res["players_online"], 0)
+            self.assertEqual(calls, [])   # guardare l'elenco dei server non avvia nulla
+        finally:
+            w.stop()
+
+    def test_login_attempt_wakes_once_and_frees_port(self):
+        import socket
+        import eco_wake
+        port = _free_port()
+        calls = []
+        w = eco_wake.EcoWakeListener(port, "", lambda n: calls.append(n) or (eco_wake.STARTING_TEXT, True))
+        w.start()
+        try:
+            self.assertEqual(_mc_login(port, "Alice"), eco_wake.STARTING_TEXT)
+            self.assertEqual(_mc_login(port, "Bob"), eco_wake.STARTING_TEXT)   # già in avvio: niente secondo avvio
+            self.assertEqual(calls, ["Alice"])
+        finally:
+            w.stop()
+        # Porta libera per il server vero
+        s = socket.socket()
+        try:
+            s.bind(("0.0.0.0", port))
+        finally:
+            s.close()
+
+    def test_blocked_start_keeps_listening(self):
+        import eco_wake
+        port = _free_port()
+        answers = [(eco_wake.BLOCKED_TEXT, False), (eco_wake.STARTING_TEXT, True)]
+        w = eco_wake.EcoWakeListener(port, "", lambda n: answers.pop(0))
+        w.start()
+        try:
+            self.assertEqual(_mc_login(port, "Alice"), eco_wake.BLOCKED_TEXT)
+            self.assertEqual(_mc_login(port, "Alice"), eco_wake.STARTING_TEXT)   # il custode era ancora lì
+        finally:
+            w.stop()
+
+    def test_eco_shutdown_then_player_join_starts_server(self):
+        import server_manager as sm
+        with tempfile.TemporaryDirectory() as td:
+            srv = os.path.join(td, "server")
+            os.makedirs(srv)
+            port = _free_port()
+            with open(os.path.join(srv, "server.properties"), "w", encoding="utf-8") as f:
+                f.write(f"server-port={port}\nmax-players=10\n")
+            m = sm.ServerManager(config_path=os.path.join(td, "config.json"))
+            m.config["server_dir"] = srv
+            m.eco_mode_enabled = True
+            m.state = "STOPPED"
+            m.eco_sleeping = srv   # come dopo lo spegnimento della Modalità Eco
+            started = []
+
+            def fake_start():
+                m._end_eco_sleep()   # come all'inizio del vero start_server
+                started.append(True)
+                return {"status": "success"}
+
+            with mock.patch.object(m, "start_server", side_effect=fake_start),                     mock.patch.object(m, "send_push_notification"):
+                m._eco_wake_tick()
+                self.assertIsNotNone(m.eco_wake)
+                self.assertTrue(m.get_full_status()["eco_mode"]["sleeping"])
+                import eco_wake
+                self.assertEqual(_mc_login(port, "Alice"), eco_wake.STARTING_TEXT)
+                for _ in range(50):
+                    if started:
+                        break
+                    time.sleep(0.05)
+            self.assertEqual(started, [True])
+            self.assertIsNone(m.eco_wake)
+            self.assertEqual(m.eco_sleeping, "")
+            self.assertNotIn("eco_sleeping", m.config)
+
+    def test_stop_ends_pause_and_switching_server_too(self):
+        import server_manager as sm
+        with tempfile.TemporaryDirectory() as td:
+            srv = os.path.join(td, "server")
+            os.makedirs(srv)
+            port = _free_port()
+            with open(os.path.join(srv, "server.properties"), "w", encoding="utf-8") as f:
+                f.write(f"server-port={port}\n")
+            m = sm.ServerManager(config_path=os.path.join(td, "config.json"))
+            m.config["server_dir"] = srv
+            m.eco_mode_enabled, m.state, m.eco_sleeping = True, "STOPPED", srv
+            m._eco_wake_tick()
+            self.assertIsNotNone(m.eco_wake)
+            with mock.patch.object(m, "_find_running_minecraft_proc", return_value=None):
+                res = m.stop_server()
+            self.assertEqual(res["status"], "success")
+            self.assertIsNone(m.eco_wake)
+            # Cambio di server: la pausa del server di prima non vale per quello nuovo
+            m.eco_sleeping = srv
+            m.config["server_dir"] = os.path.join(td, "altro")
+            m._eco_wake_tick()
+            self.assertEqual(m.eco_sleeping, "")
+            self.assertIsNone(m.eco_wake)
+
+    def test_invalid_player_name_not_passed_on(self):
+        import eco_wake
+        port = _free_port()
+        names = []
+        w = eco_wake.EcoWakeListener(port, "", lambda n: names.append(n) or (eco_wake.BLOCKED_TEXT, False))
+        w.start()
+        try:
+            _mc_login(port, "Alice\n[Pannello] riga falsa")
+            _mc_login(port, "Bob_99")
+        finally:
+            w.stop()
+        self.assertEqual(names, ["?", "Bob_99"])
+
+    def test_ping_answered_by_custode_ignored(self):
+        import server_manager as sm
+        with tempfile.TemporaryDirectory() as td:
+            srv = os.path.join(td, "s")
+            os.makedirs(srv)
+            port = _free_port()
+            with open(os.path.join(srv, "server.properties"), "w", encoding="utf-8") as f:
+                f.write(f"server-port={port}\n")
+            m = sm.ServerManager(config_path=os.path.join(td, "config.json"))
+            m.config["server_dir"] = srv
+            m.eco_mode_enabled, m.state, m.eco_sleeping = True, "STOPPED", srv
+            m._eco_wake_tick()
+            try:
+                m._background_slp_query(port)   # ping partito un attimo prima che il custode aprisse la porta
+                self.assertEqual(m.state, "STOPPED")
+            finally:
+                m._end_eco_sleep()
+
+    def test_failed_wake_start_stays_paused(self):
+        import server_manager as sm
+        with tempfile.TemporaryDirectory() as td:
+            srv = os.path.join(td, "s")
+            os.makedirs(srv)
+            m = sm.ServerManager(config_path=os.path.join(td, "config.json"))
+            m.config["server_dir"] = srv
+            m.eco_mode_enabled, m.state = True, "STOPPED"
+
+            def failing_start():
+                m._end_eco_sleep()
+                return {"status": "error", "message": "Java non trovata"}
+
+            with mock.patch.object(m, "start_server", side_effect=failing_start), \
+                    mock.patch.object(m, "send_push_notification"):
+                m._eco_wake_start("Alice")
+            self.assertEqual(m.eco_sleeping, srv)   # un altro tentativo di entrare lo riprova
+            self.assertEqual(m.config.get("eco_sleeping"), srv)
+            # Nel pannello "in pausa" solo con il custode davvero in ascolto
+            self.assertFalse(m.get_full_status()["eco_mode"]["sleeping"])
+
+    def test_wake_and_tick_together_leave_no_custode(self):
+        import threading
+        import server_manager as sm
+        with tempfile.TemporaryDirectory() as td:
+            srv = os.path.join(td, "s")
+            os.makedirs(srv)
+            port = _free_port()
+            with open(os.path.join(srv, "server.properties"), "w", encoding="utf-8") as f:
+                f.write(f"server-port={port}\n")
+            m = sm.ServerManager(config_path=os.path.join(td, "config.json"))
+            m.running = False   # il ciclo di ogni secondo lo fa il test
+            m.config["server_dir"] = srv
+            m.eco_mode_enabled, m.state = True, "STOPPED"
+            leftovers = 0
+            for _ in range(30):
+                m.eco_sleeping = srv
+                m._eco_wake_retry_at = 0
+                stop = threading.Event()
+
+                def ticker():
+                    while not stop.is_set():
+                        with m.lock:
+                            m._eco_wake_tick()
+
+                t = threading.Thread(target=ticker)
+                t.start()
+                time.sleep(0.01)
+                m._end_eco_sleep()   # come il risveglio all'inizio dell'avvio
+                stop.set()
+                t.join()
+                if m.eco_wake is not None:
+                    leftovers += 1
+                    m._end_eco_sleep()
+            self.assertEqual(leftovers, 0)
+
+    def test_ping_skipped_while_paused(self):
+        import server_manager as sm
+        with tempfile.TemporaryDirectory() as td:
+            m = sm.ServerManager(config_path=os.path.join(td, "config.json"))
+            m.eco_wake = mock.Mock(port=1, running=True)
+            m.eco_sleeping = ""   # il tick non lo tocca
+            with mock.patch.object(m, "_background_slp_query") as q:
+                m._ticker_step({"query_counter": 1})
+                time.sleep(0.05)
+            self.assertFalse(q.called)
 
 
 if __name__ == "__main__":

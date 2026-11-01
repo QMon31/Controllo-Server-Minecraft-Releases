@@ -128,11 +128,12 @@ public class ApiClient {
      * Wi-Fi che non è quello di casa all'indirizzo 192.168.x.y può esserci un altro dispositivo. HOST_UNREACHABLE solo
      * se non risponde nessuno; qualunque risposta diversa (pagina web, errore, identificativo diverso) è HOST_OTHER.
      */
-    public static void checkHost(final String baseUrl, final String expectedHostId, final int timeoutMs, final HostCallback cb) {
+    public static void checkHost(final android.content.Context ctx, final String baseUrl, final int timeoutMs, final HostCallback cb) {
+        final android.content.Context app = ctx.getApplicationContext();
         executor.execute(new Runnable() {
             @Override
             public void run() {
-                final int result = checkHostBlocking(baseUrl, expectedHostId, timeoutMs);
+                final int result = checkHostBlocking(app, baseUrl, timeoutMs);
                 mainHandler.post(new Runnable() {
                     @Override
                     public void run() {
@@ -143,13 +144,31 @@ public class ApiClient {
         });
     }
 
-    /** Come checkHost, sul thread chiamante (per il widget, che lavora già in un thread suo). */
-    public static int checkHostBlocking(String baseUrl, String expectedHostId, int timeoutMs) {
+    /** Il PC ha già risposto almeno una volta con la prova segreta: da allora una risposta senza prova non vale. */
+    static final String PREF_HOST_PROOF_SEEN = "pc_host_proof_seen";
+
+    /**
+     * Come checkHost, sul thread chiamante (per il widget, che lavora già in un thread suo). Oltre all'identificativo
+     * (che si legge senza PIN, anche da internet) il PC deve rispondere a una domanda casuale con la prova calcolata dal
+     * segreto ntfy: un impostore su un Wi-Fi esterno non la conosce, e il PC la dà solo a chi è nella sua rete locale.
+     */
+    public static int checkHostBlocking(android.content.Context ctx, String baseUrl, int timeoutMs) {
+        android.content.SharedPreferences prefs = ctx.getSharedPreferences("MinecraftControllerPrefs", android.content.Context.MODE_PRIVATE);
+        String expectedHostId = prefs.getString(MainActivity.PREF_PC_HOST_ID, "");
+        String secret = prefs.getString("push_secret", "");
+        String nonce = "";
+        if (!secret.isEmpty()) {
+            byte[] rnd = new byte[16];
+            new java.security.SecureRandom().nextBytes(rnd);
+            StringBuilder sb = new StringBuilder();
+            for (byte b : rnd) sb.append(String.format("%02x", b));
+            nonce = sb.toString();
+        }
         HttpURLConnection conn = null;
         int code;
         String response;
         try {
-            conn = (HttpURLConnection) new URL(baseUrl + "/api/status").openConnection();
+            conn = (HttpURLConnection) new URL(baseUrl + "/api/status" + (nonce.isEmpty() ? "" : "?nonce=" + nonce)).openConnection();
             conn.setRequestMethod("GET");
             conn.setInstanceFollowRedirects(false);
             conn.setConnectTimeout(timeoutMs);
@@ -163,11 +182,38 @@ public class ApiClient {
         }
         if (expectedHostId == null || expectedHostId.isEmpty()) return HOST_SAME;   // PC mai riconosciuto: come prima
         String seen = "";
+        String proof = "";
         try {
-            if (code == 200) seen = new org.json.JSONObject(response).optString("host_id", "");
+            if (code == 200) {
+                org.json.JSONObject obj = new org.json.JSONObject(response);
+                seen = obj.optString("host_id", "");
+                proof = obj.optString("host_proof", "");
+            }
         } catch (Exception ignored) {
         }
-        return expectedHostId.equals(seen) ? HOST_SAME : HOST_OTHER;
+        if (!expectedHostId.equals(seen)) return HOST_OTHER;
+        if (nonce.isEmpty()) return HOST_SAME;                         // segreto non ancora ricevuto (app vecchia)
+        if (proof.isEmpty()) return prefs.getBoolean(PREF_HOST_PROOF_SEEN, false) ? HOST_OTHER : HOST_SAME;   // PC non aggiornato
+        if (!proofMatches(secret, nonce, proof)) return HOST_OTHER;
+        if (!prefs.getBoolean(PREF_HOST_PROOF_SEEN, false)) prefs.edit().putBoolean(PREF_HOST_PROOF_SEEN, true).apply();
+        return HOST_SAME;
+    }
+
+    /** Prova del PC: HMAC-SHA256(chiave, "host-proof|" + nonce), chiave = HMAC-SHA256(segreto ntfy, "voxarium-host-proof-key"). */
+    static boolean proofMatches(String secret, String nonce, String proof) {
+        try {
+            javax.crypto.Mac mac = javax.crypto.Mac.getInstance("HmacSHA256");
+            mac.init(new javax.crypto.spec.SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+            byte[] key = mac.doFinal("voxarium-host-proof-key".getBytes(StandardCharsets.UTF_8));
+            mac.init(new javax.crypto.spec.SecretKeySpec(key, "HmacSHA256"));
+            byte[] expected = mac.doFinal(("host-proof|" + nonce).getBytes(StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder();
+            for (byte b : expected) sb.append(String.format("%02x", b));
+            return java.security.MessageDigest.isEqual(sb.toString().getBytes(StandardCharsets.UTF_8),
+                proof.toLowerCase(java.util.Locale.ROOT).getBytes(StandardCharsets.UTF_8));
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     /** Risposta d'errore del PC ({"detail": "..."}): solo il messaggio invece di tutto il JSON. */

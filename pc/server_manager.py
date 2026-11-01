@@ -23,8 +23,9 @@ import shutil
 
 import psutil
 from mc_ping import query_server_status
+from eco_wake import BLOCKED_TEXT as ECO_BLOCKED_TEXT, STARTING_TEXT as ECO_STARTING_TEXT, EcoWakeListener
 from platform_utils import (IS_WINDOWS, LAUNCH_SCRIPT, LAUNCH_SCRIPT_CANDIDATES, split_java_line, script_fallback_command,
-                            is_java_line, java_token_end,
+                            is_java_line, java_token_end, refresh_path_from_system,
                             read_json_with_backup, write_json_atomic, write_text_atomic)
 
 # Processi figli (java, jcmd, run.bat) senza finestra: il pannello gira senza console, quindi ogni processo
@@ -145,6 +146,18 @@ def read_world_spawn(server_dir: str) -> Optional[Tuple[int, int, int]]:
     return None
 
 
+CRASH_WINDOW_SECONDS = 900
+
+JAVA_EXE_NAMES = ("java", "java.exe", "javaw", "javaw.exe")
+JAVA_NOT_FOUND_MSG = ("Java non trovata sul PC: installa la versione richiesta dal server (per esempio da adoptium.net) "
+                      "e riprova, senza riaprire il programma.")
+
+ECO_SLEEP_ENDED_MSG = "Server in pausa fermato: resta spento e non si avvierà da solo finché non lo avvii tu."
+
+# Avvisi in chat prima del riavvio programmato: segno in warning_sent_flags -> secondi mancanti
+RESTART_WARNING_SECONDS = {"w15m": 900, "w10m": 600, "w5m": 300, "w2m": 120, "w1m": 60, "w30s": 30}
+
+
 class ServerManager:
     # Pre-compiled regex patterns for log parsing performance
     _RE_SERVER_READY = re.compile(r'Done \([0-9.]+s\)! For help, type "help"')
@@ -156,12 +169,19 @@ class ServerManager:
     # bastava scrivere in chat "x: Alice joined the game" o "Disconnecting Alice" per far entrare o uscire Alice
     _INFO = (r'^(?:\[[^\]]*\] )?(?:\[Server thread/INFO\]|\[\d{1,2}:\d{2}:\d{2} INFO\])'
              r'(?: \[[^\]]*\])*(?:: | \([^)]*\) )')
-    _RE_PLAYER_JOIN = re.compile(_INFO + r'(\w+) joined the game')
-    _RE_PLAYER_JOIN2 = re.compile(_INFO + r'(\w+)\[/[0-9.:]+\] logged in with entity id')
-    _RE_PLAYER_LEAVE = re.compile(_INFO + r'(\w+) left the game')
-    _RE_PLAYER_LEAVE2 = re.compile(_INFO + r'(\w+) lost connection')
-    _RE_PLAYER_LEAVE3 = re.compile(r'^(?:\[[^\]]*\] ?)+: Disconnecting (\w+)')
-    _RE_CHAT_MSG = re.compile(_INFO + r'(?:\[Not Secure\] )?<(\w+)>\s+(.*)')
+    # Nome del giocatore, anche Bedrock (Geyser/Floodgate: ".Steve" o "*Steve"): prima questi non risultavano mai entrati
+    _NAME = r'([.*]?\w+)'
+    _RE_PLAYER_JOIN = re.compile(_INFO + _NAME + r' joined the game')
+    _RE_PLAYER_JOIN2 = re.compile(_INFO + _NAME + r'\[/[0-9.:]+\] logged in with entity id')
+    _RE_PLAYER_LEAVE = re.compile(_INFO + _NAME + r' left the game')
+    _RE_PLAYER_LEAVE2 = re.compile(_INFO + _NAME + r' lost connection')
+    _RE_PLAYER_LEAVE3 = re.compile(r'^(?:\[[^\]]*\] ?)+: Disconnecting ' + _NAME)
+    # Minecraft che si spegne da solo ("Stopping the server", anche "[Rcon: Stopping the server]" o "[Nome: ...]" per
+    # un /stop) e i segni di un crash: per un server riagganciato distinguono uno stop voluto da un crash
+    _RE_MC_STOPPING = re.compile(_INFO + r'\[?(?:[A-Za-z0-9_ ]+: )?Stopping (?:the )?server')
+    _MC_CRASH_MARKS = ("Crash report saved to", "This crash report has been saved to", "ServerHangWatchdog detected",
+                       "Considering it to be crashed")
+    _RE_CHAT_MSG = re.compile(_INFO + r'(?:\[Not Secure\] )?<' + _NAME + r'>\s+(.*)')
     # Livello scritto nell'intestazione della riga: "[14:15:16] [main/WARN] [mixin/]: ...", "[...] [Server thread/ERROR]: ..."
     # o, con Paper, "[14:15:16 ERROR]: ..."
     _RE_LOG_LEVEL = re.compile(r'^\[(?:[^\]]*\] \[[^\]]*/|\d{1,2}:\d{2}:\d{2} )(TRACE|DEBUG|INFO|WARN|ERROR|FATAL)\]')
@@ -212,6 +232,7 @@ class ServerManager:
         self.state: str = "STOPPED" # STOPPED, STARTING, ONLINE, STOPPING, CRASHED, RESTARTING
         self.start_time: Optional[float] = None
         self.intentional_stop: bool = False
+        self._mc_stop_seen = self._mc_crash_seen = False   # dal registro di Minecraft (vedi _RE_MC_STOPPING)
         self.scheduled_restart_in_progress: bool = False
         
         # Console output buffer (keep last 1500 lines)
@@ -248,14 +269,19 @@ class ServerManager:
         self.crash_history: List[Dict[str, Any]] = []
         self.auto_restart_on_crash = self.config.get("auto_restart_crash", True)
         self.crash_retry_delay = self.config.get("crash_retry_delay_seconds", 8)
-        self.crash_window_seconds = self.config.get("crash_window_seconds", 180)
+        # 3 crash in 15 minuti: con 3 minuti la protezione non scattava mai con i modpack (riavvio, avvio e blocco di
+        # 60 s del watchdog di Minecraft fanno circa 2 minuti a ciclo). 180 era il valore predefinito di prima
+        window = self.config.get("crash_window_seconds", CRASH_WINDOW_SECONDS)
+        self.crash_window_seconds = CRASH_WINDOW_SECONDS if window in (None, 180) else window
         self.max_crashes_in_window = self.config.get("max_crashes_in_window", 3)
         self.auto_restart_paused = False
         self.crash_countdown = 0
         
         # Metrics history for live UI chart (last 60 seconds)
         self.metrics_history: deque = deque(maxlen=60)
-        self.metrics_history_24h: deque = deque(maxlen=288) # 24 hours at 1 snapshot every 5 min
+        # 24 ore a una rilevazione ogni 3 minuti (_record_metrics_snapshot): con 288 il grafico "ultime 24 ore" ne
+        # mostrava 14 e mezza
+        self.metrics_history_24h: deque = deque(maxlen=24 * 60 // 3)
         self._last_24h_snapshot_time: float = 0.0
         
         # TPS Tracking (Ticks Per Second)
@@ -273,6 +299,11 @@ class ServerManager:
         self.eco_mode_enabled = self.config.get("eco_mode_enabled", False)
         self.eco_mode_minutes = self.config.get("eco_mode_minutes", 45)
         self.server_empty_since: Optional[float] = None
+        # Custode: dopo lo spegnimento della Modalità Eco resta in ascolto sulla porta e avvia il server quando un
+        # giocatore prova a entrare. eco_sleeping (cartella del server) resta in config.json anche a programma chiuso
+        self.eco_wake: Optional[EcoWakeListener] = None
+        self.eco_sleeping: str = str(self.config.get("eco_sleeping") or "") if self.eco_mode_enabled else ""
+        self._eco_wake_retry_at = 0.0
 
         # Anti-Lag Watchdog (Detect low TPS and auto clean ground items)
         self.anti_lag_enabled = self.config.get("anti_lag_enabled", True)
@@ -482,6 +513,7 @@ class ServerManager:
                 time.sleep(1)
         except Exception:
             pass
+        time.sleep(1.5)   # le ultime righe di latest.log (stop o crash) arrivano al lettore del registro
 
         with self.lock:
             if self.psutil_proc and self.psutil_proc.pid == proc.pid:
@@ -490,22 +522,31 @@ class ServerManager:
                 self.server_info["online"] = False
 
                 if self.scheduled_restart_in_progress:
+                    self.scheduled_restart_in_progress = False   # il riavvio parte da qui: l'arresto non ne avvia un altro
                     self.state = "RESTARTING"
                     self.add_log("[Pannello] Server precedente arrestato. Avvio del server in corso tra 3 secondi...")
                     threading.Thread(target=self._delayed_restart_worker, args=(3,), daemon=True).start()
                     return
 
                 if self.intentional_stop:
-                    self.state = "STOPPED"
-                    self.add_log("[Pannello] Server arrestato con successo.")
+                    # L'arresto dal pannello (_graceful_stop_worker) lo ha già scritto: prima compariva due volte
+                    if self.state != "STOPPED":
+                        self.state = "STOPPED"
+                        self.add_log("[Pannello] Server arrestato con successo.")
                     return
 
-                # If terminated unexpectedly while attached
-                self.state = "CRASHED"
-                self.add_log("[Pannello/ALLARME] Il server Minecraft si è arrestato inaspettatamente!")
+                # Server riagganciato: il codice di uscita non si può leggere. "Stopping the server" nel registro senza un
+                # rapporto di crash è uno stop voluto (/stop nel gioco o in console): prima era preso per un crash
+                if self._mc_stop_seen and not self._mc_crash_seen:
+                    self.state = "STOPPED"
+                    self.intentional_stop = True
+                    self.add_log("[Pannello] Server arrestato con il comando stop di Minecraft.")
+                    return
+                self._register_unexpected_exit(None)
 
     def _attach_running_process(self, proc: psutil.Process):
         with self.lock:
+            self._mc_stop_seen = self._mc_crash_seen = False
             self.psutil_proc = proc
             self.state = "ONLINE"
             self.auto_restart_paused = False
@@ -534,7 +575,7 @@ class ServerManager:
             "auto_restart_crash": True,
             "crash_retry_delay_seconds": 8,
             "max_crashes_in_window": 3,
-            "crash_window_seconds": 180,
+            "crash_window_seconds": CRASH_WINDOW_SECONDS,
             "scheduled_restart_enabled": True,
             "scheduled_restart_interval_minutes": 240,
             "chat_warnings_enabled": True,
@@ -912,13 +953,19 @@ class ServerManager:
             if self.config.get("server_port") != port:
                 self.config["server_port"] = port
                 self.save_config()
+        self._remember_active_instance("server_port", port)
+
+    @staticmethod
+    def _remember_active_instance(key: str, value: Any):
+        """Stesso valore anche nel server attivo di instances.json: al cambio di server config.json si riscrive da lì
+        e prima il valore cambiato (porta, RAM nel comando di avvio) tornava quello vecchio."""
         try:
             import instance_manager
             instances = instance_manager.load_instances_data()
             changed = False
             for inst in instances:
-                if inst.get("is_active") and inst.get("server_port") != port:
-                    inst["server_port"] = port
+                if inst.get("is_active") and inst.get(key) != value:
+                    inst[key] = value
                     changed = True
             if changed:
                 instance_manager.save_instances_data(instances)
@@ -973,12 +1020,20 @@ class ServerManager:
                 pass
             return script_fallback_command(c_bat)
 
-        # 2. Check if a server.jar exists (Vanilla, Fabric, Paper, Spigot)
+        # 2. Comando java salvato (qui la RAM scelta nel pannello per i server senza run.bat), se il .jar che avvia
+        # c'è: prima con server.jar nella cartella si partiva sempre con 4 GB e la RAM scelta non valeva
+        if is_java_line(cmd_str):
+            parts = split_java_line(cmd_str, server_dir)
+            jar = parts[parts.index("-jar") + 1] if "-jar" in parts[:-1] else ""
+            if not jar or os.path.isfile(jar if os.path.isabs(jar) else os.path.join(server_dir, jar)):
+                return parts
+
+        # 3. Check if a server.jar exists (Vanilla, Fabric, Paper, Spigot)
         jar_path = os.path.join(server_dir, "server.jar")
         if os.path.isfile(jar_path):
             return ["java", "-Xmx4G", "-Xms2G", "-jar", "server.jar", "nogui"]
 
-        # 3. Fallback to configured custom command
+        # 4. Fallback to configured custom command
         if cmd_str:
             return shlex.split(cmd_str, posix=not IS_WINDOWS)
 
@@ -990,6 +1045,11 @@ class ServerManager:
         if blocked:
             self.add_log(f"[Pannello] Avvio del server bloccato. {blocked}")
             return {"status": "error", "message": blocked}
+        # Il custode della Modalità Eco libera la porta (altrimenti il controllo qui sotto lo prendeva per il server)
+        self._end_eco_sleep()
+        # Java aggiornata a programma aperto: run.bat chiama "java" dal PATH, che altrimenti resta quello di quando
+        # il programma è partito (il server ripartiva con la Java vecchia)
+        refresh_path_from_system()
         with self.lock:
             if self.process and self.process.poll() is None:
                 return {"status": "error", "message": "Il server è già in esecuzione!"}
@@ -1014,6 +1074,7 @@ class ServerManager:
                 return {"status": "error", "message": f"Cartella del server non trovata: {server_dir}"}
 
             self.intentional_stop = False
+            self._mc_stop_seen = self._mc_crash_seen = False
             self.scheduled_restart_in_progress = False
             self.state = "STARTING"
             self.start_time = time.time()
@@ -1061,6 +1122,10 @@ class ServerManager:
             except Exception as e:
                 self.state = "STOPPED"
                 self.add_log(f"[Pannello/ERRORE] Impossibile avviare il processo: {e}")
+                prog = os.path.basename(cmd_parts[0]).lower() if cmd_parts else ""
+                if isinstance(e, FileNotFoundError) and prog in JAVA_EXE_NAMES:
+                    # Prima arrivava il messaggio di Windows ("[WinError 2] Impossibile trovare il file specificato")
+                    return {"status": "error", "message": JAVA_NOT_FOUND_MSG}
                 return {"status": "error", "message": str(e)}
 
     def uses_new_gamerule_names(self) -> bool:
@@ -1229,6 +1294,9 @@ class ServerManager:
             # Arresto chiesto durante un riavvio: il riavvio si annulla (prima il server si riaccendeva lo stesso)
             restart_was_pending = self.scheduled_restart_in_progress or self.state == "RESTARTING"
             self.scheduled_restart_in_progress = False
+            # Arresta con il server in pausa (Modalità Eco): il custode si toglie e il server resta spento davvero.
+            # Non con "Esci" dal Launcher: alla riapertura del programma (es. dopo un riavvio del PC) la pausa riprende
+            eco_was_sleeping = self._end_eco_sleep() if reason != "Uscita dal programma" else False
             is_proc_running = (self.process and self.process.poll() is None)
             is_psutil_running = (self.psutil_proc and self.psutil_proc.is_running())
             if not is_proc_running and not is_psutil_running:
@@ -1242,6 +1310,9 @@ class ServerManager:
                         self.intentional_stop = True
                         self.add_log("[Pannello] Riavvio annullato: il server resta spento.")
                         return {"status": "success", "message": "Riavvio annullato: il server resta spento."}
+                    if eco_was_sleeping:
+                        self.add_log(f"[Pannello] {ECO_SLEEP_ENDED_MSG}")
+                        return {"status": "success", "message": ECO_SLEEP_ENDED_MSG}
                     return {"status": "error", "message": "Il server è già spento."}
 
             self.intentional_stop = True
@@ -1323,7 +1394,10 @@ class ServerManager:
 
                 restart_pending = self.scheduled_restart_in_progress
                 self.scheduled_restart_in_progress = False  # evita che _monitor_exit lanci un secondo riavvio
-                if restart_pending and self.state != "RESTARTING":
+                # Il flag ancora acceso vuol dire che nessun controllo del processo ha avviato il riavvio: lo si avvia qui.
+                # Prima si guardava lo stato, ma RESTARTING è impostato all'inizio di questo arresto: con un server
+                # riagganciato il riavvio non partiva e il pannello restava su "RIAVVIO" con il server spento
+                if restart_pending:
                     self.state = "RESTARTING"
                     self.add_log("[Pannello] Server precedente terminato. Riavvio in corso tra 3 secondi...")
                     threading.Thread(target=self._delayed_restart_worker, args=(3,), daemon=True).start()
@@ -1369,15 +1443,25 @@ class ServerManager:
 
     def _countdown_and_restart(self, seconds: int, reason: str):
         while seconds > 0:
+            # Arresta durante l'avviso spegne il flag (stop_server): prima allo scadere partiva un altro arresto, che
+            # spegneva anche un server riacceso nel frattempo
+            if not self.scheduled_restart_in_progress:
+                return
             if seconds in (60, 30, 15, 10, 5, 4, 3, 2, 1):
                 self.send_command(f"say §c[Server] Riavvio tra {seconds} secondi ({reason})!")
             time.sleep(1)
             seconds -= 1
-        self._graceful_stop_worker(reason)
+        if self.scheduled_restart_in_progress:
+            self._graceful_stop_worker(reason)
 
     def postpone_scheduled_restart(self, minutes: int = 30) -> Dict[str, Any]:
         with self.lock:
+            minutes = max(1, int(minutes))   # un valore negativo faceva ripartire subito il server
             self.scheduled_remaining_seconds += minutes * 60
+            # Gli avvisi in chat dei momenti tornati davanti si mandano di nuovo: prima, rimandando dopo l'avviso dei
+            # 5 minuti, prima del nuovo riavvio i giocatori ricevevano solo quelli degli ultimi 2 minuti
+            self.warning_sent_flags = {f for f in self.warning_sent_flags
+                                       if RESTART_WARNING_SECONDS.get(f, 0) >= self.scheduled_remaining_seconds}
             self.add_log(f"[Pannello] Riavvio programmato posticipato di {minutes} minuti. Tempo residuo: {self.format_seconds(self.scheduled_remaining_seconds)}")
             self.send_command(f"say §a[Server] Riavvio programmato posticipato di {minutes} minuti dall'amministratore.")
             return {
@@ -1604,6 +1688,11 @@ class ServerManager:
         """Extracts status transitions, player connections, chat, and server errors."""
         now_time = datetime.now().strftime("%H:%M:%S")
 
+        if self._RE_MC_STOPPING.search(line):
+            self._mc_stop_seen = True
+        if any(mark in line for mark in self._MC_CRASH_MARKS):
+            self._mc_crash_seen = True
+
         # 1. Server Ready Detection
         if self._RE_SERVER_READY.search(line) or \
            self._RE_SERVER_READY2.search(line) or \
@@ -1792,6 +1881,10 @@ class ServerManager:
                 threading.Thread(target=self._delayed_restart_worker, args=(3,), daemon=True).start()
                 return
 
+            if self.state == "RESTARTING":
+                # Riavvio già avviato da _graceful_stop_worker (anche quello programmato, che non segna intentional_stop):
+                # prima qui si riscriveva STOPPED e il riavvio si annullava
+                return
             if self.intentional_stop or exit_code == 0:
                 self.state = "STOPPED"
                 self.add_log(f"[Pannello] Server arrestato (Codice di uscita: {exit_code}).")
@@ -1805,49 +1898,56 @@ class ServerManager:
                 return
 
             # UNINTENTIONAL TERMINATION -> CRASH!
-            self.state = "CRASHED"
-            crash_entry = {
-                "timestamp": time.time(),
-                "time_str": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "exit_code": exit_code
-            }
-            self.crash_history.append(crash_entry)
-            self.add_log(f"[Pannello/ALLARME] IL SERVER MINECRAFT SI È CHIUSO INASPETTATAMENTE! (Codice di uscita: {exit_code})")
+            self._register_unexpected_exit(exit_code)
 
-            # Record in error list
-            err_item = {
-                "id": str(uuid.uuid4())[:8],
-                "time": datetime.now().strftime("%H:%M:%S"),
-                "level": "CRITICAL",
-                "message": f"Crash imprevisto del server Minecraft. Processo terminato con codice {exit_code}.",
-                "text": f"Crash imprevisto del server Minecraft. Processo terminato con codice {exit_code}.",
-                "raw": f"Process exited with code {exit_code}"
-            }
-            self.errors_list.append(err_item)
-            self._broadcast_error(err_item)
+    def _register_unexpected_exit(self, exit_code: Optional[int]):
+        """Server chiuso senza che nessuno lo abbia chiesto (da chiamare con il lucchetto): crash registrato, errore,
+        notifica, protezione dai crash ripetuti e riavvio automatico. Anche per un server riagganciato (exit_code None):
+        prima per quello si segnava solo CRASHED, senza notifica né riavvio automatico."""
+        code_txt = exit_code if exit_code is not None else "?"   # senza parole: il messaggio si traduce nel pannello
+        self.state = "CRASHED"
+        crash_entry = {
+            "timestamp": time.time(),
+            "time_str": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "exit_code": exit_code
+        }
+        self.crash_history.append(crash_entry)
+        self.add_log(f"[Pannello/ALLARME] IL SERVER MINECRAFT SI È CHIUSO INASPETTATAMENTE! (Codice di uscita: {code_txt})")
 
-            # Send instant Push Notification to smartphone via ntfy (0% phone battery)
-            self.send_push_notification(
-                title="Server Minecraft Crashato!",
-                message=f"Il server si è arrestato inaspettatamente (Codice di uscita: {exit_code}). Tocca per aprire la gestione.",
-                priority="max",
-                tags="warning,skull"
-            )
+        # Record in error list
+        err_item = {
+            "id": str(uuid.uuid4())[:8],
+            "time": datetime.now().strftime("%H:%M:%S"),
+            "level": "CRITICAL",
+            "message": f"Crash imprevisto del server Minecraft. Processo terminato con codice {code_txt}.",
+            "text": f"Crash imprevisto del server Minecraft. Processo terminato con codice {code_txt}.",
+            "raw": f"Process exited with code {exit_code}"
+        }
+        self.errors_list.append(err_item)
+        self._broadcast_error(err_item)
 
-            now = time.time()
-            recent_crashes = [c for c in self.crash_history if now - c["timestamp"] <= self.crash_window_seconds]
-            
-            if len(recent_crashes) >= self.max_crashes_in_window:
-                self.auto_restart_paused = True
-                self.add_log(f"[Pannello/CRITICO] Rilevati {len(recent_crashes)} crash negli ultimi {self.crash_window_seconds} secondi. "
-                             f"Riavvio automatico SOSPESO per proteggere il sistema da crash loop. Controllare crash-reports!")
-                return
+        # Send instant Push Notification to smartphone via ntfy (0% phone battery)
+        self.send_push_notification(
+            title="Server Minecraft Crashato!",
+            message=f"Il server si è arrestato inaspettatamente (Codice di uscita: {code_txt}). Tocca per aprire la gestione.",
+            priority="max",
+            tags="warning,skull"
+        )
 
-            if self.auto_restart_on_crash and not self.auto_restart_paused:
-                self.add_log(f"[Pannello] Riavvio automatico programmato tra {self.crash_retry_delay} secondi...")
-                threading.Thread(target=self._crash_auto_restart_worker, daemon=True).start()
-            else:
-                self.add_log("[Pannello] Il riavvio automatico su crash è disattivato.")
+        now = time.time()
+        recent_crashes = [c for c in self.crash_history if now - c["timestamp"] <= self.crash_window_seconds]
+        
+        if len(recent_crashes) >= self.max_crashes_in_window:
+            self.auto_restart_paused = True
+            self.add_log(f"[Pannello/CRITICO] Rilevati {len(recent_crashes)} crash negli ultimi {self.crash_window_seconds} secondi. "
+                         f"Riavvio automatico SOSPESO per proteggere il sistema da crash loop. Controllare crash-reports!")
+            return
+
+        if self.auto_restart_on_crash and not self.auto_restart_paused:
+            self.add_log(f"[Pannello] Riavvio automatico programmato tra {self.crash_retry_delay} secondi...")
+            threading.Thread(target=self._crash_auto_restart_worker, daemon=True).start()
+        else:
+            self.add_log("[Pannello] Il riavvio automatico su crash è disattivato.")
 
     def _crash_auto_restart_worker(self):
         self.crash_countdown = self.crash_retry_delay
@@ -1876,7 +1976,12 @@ class ServerManager:
             # Nel frattempo è stato chiesto l'arresto (stato non più RESTARTING): niente riavvio
             if self.state != "RESTARTING":
                 return
-            self.start_server()
+            res = self.start_server()
+            # Avvio non riuscito senza cambio di stato (cartella non trovata, avvio bloccato...): prima il pannello
+            # restava su "RIAVVIO" per sempre, con backup, ripristino e cambio di server bloccati
+            if res.get("status") == "error" and self.state == "RESTARTING":
+                self.state = "STOPPED"
+                self.add_log(f"[Pannello] Riavvio non riuscito: {res.get('message')}")
 
     def _ticker_loop(self):
         """Ogni secondo: riavvio programmato, Modalità Eco, Anti-Lag, ping del server e grafici. Un errore in un
@@ -1934,7 +2039,13 @@ class ServerManager:
 
             # --- ECO MODE CHECK ---
             if self.state == "ONLINE" and self.eco_mode_enabled:
-                online_players = len(self.players)
+                # Anche il numero dato da Minecraft: i giocatori anonimi (senza "Consenti elenchi server") entrati
+                # prima dell'apertura del programma non sono nell'elenco, e il server si spegneva con loro dentro
+                try:
+                    pinged = int(self.server_info.get("players_online") or 0) if self.server_info.get("online") else 0
+                except (TypeError, ValueError):
+                    pinged = 0
+                online_players = max(len(self.players), pinged)
                 if online_players == 0:
                     if self.server_empty_since is None:
                         self.server_empty_since = time.time()
@@ -1950,6 +2061,10 @@ class ServerManager:
                         # Spegnimento voluto: prima, se Minecraft usciva con un codice diverso da 0 o il server era
                         # stato trovato già acceso, risultava un crash e il riavvio automatico lo riaccendeva
                         self.intentional_stop = True
+                        # Spento il server, il custode prende il suo posto sulla porta (_eco_wake_tick)
+                        self.eco_sleeping = (self.config.get("server_dir") or "").strip()
+                        self.config["eco_sleeping"] = self.eco_sleeping
+                        self.save_config()
                         threading.Thread(target=self._graceful_stop_worker, args=("Spegnimento automatico Modalità Eco",), daemon=True).start()
                 else:
                     self.server_empty_since = None
@@ -1985,17 +2100,99 @@ class ServerManager:
                 else:
                     self.low_tps_start_time = None
 
+            self._eco_wake_tick()
+
             state["query_counter"] += 1
             if state["query_counter"] >= 2:
                 state["query_counter"] = 0
-                port = self.get_server_port()
-                threading.Thread(target=self._background_slp_query, args=(port,), daemon=True).start()
+                # Con il custode sulla porta risponderebbe lui al ping e il server sembrerebbe acceso
+                if self.eco_wake is None:
+                    port = self.get_server_port()
+                    threading.Thread(target=self._background_slp_query, args=(port,), daemon=True).start()
 
             self._record_metrics_snapshot()
+
+    # ---------------------------------------------------------
+    # CUSTODE DELLA MODALITÀ ECO
+    # ---------------------------------------------------------
+    def _eco_wake_tick(self):
+        """Ogni secondo: apre il custode quando il server spento dalla Modalità Eco ha liberato la porta, lo sposta se
+        la porta cambia e lo toglie se il server attivo non è più quello spento (cambio di server)."""
+        if not self.eco_sleeping:
+            return
+        server_dir = (self.config.get("server_dir") or "").strip()
+        if not self.eco_mode_enabled or os.path.normcase(server_dir) != os.path.normcase(self.eco_sleeping):
+            self._end_eco_sleep()
+            return
+        if self.state not in ("STOPPED", "CRASHED", "OFFLINE") or (self.process and self.process.poll() is None):
+            return
+        port = self.get_server_port()
+        if self.eco_wake is not None:
+            if self.eco_wake.port == port and self.eco_wake.running:
+                return
+            self.eco_wake.stop()
+            self.eco_wake = None
+        if time.time() < self._eco_wake_retry_at:
+            return
+        listener = EcoWakeListener(port, server_dir, self._eco_on_login, max_players=self.get_configured_max_players())
+        try:
+            listener.start()
+        except OSError:
+            # Porta ancora occupata (Minecraft la sta liberando, o un altro programma): si riprova tra poco
+            self._eco_wake_retry_at = time.time() + 5
+            return
+        self.eco_wake = listener
+        self.add_log(f"[Pannello] Modalità Eco: server in pausa, si avvierà da solo quando un giocatore prova a entrare (porta {port}).")
+
+    def _eco_on_login(self, player: str) -> Tuple[str, bool]:
+        """Un giocatore prova a entrare nel server in pausa (chiamato dal custode): testo per lui e se si avvia."""
+        blocked = self.start_blocker() if self.start_blocker else None
+        if blocked:
+            self.add_log(f"[Pannello] Modalità Eco: {player} ha provato a entrare, ma il server non può avviarsi adesso. {blocked}")
+            return ECO_BLOCKED_TEXT, False
+        threading.Thread(target=self._eco_wake_start, args=(player,), daemon=True).start()
+        return ECO_STARTING_TEXT, True
+
+    def _eco_wake_start(self, player: str):
+        self.add_log(f"[Pannello] Modalità Eco: {player} ha provato a entrare, avvio del server...")
+        self.send_push_notification(
+            title="Modalità Eco",
+            message=f"{player} ha provato a entrare: il server si sta avviando.",
+            priority="default",
+            tags="alarm_clock,video_game"
+        )
+        server_dir = (self.config.get("server_dir") or "").strip()
+        res = self.start_server()   # toglie il custode e libera la porta prima di avviare Minecraft
+        if res.get("status") == "error":
+            self.add_log(f"[Pannello] Modalità Eco: avvio non riuscito. {res.get('message')}")
+            # Il server resta in pausa: un altro tentativo di entrare lo riprova (prima nessuno poteva più avviarlo)
+            with self.lock:
+                if self.eco_mode_enabled and self.state in ("STOPPED", "CRASHED", "OFFLINE"):
+                    self.eco_sleeping = server_dir
+                    self.config["eco_sleeping"] = server_dir
+                    self.save_config()
+
+    def _end_eco_sleep(self) -> bool:
+        """Toglie il custode (il server resta com'è). True se il server era in pausa."""
+        # Con il lucchetto, come il controllo di ogni secondo (_eco_wake_tick): prima, se capitavano insieme, il controllo
+        # poteva riaprire il custode appena chiuso dal risveglio e l'avvio trovava la porta "già aperta da un server"
+        with self.lock:
+            was = bool(self.eco_sleeping) or self.eco_wake is not None
+            self.eco_sleeping = ""
+            listener, self.eco_wake = self.eco_wake, None
+            if listener:
+                listener.stop()
+            if self.config.pop("eco_sleeping", None) is not None:
+                self.save_config()
+            return was
 
     def _background_slp_query(self, port: int):
         res = query_server_status(host="127.0.0.1", port=port, timeout=1.0)
         with self.lock:
+            if self.eco_wake is not None:
+                # Ping partito un attimo prima che il custode aprisse la porta: ha risposto lui, non il server. Prima il
+                # pannello segnava ONLINE e ci restava (con il custode attivo il ping non riparte)
+                return
             self.server_info = res
             # ONLINE visto solo dal ping (nessun processo nostro) e il server non risponde più: chiuso fuori dal
             # pannello. Prima lo stato restava ONLINE per sempre. Tre controlli di fila (~6 s) per non sbagliare.
@@ -2009,6 +2206,16 @@ class ServerManager:
                     self.add_log("[Pannello] Il server non risponde più e non è in esecuzione: segnato come spento.")
             else:
                 self._slp_offline_count = 0
+            if res.get("online") and self.state in ("STOPPED", "CRASHED", "OFFLINE") and no_process:
+                # Da spento serve una conferma (due ping di fila o un processo di Minecraft trovato): un ping partito
+                # un attimo prima che il server si chiudesse rispondeva "acceso" dopo l'arresto e il pannello tornava
+                # ONLINE per ~6 s. Un server avviato fuori dal pannello si riconosce lo stesso, 2 s dopo
+                self._slp_online_count = getattr(self, "_slp_online_count", 0) + 1
+                if self._slp_online_count < 2 and not self._find_running_minecraft_proc():
+                    return
+                self._slp_online_count = 0   # confermato: il prossimo arresto riparte da zero
+            else:
+                self._slp_online_count = 0
             if res.get("online"):
                 if self.state not in ("STOPPING", "RESTARTING"):
                     self.state = "ONLINE"
@@ -2037,9 +2244,13 @@ class ServerManager:
                             valid_names.add(p_name)
                     
                     if valid_names:
-                        for p_k in list(self.players.keys()):
-                            if p_k not in valid_names:
-                                del self.players[p_k]
+                        # Si tolgono solo se l'elenco del ping è completo: Minecraft ne mostra al massimo 12 e chi ha
+                        # tolto "Consenti elenchi server" compare anonimo. Prima questi giocatori, ancora collegati,
+                        # sparivano dal pannello (l'uscita si legge comunque dalla console: "left the game")
+                        if len(valid_names) >= online_cnt:
+                            for p_k in list(self.players.keys()):
+                                if p_k not in valid_names:
+                                    del self.players[p_k]
                         for p_name in valid_names:
                             if p_name not in self.players:
                                 self.players[p_name] = {
@@ -2314,7 +2525,9 @@ class ServerManager:
             latest_metrics = self.metrics_history[-1] if self.metrics_history else {}
 
             slp_count = self.server_info.get("players_online", 0)
-            if slp_count == 0 and len(self.players) > 0:
+            # Solo se il ping è riuscito: anche un ping senza risposta (server in lag per un attimo) dà 0, e prima
+            # svuotava l'elenco con i giocatori ancora dentro (gli anonimi non tornavano più)
+            if self.server_info.get("online") and slp_count == 0 and len(self.players) > 0:
                 self.players.clear()
 
             player_list = []
@@ -2386,11 +2599,14 @@ class ServerManager:
                 },
                 "metrics": latest_metrics,
                 "metrics_history": list(self.metrics_history),
-                "metrics_history_24h": list(self.metrics_history_24h),
                 "eco_mode": {
                     "enabled": self.eco_mode_enabled,
                     "minutes": self.eco_mode_minutes,
-                    "empty_seconds": int(time.time() - self.server_empty_since) if (self.server_empty_since and self.state == "ONLINE") else 0
+                    "empty_seconds": int(time.time() - self.server_empty_since) if (self.server_empty_since and self.state == "ONLINE") else 0,
+                    # Server spento dalla Modalità Eco, con il custode in ascolto: si avvia quando qualcuno entra
+                    # Solo con il custode davvero in ascolto (non mentre Minecraft libera la porta o se è occupata)
+                    "sleeping": bool(self.eco_sleeping and self.eco_wake is not None and self.eco_wake.running)
+                                and self.state in ("STOPPED", "CRASHED", "OFFLINE"),
                 },
                 "anti_lag": {
                     "enabled": self.anti_lag_enabled,
@@ -2788,6 +3004,7 @@ class ServerManager:
                 if is_java_line(cmd):
                     self.config["server_command"] = self._rewrite_java_line(cmd, ram_gb, use_aikar)
                     self.save_config()
+                    self._remember_active_instance("server_command", self.config["server_command"])
                     written = written or "comando di avvio"
                 if not written:
                     return {"status": "error", "message": "Non ho trovato dove il server imposta la RAM (run.bat o comando java)."}
@@ -2803,6 +3020,8 @@ class ServerManager:
     def set_eco_mode(self, enabled: bool, minutes: int = 45) -> Dict[str, Any]:
         with self.lock:
             self.eco_mode_enabled = enabled
+            if not enabled:
+                self._end_eco_sleep()
             self.eco_mode_minutes = max(5, minutes)
             self.config["eco_mode_enabled"] = enabled
             self.config["eco_mode_minutes"] = self.eco_mode_minutes

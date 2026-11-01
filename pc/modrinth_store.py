@@ -532,14 +532,11 @@ def install_modrinth_project(
     chosen_file = None
     version_name = ""
     for v in v_list:
-        files = v.get("files", [])
-        for f in files:
-            fname = f.get("filename", "")
-            if fname.lower().endswith(".jar"):
-                chosen_file = f
-                version_name = v.get("version_number", v.get("name", ""))
-                break
+        jars = [f for f in v.get("files", []) if f.get("filename", "").lower().endswith(".jar")]
+        # Il file principale della versione (come negli aggiornamenti): accanto possono esserci -sources o -api
+        chosen_file = next((f for f in jars if f.get("primary")), jars[0] if jars else None)
         if chosen_file:
+            version_name = v.get("version_number", v.get("name", ""))
             break
 
     if not chosen_file:

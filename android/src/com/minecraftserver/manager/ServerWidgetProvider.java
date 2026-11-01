@@ -117,14 +117,14 @@ public class ServerWidgetProvider extends AppWidgetProvider {
      * Indirizzo da usare (sempre da un thread in background). Sull'indirizzo di casa (in chiaro) prima si controlla che
      * risponda il nostro PC: su un Wi-Fi esterno allo stesso indirizzo può esserci un altro dispositivo, che riceverebbe
      * token e PIN. In quel caso si passa all'indirizzo da internet, oppure ("Solo Wi-Fi") non si manda niente.
+     * Vale anche quando il controllo non riceve risposta: prima si usava comunque l'indirizzo di casa.
      */
     private static String getBaseUrl(Context context) {
         SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
         String base = chooseBaseUrl(context, prefs);
         String local = prefs.getString(PREF_LOCAL_URL, DEFAULT_LOCAL_URL).replaceAll("/+$", "");
         if (base.isEmpty() || !base.equals(local) || base.startsWith("https://")) return base;
-        String hostId = prefs.getString(MainActivity.PREF_PC_HOST_ID, "");
-        if (ApiClient.checkHostBlocking(base, hostId, 1500) != ApiClient.HOST_OTHER) return base;
+        if (ApiClient.checkHostBlocking(context, base, 1500) == ApiClient.HOST_SAME) return base;
         String remote = prefs.getString(PREF_REMOTE_URL, "").replaceAll("/+$", "");
         return prefs.getInt(PREF_CONN_MODE, 0) != 1 && !remote.isEmpty() ? remote : "";
     }

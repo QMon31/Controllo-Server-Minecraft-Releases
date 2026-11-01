@@ -1490,6 +1490,7 @@ function renderFullStatus(data) {
   const btnRestart = document.getElementById('btn-restart');
 
   pill.className = 'status-pill';
+  pill.title = '';
   if (data.state === 'ONLINE') {
     pill.classList.add('status-online');
     pillText.textContent = 'ONLINE';
@@ -1536,13 +1537,17 @@ function renderFullStatus(data) {
     btnRestart.disabled = false;
     btnRestart.onclick = () => restartServer(0);
   } else {
+    // Spento dalla Modalità Eco con il custode in ascolto: si avvia quando un giocatore prova a entrare.
+    // Arresta toglie la pausa e il server resta spento davvero
+    const ecoSleeping = !!(data.eco_mode && data.eco_mode.sleeping);
     pill.classList.add('status-stopped');
-    pillText.textContent = 'OFFLINE';
+    pillText.textContent = ecoSleeping ? t('header.in_pausa') : 'OFFLINE';
+    if (ecoSleeping) pill.title = t('header.in_pausa_spiegazione');
     btnStart.disabled = false;
-    btnStop.disabled = true;
+    btnStop.disabled = !ecoSleeping;
     btnStop.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><rect x="6" y="6" width="12" height="12"></rect></svg><span>${th('serverbar.arresta')}</span>`;
     btnStop.className = 'btn btn-ruby-outline';
-    btnStop.onclick = openStopModal;
+    btnStop.onclick = ecoSleeping ? stopEcoSleep : openStopModal;
     btnRestart.disabled = true;
   }
 
@@ -2833,9 +2838,22 @@ function setupCommandHistory() {
 // =========================================================
 // TAB 4: PLAYERS LIST
 // =========================================================
+// Giocatori della lista già disegnata: con gli stessi giocatori si aggiorna solo il tempo online. Prima la lista si
+// ricostruiva a ogni stato (ogni 2 s) e un clic su un pulsante in quel momento andava perso
+let renderedPlayersKey = null;
+
 function renderPlayersList(players) {
   const container = document.getElementById('players-list-container');
   const validPlayers = (players || []).filter(p => p && p.name && !['anonymous', 'anonymous player', 'anonimo', 'null', 'undefined', ''].includes(p.name.trim().toLowerCase()));
+  const key = validPlayers.map(p => `${p.name}|${p.avatar_url}|${p.joined_str || ''}`).join('\n');
+  if (key === renderedPlayersKey) {
+    validPlayers.forEach((p, i) => {
+      const el = container.querySelector(`[data-player-index="${i}"]`);
+      if (el && el.textContent !== p.online_formatted) el.textContent = p.online_formatted;
+    });
+    return;
+  }
+  renderedPlayersKey = key;
   if (!validPlayers || validPlayers.length === 0) {
     container.innerHTML = `
       <div class="empty-players">
@@ -2848,15 +2866,16 @@ function renderPlayersList(players) {
   }
 
   let html = '';
-  validPlayers.forEach(p => {
-    const joinedInfo = p.joined_str ? ` ${th('msg.entrato_alle', escapeHtml(p.joined_str))}` : '';
+  validPlayers.forEach((p, i) => {
+    // Due pezzi che non si spezzano a metà ("Connesso da: 06m 55s" e "Entrato alle 00:51:26")
+    const joinedInfo = p.joined_str ? ` <span>${th('msg.entrato_alle', escapeHtml(p.joined_str))}</span>` : '';
     html += `
       <div class="player-card">
         <div class="player-left">
-          <img class="player-avatar" src="${p.avatar_url}" alt="${p.name}" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'40\\' height=\\'40\\'><rect width=\\'40\\' height=\\'40\\' fill=\\'%232563eb\\'/></svg>'">
+          <img class="player-avatar" src="${escapeHtml(p.avatar_url)}" alt="${escapeHtml(p.name)}" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'40\\' height=\\'40\\'><rect width=\\'40\\' height=\\'40\\' fill=\\'%232563eb\\'/></svg>'">
           <div class="player-info">
-            <h4>${escapeHtml(p.name)}</h4>
-            <p>${th('msg.connesso')} <b>${p.online_formatted}</b>${joinedInfo}</p>
+            <h4 title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</h4>
+            <p><span>${th('msg.connesso')} <b data-player-index="${i}">${escapeHtml(p.online_formatted)}</b></span>${joinedInfo}</p>
           </div>
         </div>
         <div class="player-actions">
@@ -2956,6 +2975,22 @@ function openStopModal() {
 
 function closeStopModal() {
   closeModal('modal-stop');
+}
+
+// Server in pausa (Modalità Eco): si toglie il custode, il server resta spento e non si avvia più da solo
+async function stopEcoSleep() {
+  try {
+    const { ok, data } = await safeJsonFetch('/api/server/stop', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ force: false, reason: t('pc.console.arresto_pannello_controllo') })
+    });
+    const good = ok && data.status !== 'error';
+    showToast(good ? data.message : (data.message || data.detail || t('actions.errore_sconosciuto')), good ? 'info' : 'error');
+    fetchStatusHttp();
+  } catch (e) {
+    showToast(t('tpl.errore', e.message || e), 'error');
+  }
 }
 
 async function confirmStop(force = false) {
@@ -3232,7 +3267,7 @@ async function saveSettings(e) {
     auto_restart_crash: document.getElementById('cfg-auto-restart-crash').checked,
     crash_retry_delay_seconds: 8,
     max_crashes_in_window: 3,
-    crash_window_seconds: 180,
+    crash_window_seconds: 900,
     require_pin_for_remote: reqPinChk ? reqPinChk.checked : true,
     // Vuoto = lascia quello attuale (undefined non viene inviato)
     push_topic: (pushTopicInput && pushTopicInput.value.trim()) ? pushTopicInput.value.trim() : undefined
@@ -5860,7 +5895,11 @@ function renderMods() {
     const statusLabel = m.enabled ? t('msg.attiva') : t('msg.disattivata');
     const toggleBtnClass = m.enabled ? 'btn-mod-toggle toggle-active' : 'btn-mod-toggle toggle-disabled';
     const toggleBtnText = m.enabled ? t('msg.disattiva') : t('msg.attiva');
-    const dupBadge = m.is_duplicate ? `<span class="badge" style="font-size:0.68rem; padding:1px 6px; background:rgba(245,158,11,0.18); color:#d9a441; border:1px solid rgba(245,158,11,0.35);" title="${th('ui.rilevato_file_multiplo_o_possibile')}">Conflitto/Duplicato</span>` : '';
+    // Con duplicate_with: stessa mod (stesso ID nel .jar) in altri file attivi, che si dicono nel suggerimento
+    const dupTitle = (m.duplicate_with && m.duplicate_with.length)
+      ? th('ui.stessa_mod_anche_in', escapeHtml(m.duplicate_with.join(', ')))
+      : th('ui.rilevato_file_multiplo_o_possibile');
+    const dupBadge = m.is_duplicate ? `<span class="badge" style="font-size:0.68rem; padding:1px 6px; background:rgba(245,158,11,0.18); color:#d9a441; border:1px solid rgba(245,158,11,0.35);" title="${dupTitle}">${th('ui.conflitto_duplicato')}</span>` : '';
 
     const upd = m.update_info || availableModUpdates[m.filename];
     const updBadge = upd ? `<span class="badge" style="font-size:0.68rem; padding:1px 7px; background:rgba(245,158,11,0.2); color:#e3b35a; border:1px solid rgba(245,158,11,0.4);" title="${th('ui.nuova_versione', escapeHtml(upd.version_number), escapeHtml(upd.new_filename))}">${th('msg.aggiornamento_vx', escapeHtml(upd.version_number))}</span>` : '';
@@ -8792,6 +8831,29 @@ function selectServerType(type) {
   }
 }
 
+// RAM del nuovo server: solo quella che il PC può dare, come nelle Impostazioni (prima si potevano scegliere 12 o 16 GB
+// anche su un PC da 8 GB, con 8 GB già selezionati, e il server creato non partiva)
+async function limitInstallRamOptions() {
+  const sel = document.getElementById('forge-inst-ram');
+  if (!sel) return;
+  try {
+    const data = await (await fetch('/api/server/jvm-tuning')).json();
+    const maxGb = Math.max(2, (data.host_ram_gb || 16) - 2);
+    let best = null;
+    for (const opt of Array.from(sel.options)) {
+      const v = parseInt(opt.value, 10);
+      opt.disabled = v > maxGb;
+      if (!opt.disabled && v <= 8) best = opt.value;
+    }
+    if (!best && !Array.from(sel.options).some(o => !o.disabled)) {
+      sel.add(new Option(`${maxGb} GB`, String(maxGb)), 0);   // PC con poca RAM: nessuna delle scelte fisse va bene
+      best = String(maxGb);
+    }
+    const cur = sel.options[sel.selectedIndex];
+    if (!cur || cur.disabled) sel.value = best || Array.from(sel.options).find(o => !o.disabled).value;
+  } catch (e) {}
+}
+
 async function openForgeInstallerModal() {
   if (!isLocalHostClient()) {
     showToast(t('msg.creazione_installazione_nuovo_server_disponibile'), 'warning');
@@ -8827,6 +8889,7 @@ async function openForgeInstallerModal() {
   if (btnCancel) btnCancel.style.display = 'inline-block';
 
   selectServerType('forge');
+  limitInstallRamOptions();
 
   // Fetch prerequisites & versions from backend
   try {
@@ -9516,7 +9579,7 @@ function renderInstancesGrid() {
           `}
           <button class="btn btn-sm btn-secondary" onclick="openEditInstanceModal('${inst.id}')" title="${th('ui.modifica_parametri_istanza')}">${th('files.modifica')}</button>
           ${!isActive && inst.id !== 'default' ? `
-            <button class="btn btn-sm btn-danger-subtle" onclick="deleteInstanceProfile('${inst.id}', '${escapeJsString(inst.name || inst.id)}')" title="${th('msg.rimuovi_istanza')}">${th('msg.rimuovi')}</button>
+            <button class="btn btn-sm btn-danger-subtle" onclick="deleteInstanceProfile('${inst.id}', '${escapeJsAttr(inst.name || inst.id)}')" title="${th('msg.rimuovi_istanza')}">${th('msg.rimuovi')}</button>
           ` : ''}
         </div>
       </div>
@@ -9914,7 +9977,6 @@ function renderFileManagerTable(files) {
     let icon = '<svg class="ui-icon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M3.5 1.5h6l3 3v10h-9z M9.5 1.5v3h3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>';
     if (isDir) icon = '<svg class="ui-icon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M1.5 4.5v8h13v-7H7.2L5.8 4.5z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>';
 
-    const safeRel = escapeJsString(f.rel_path);
     const safeName = escapeHtml(f.name);
 
     return `
@@ -10249,12 +10311,14 @@ function renderStoreResults(hits, totalHits) {
   }
 
   container.innerHTML = hits.map(hit => {
+    // ID e tipo arrivano da Modrinth e finiscono in id e onclick: solo lettere, cifre, - e _
+    hit.project_id = String(hit.project_id || '').replace(/[^A-Za-z0-9_-]/g, '');
     const iconUrl = hit.icon_url || '';
     const title = escapeHtml(hit.title || hit.slug || 'Mod');
     const author = escapeHtml(hit.author || t('msg.anonimo'));
     const desc = escapeHtml(hit.description || t('msg.nessuna_descrizione_fornita'));
     const downloads = formatDownloadCount(hit.downloads || 0);
-    const pType = hit.project_type || 'mod';
+    const pType = String(hit.project_type || 'mod').replace(/[^a-z_-]/g, '') || 'mod';
     const isInstalled = Boolean(hit.is_installed);
     const instInfo = hit.installed_info || {};
     const instFilename = instInfo.filename || '';
@@ -10299,22 +10363,22 @@ function renderStoreResults(hits, totalHits) {
             ${isInstalled ? (
               hasUpdate ? `
                 <div style="display: flex; gap: 6px; align-items: center;">
-                  <button class="btn btn-sm btn-amber store-btn-action" id="btn-upd-${hit.project_id}" onclick="updateStoreProjectFromCatalog('${hit.project_id}', '${escapeJsString(hit.title || hit.slug)}', 'btn-upd-${hit.project_id}')" title="${th('ui.scarica_aggiorna_1_clic_alla', escapeHtml(updateVer || ''))}">
+                  <button class="btn btn-sm btn-amber store-btn-action" id="btn-upd-${hit.project_id}" onclick="updateStoreProjectFromCatalog('${hit.project_id}', '${escapeJsAttr(hit.title || hit.slug)}', 'btn-upd-${hit.project_id}')" title="${th('ui.scarica_aggiorna_1_clic_alla', escapeHtml(updateVer || ''))}">
                     ${th('pc.versions.aggiorna_1_click')}
                   </button>
-                  <button class="btn btn-sm btn-danger-subtle store-btn-action" id="${btnId}" onclick="uninstallStoreProject('${hit.project_id}', '${escapeJsString(hit.title || hit.slug)}', '${escapeJsString(instFilename)}', '${btnId}')" title="${th('msg.disinstalla_questo_file_dal_server')}">
+                  <button class="btn btn-sm btn-danger-subtle store-btn-action" id="${btnId}" onclick="uninstallStoreProject('${hit.project_id}', '${escapeJsAttr(hit.title || hit.slug)}', '${escapeJsAttr(instFilename)}', '${btnId}')" title="${th('msg.disinstalla_questo_file_dal_server')}">
                     ${th('msg.disinstalla')}
                   </button>
                 </div>
               ` : `
                 <div style="display: flex; gap: 6px; align-items: center;">
-                  <button class="btn btn-sm btn-danger-subtle store-btn-action" id="${btnId}" onclick="uninstallStoreProject('${hit.project_id}', '${escapeJsString(hit.title || hit.slug)}', '${escapeJsString(instFilename)}', '${btnId}')" title="${th('msg.disinstalla_questo_file_dal_server')}">
+                  <button class="btn btn-sm btn-danger-subtle store-btn-action" id="${btnId}" onclick="uninstallStoreProject('${hit.project_id}', '${escapeJsAttr(hit.title || hit.slug)}', '${escapeJsAttr(instFilename)}', '${btnId}')" title="${th('msg.disinstalla_questo_file_dal_server')}">
                     ${th('msg.disinstalla')}
                   </button>
                 </div>
               `
             ) : `
-              <button class="btn btn-sm btn-emerald store-btn-action" id="${btnId}" onclick="installStoreProject('${hit.project_id}', '${escapeJsString(hit.title || hit.slug)}', '${pType}', '${btnId}')" title="${th('msg.scarica_installa_nel_server')}">
+              <button class="btn btn-sm btn-emerald store-btn-action" id="${btnId}" onclick="installStoreProject('${hit.project_id}', '${escapeJsAttr(hit.title || hit.slug)}', '${pType}', '${btnId}')" title="${th('msg.scarica_installa_nel_server')}">
                 ${th('msg.installa_1_click')}
               </button>
             `}
@@ -10433,7 +10497,7 @@ async function installStoreProject(projectId, projectTitle, projectType, btnId) 
       if (actionBox) {
         actionBox.innerHTML = `
           <div style="display: flex; gap: 6px; align-items: center;">
-            <button class="btn btn-sm btn-danger-subtle store-btn-action" id="${btnId}" onclick="uninstallStoreProject('${projectId}', '${escapeJsString(projectTitle)}', '${escapeJsString(data.filename || '')}', '${btnId}')" title="${th('msg.disinstalla_questo_file_dal_server')}">
+            <button class="btn btn-sm btn-danger-subtle store-btn-action" id="${btnId}" onclick="uninstallStoreProject('${projectId}', '${escapeJsAttr(projectTitle)}', '${escapeJsAttr(data.filename || '')}', '${btnId}')" title="${th('msg.disinstalla_questo_file_dal_server')}">
               ${th('msg.disinstalla')}
             </button>
           </div>
@@ -10487,7 +10551,7 @@ async function uninstallStoreProject(projectId, projectTitle, filename, btnId) {
       const actionBox = document.getElementById(`action-box-${projectId}`);
       if (actionBox) {
         actionBox.innerHTML = `
-          <button class="btn btn-sm btn-emerald store-btn-action" id="${btnId}" onclick="installStoreProject('${projectId}', '${escapeJsString(projectTitle)}', 'mod', '${btnId}')" title="${th('msg.scarica_installa_nel_server')}">
+          <button class="btn btn-sm btn-emerald store-btn-action" id="${btnId}" onclick="installStoreProject('${projectId}', '${escapeJsAttr(projectTitle)}', 'mod', '${btnId}')" title="${th('msg.scarica_installa_nel_server')}">
             ${th('msg.installa_1_click')}
           </button>
         `;
@@ -10561,7 +10625,7 @@ function renderInstalledStoreList(items) {
     const upd = itm.update_info || availableModUpdates[itm.filename];
     const updBadge = upd ? `<span class="badge badge-amber" style="font-size: 0.68rem; padding: 2px 7px; background: rgba(245,158,11,0.22); color: #e3b35a; border: 1px solid rgba(245,158,11,0.4);" title="${th('ui.nuova_versione', escapeHtml(upd.version_number), escapeHtml(upd.new_filename))}">${th('msg.aggiornamento_vx_2', escapeHtml(upd.version_number))}</span>` : '';
     const updBtn = upd ? `
-      <button class="btn btn-sm btn-amber" onclick="updateStoreProjectFromInstalled('${escapeJsString(itm.filename)}', '${escapeJsString(itm.project_id || '')}', this)" title="${th('ui.scarica_aggiorna_1_clic_alla', escapeHtml(upd.version_number))}">
+      <button class="btn btn-sm btn-amber" onclick="updateStoreProjectFromInstalled('${escapeJsAttr(itm.filename)}', '${escapeJsAttr(itm.project_id || '')}', this)" title="${th('ui.scarica_aggiorna_1_clic_alla', escapeHtml(upd.version_number))}">
         ${th('ui.aggiorna')}
       </button>
     ` : '';
@@ -10588,7 +10652,7 @@ function renderInstalledStoreList(items) {
         <div style="display: flex; gap: 6px; align-items: center;">
           ${infoBtn}
           ${updBtn}
-          <button class="btn btn-sm btn-danger-subtle" onclick="uninstallStoreProject('${escapeJsString(itm.project_id || itm.filename)}', '${escapeJsString(itm.filename)}', '${escapeJsString(itm.filename)}', 'btn-del-inst-${idx}')" id="btn-del-inst-${idx}" title="${th('ui.elimina_questo_file_dal_server')}">
+          <button class="btn btn-sm btn-danger-subtle" onclick="uninstallStoreProject('${escapeJsAttr(itm.project_id || itm.filename)}', '${escapeJsAttr(itm.filename)}', '${escapeJsAttr(itm.filename)}', 'btn-del-inst-${idx}')" id="btn-del-inst-${idx}" title="${th('ui.elimina_questo_file_dal_server')}">
             ${th('msg.disinstalla')}
           </button>
         </div>

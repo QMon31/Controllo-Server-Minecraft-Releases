@@ -201,6 +201,9 @@ def rename_item(base_dir: str, old_rel_path: str, new_name: str) -> Dict[str, An
     old_path = resolve_safe_path(base_dir, old_rel_path)
     if not old_path or not os.path.exists(old_path):
         return {"success": False, "error": "File o cartella di origine non trovata."}
+    # Senza percorso si rinominava la cartella stessa del server (che usciva dal file manager e spariva dal programma)
+    if os.path.abspath(old_path) == os.path.abspath(base_dir):
+        return {"success": False, "error": "Impossibile rinominare la cartella principale del server."}
 
     clean_new_name = os.path.basename(new_name.strip())
     if not clean_new_name or "/" in clean_new_name or "\\" in clean_new_name:

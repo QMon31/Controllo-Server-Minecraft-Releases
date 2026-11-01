@@ -83,14 +83,23 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Novità per telefono (v4.13.3)"
-                android:tag="t:ui.novita_telefono|v4.13.3"
+                android:text="Novità per telefono (v4.13.4)"
+                android:tag="t:ui.novita_telefono|v4.13.4"
                 android:textColor="#f4f4f5"
                 android:textSize="14sp"
                 android:textStyle="bold"
                 android:layout_marginBottom="8dp" />
 
             <!-- CONTENUTO NOVITÀ TELEFONO -->
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Novità (v4.13.4): sicurezza sui Wi-Fi esterni (bar, hotel): l'app riconosce il PC di casa con una prova segreta e non manda più PIN né codice di accesso a un altro dispositivo che risponde all'indirizzo di casa, nemmeno dalla finestra di sblocco; l'impronta del certificato non può più essere sostituita da una risposta in chiaro; il widget non segna più come sbagliato il PIN 1234 rifiutato solo da internet. La prova segreta vale con il programma PC 4.23.0."
+                    android:tag="t:ui.novita_v4_13_4_sicurezza"
+                    android:textColor="#c4c4c8"
+                    android:textSize="12sp"
+                    android:layout_marginBottom="6dp" />
+
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -229,6 +238,16 @@
                 android:background="#0f0f11"
                 android:padding="12dp"
                 android:layout_marginBottom="8dp">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="• v4.13.4 (Build 110):
+PIN e accesso protetti sui Wi-Fi esterni (prova segreta del PC); widget con il PIN 1234 in casa."
+                    android:tag="t:ui.v4_13_4_build_110_sicurezza"
+                    android:textColor="#c4c4c8"
+                    android:textSize="12sp"
+                    android:layout_marginBottom="4dp" />
 
                 <TextView
                     android:layout_width="match_parent"

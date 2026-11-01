@@ -136,7 +136,7 @@
 
       <button class="sidebar-nav-item" id="snav-changelog" onclick="toggleSidebarDrawer(false); openChangelogModal();">
         <span class="snav-icon info-circle-nav-icon">i</span>
-        <span class="snav-label">Info &amp; Versioni (v4.22.6)</span>
+        <span class="snav-label">Info &amp; Versioni (v4.23.0)</span>
       </button>
 
       <button class="sidebar-nav-item" id="snav-settings" onclick="toggleSidebarDrawer(false); openSettingsModal();">
@@ -2001,6 +2001,9 @@
               <p style="font-size: 0.8rem; color: #9a9ca2; margin-bottom: 10px;" data-i18n="ui.spegne_automaticamente_server_minecraft_quando">
                 Spegne automaticamente il server Minecraft quando nessun giocatore è connesso per un tempo prestabilito, liberando 16 GB di RAM e azzerando l'uso della CPU sul PC host.
               </p>
+              <p style="font-size: 0.8rem; color: #9a9ca2; margin-bottom: 10px;" data-i18n="ui.eco_custode_descrizione">
+                Dopo lo spegnimento il server resta visibile nell'elenco dei server di Minecraft come "in pausa": quando un giocatore prova a entrare si avvia da solo, e il giocatore rientra dopo circa un minuto.
+              </p>
               <div class="form-row">
                 <div class="form-group col-half">
                   <label class="checkbox-inline" style="padding-top: 6px;">
@@ -2755,7 +2758,7 @@
           <div class="modal-info-circle-badge">i</div>
           <div>
             <h3 style="margin: 0; font-size: 1.15rem; color: #f4f4f5;" data-i18n="ui.informazioni_novita_cronologia_versioni">Informazioni, Novità &amp; Cronologia Versioni</h3>
-            <span id="changelog-header-badge" style="font-size: 0.75rem; color: #8db6e8; font-weight: 600;">Release Ufficiale v4.22.6 (Build 108) &bull; Attiva</span>
+            <span id="changelog-header-badge" style="font-size: 0.75rem; color: #8db6e8; font-weight: 600;">Release Ufficiale v4.23.0 (Build 109) &bull; Attiva</span>
           </div>
         </div>
         <div style="display: flex; gap: 8px; align-items: center;">
@@ -2771,7 +2774,7 @@
             <div class="row-center">
               <span style="font-size: 1.1rem;"></span>
               <span style="font-size: 0.92rem; font-weight: 700; color: #f4f4f5;" data-i18n="ui.diagnostica_specifiche_sistema">Diagnostica &amp; Specifiche di Sistema</span>
-              <span id="sys-release-badge" class="badge badge-emerald" style="font-size: 0.7rem;">v4.22.6 (Build 108)</span>
+              <span id="sys-release-badge" class="badge badge-emerald" style="font-size: 0.7rem;">v4.23.0 (Build 109)</span>
               <button class="btn btn-xs btn-secondary" onclick="checkPcUpdate(true)" title="Verifica la disponibilità di una nuova versione del programma PC" data-i18n-title="ui.verifica_disponibilita_nuova_versione_programma" data-i18n="ui.controlla_aggiornamenti_programma">Controlla aggiornamenti programma</button>
             </div>
             <div style="display: flex; gap: 6px;">
@@ -2824,7 +2827,7 @@
         <!-- SEZIONE 1: ULTIME NOVITÀ -->
         <h4 style="margin: 0 0 10px; color: #f4f4f5; font-size: 1rem; display: flex; align-items: center; gap: 8px;">
           <span></span>
-          <span>Novità Ultimo Aggiornamento (PC v4.22.6 - Build 108 &bull; App v4.13.3 - Build 109):</span>
+          <span>Novità Ultimo Aggiornamento (PC v4.23.0 - Build 109 &bull; App v4.13.4 - Build 110):</span>
         </h4>
 
         <!-- SOTTOSEZIONE: PC (Visibile solo su PC o in modalità Tutti) -->
@@ -2834,6 +2837,10 @@
             <span data-i18n="ui.novita_pc_server_pannello_desktop">NOVITÀ PER PC (Server &amp; Pannello Desktop):</span>
           </h5>
           <ul style="margin: 0; padding-left: 20px; font-size: 0.85rem; color: #e7e7e9; display: flex; flex-direction: column; gap: 8px;">
+            <li><b><span data-i18n="notes.novita">Novità</span> (v4.23.0)</b><span data-i18n="notes.novita_pc_4230">: Modalità Eco con custode: con il server spento per risparmio, quando un giocatore prova a entrare il server si accende da solo; giocatori Bedrock (Geyser/Floodgate) riconosciuti all'ingresso, all'uscita e in chat; avvio senza Java con un messaggio chiaro.</span></li>
+            <li><b><span data-i18n="notes.correzioni">Correzioni</span> (v4.23.0)</b><span data-i18n="notes.correzioni_pc_4230">: protezione dai crash ripetuti su 15 minuti; un server riagganciato dal pannello ha notifica, conteggio e riavvio automatico dopo un crash e /stop non conta più come crash; il riavvio programmato con avviso si annulla davvero con Arresta; la RAM dei nuovi server non supera quella del PC; la porta di Minecraft sul router resta ricordata; mod doppie riconosciute dall'ID; Java aggiornata trovata subito; i grafici delle ultime 24 ore coprono davvero 24 ore; un ripristino annullato risulta in corso finché il mondo non è rimesso a posto; dopo l'arresto il pannello non torna ONLINE per qualche secondo; sezione Giocatori più leggibile.</span></li>
+            <li><b><span data-i18n="notes.sicurezza">Sicurezza</span> (v4.23.0)</b><span data-i18n="notes.sicurezza_pc_4230">: un titolo di mod nello Store non può più eseguire codice nel pannello; il Launcher apre nel browser solo pagine web; senza PIN chat, errori della console e ultimo crash non si leggono più (nemmeno da internet); telefono e PC Remoti riconoscono il PC Host con una prova segreta, così su un Wi-Fi esterno un pannello finto non riceve più il PIN; il PC Remoto non scambia più la rete di un bar per la rete di casa e lascia la pagina quando cambia rete.</span></li>
+            <li><b><span data-i18n="notes.sicurezza">Sicurezza</span> (v4.13.4)</b><span data-i18n="notes.sicurezza_app_4134">: PIN e codice di accesso protetti sui Wi-Fi esterni (prova segreta del PC, anche dalla finestra di sblocco); l'impronta del certificato non si può più sostituire con una risposta in chiaro; widget con il PIN 1234 in casa.</span></li>
             <li><b><span data-i18n="notes.correzioni">Correzioni</span> (v4.22.6)</b><span data-i18n="notes.controllo_codice_pc_4226">: gestione mod, file di configurazione, pulizia log e cambio server bloccati mentre è in corso un backup o a server acceso; porta in server.properties controllata e allineata anche in modalità testo; nessun file creato nella cartella del programma quando non c'è un server collegato; «Esci» dal Launcher chiude anche il backend già avviato in precedenza.</span></li>
             <li><b><span data-i18n="notes.correzioni">Correzioni</span> (v4.22.5)</b><span data-i18n="notes.controllo_codice_pc_4225">: installazione e disinstallazione dallo Store e modifiche nel File Manager bloccate quando il server o un backup è in corso; controllo delle porte riservate anche all'aggiunta di un server; cartella Cloud Backup controllata e archivi estranei ignorati nell'elenco dei backup; risposte RCON lunghe lette per intero.</span></li>
             <li><b><span data-i18n="notes.sicurezza">Sicurezza</span> (v4.22.4)</b><span data-i18n="notes.controllo_bug_sicurezza_pc_4224">: i PC Remoti accettano solo il certificato del PC Host e non aprono indirizzi sospetti; cambiando il PIN si scollegano tutti gli altri dispositivi; l'accesso da internet chiuso resta chiuso anche dopo un riavvio; con &quot;Richiedi PIN&quot; disattivato in casa il pannello risponde solo all'indirizzo del PC; le porte del pannello non vengono mai aperte sul router; lo Store non può cancellare file fuori dalla cartella del server; i codici QR non passano più da siti esterni.</span></li>

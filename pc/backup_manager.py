@@ -88,6 +88,13 @@ LEGACY_BACKUP_FILENAME = "Backup_Server_Mc.zip"
 KEEP_OLD_BACKUPS = 2
 # Cartella accanto a quella del server dove il ripristino sposta i file che sostituisce o toglie
 RESTORE_SAFETY_SUFFIX = "_prima_del_ripristino"
+# Segno lasciato nella cartella di sicurezza finché il ripristino lavora: se resta (programma chiuso o PC spento a
+# metà), il mondo è in parte del backup e in parte di prima
+RESTORE_MARKER_NAME = ".ripristino_in_corso"
+RESTORE_INTERRUPTED_MSG = ("Ripristino interrotto: il mondo è in parte del backup e in parte di prima. "
+                           "Ripeti il ripristino per completarlo prima di avviare il server.")
+RESTORE_INTERRUPTED_BACKUP_MSG = ("Ripristino interrotto: il mondo è in parte del backup e in parte di prima. Ripeti il "
+                                  "ripristino prima di fare un backup, che altrimenti salverebbe il mondo a metà.")
 
 
 def _norm_dir(path: Optional[str]) -> str:
@@ -325,6 +332,11 @@ class BackupManager:
                     "status": "error",
                     "message": "Un processo di backup è già in corso. Attendi il completamento o clicca Annulla."
                 }
+
+            # Il backup del mondo a metà diventerebbe l'ultimo: ripetendo il ripristino si rimetterebbe quello, e i
+            # backup buoni più vecchi verrebbero tolti dai backup successivi
+            if self.restore_interrupted():
+                return {"status": "error", "message": RESTORE_INTERRUPTED_BACKUP_MSG}
 
             if not is_server_stopped:
                 return {
@@ -785,11 +797,19 @@ class BackupManager:
                 self.cancel_requested = False
             raise
 
+    def _restore_marker_path(self) -> str:
+        return os.path.join(os.path.abspath(self.server_dir) + RESTORE_SAFETY_SUFFIX, RESTORE_MARKER_NAME) if self.server_dir else ""
+
+    def restore_interrupted(self) -> bool:
+        """True se l'ultimo ripristino di questo server non è arrivato alla fine (programma chiuso, PC spento, errore)."""
+        marker = self._restore_marker_path()
+        return bool(marker) and os.path.isfile(marker)
+
     def busy_message(self) -> Optional[str]:
         """Motivo per non avviare il server mentre un backup o un ripristino legge o scrive i suoi file."""
         with self.lock:
             if not self.is_running:
-                return None
+                return RESTORE_INTERRUPTED_MSG if self.restore_interrupted() else None
             restore = self.progress.get("operation") == "restore"
         if restore:
             return "Ripristino in corso: il server si potrà avviare quando sarà finito."
@@ -1007,6 +1027,14 @@ class BackupManager:
             files_done = 0
             failed_files = []
             undo = []   # (file del server, dove è finito quello di prima o None se non c'era): per annullare
+            resume = False
+
+            def _clear_marker():
+                try:
+                    os.remove(self._restore_marker_path())
+                except OSError:
+                    pass
+
             try:
                 with zipfile.ZipFile(src, 'r') as zf:
                     infolist = zf.infolist()
@@ -1036,20 +1064,26 @@ class BackupManager:
                     # è immediato) in <server>_prima_del_ripristino accanto alla cartella del server. Si tiene solo
                     # l'ultima: se si ripristina il backup sbagliato, il mondo di prima è ancora lì.
                     safety_root = server_root + RESTORE_SAFETY_SUFFIX
+                    # Dopo un ripristino interrotto la cartella di sicurezza ha l'unica copia dei file di prima già
+                    # sostituiti: si tiene (prima si cancellava e quei file andavano persi)
+                    resume = os.path.isfile(os.path.join(safety_root, RESTORE_MARKER_NAME))
                     # I file di adesso si spostano (non liberano spazio): il disco del server deve contenere tutto il
                     # backup. Prima con poco spazio i file non scritti restavano solo nella cartella di sicurezza e il
                     # ripristino finiva "con successo" con un mondo a metà
                     needed = int(total_bytes * 1.02) + 64 * 1024 * 1024
                     free = self._free_bytes(os.path.dirname(server_root) or server_root)
                     if free is not None:
-                        free += _tree_size(safety_root)   # la copia del ripristino precedente si cancella
+                        if not resume:
+                            free += _tree_size(safety_root)   # la copia del ripristino precedente si cancella
                         if free < needed:
                             raise RestoreSpaceError(RESTORE_SPACE_MSG.format(round(needed / 1024 ** 3, 1),
                                                                              round(free / 1024 ** 3, 1)))
                     try:
-                        if os.path.isdir(safety_root):
+                        if os.path.isdir(safety_root) and not resume:
                             _remove_tree(safety_root)
-                        os.makedirs(safety_root)
+                        os.makedirs(safety_root, exist_ok=True)
+                        with open(os.path.join(safety_root, RESTORE_MARKER_NAME), "w", encoding="utf-8") as mf:
+                            mf.write(os.path.basename(src))
                     except OSError as se:
                         print(f"[Ripristino] Cartella {safety_root} non creata ({se}): i file vecchi vengono sostituiti")
                         safety_root = None
@@ -1061,6 +1095,10 @@ class BackupManager:
                             return None
                         dst = os.path.join(safety_root, os.path.relpath(path, server_root))
                         try:
+                            if resume and os.path.isfile(dst):
+                                # Lì c'è già la versione di prima: quella nel server è del ripristino interrotto
+                                os.remove(path)
+                                return dst
                             os.makedirs(os.path.dirname(dst), exist_ok=True)
                             try:
                                 os.replace(path, dst)
@@ -1187,6 +1225,7 @@ class BackupManager:
                             except Exception:
                                 pass
 
+                    _clear_marker()
                     elapsed = max(1, int(time.time() - start_time))
                     final_mb = round(done_bytes / (1024 * 1024), 1)
                     avg_speed = round(final_mb / max(0.1, elapsed), 1)
@@ -1220,15 +1259,11 @@ class BackupManager:
                 self._notify_subscribers()
             except InterruptedError:
                 with self.lock:
-                    self.is_running = False
-                    self.cancel_requested = False
-                    self.progress["active"] = False
-                    self.progress["percent"] = 0
-                    self.progress["speed_mb_s"] = 0
-                    self.progress["eta_seconds"] = 0
-                    self.progress["eta_formatted"] = "Annullato"
                     self.progress["status"] = "Ripristino annullato e bloccato dall'utente."
-                # Il mondo torna com'era: prima restava metà del backup e metà del mondo di prima
+                self._notify_subscribers()
+                # Il mondo torna com'era: prima restava metà del backup e metà del mondo di prima. is_running resta vero
+                # finché i file non sono a posto: prima diventava falso subito e in quei secondi si potevano avviare il
+                # server o un altro backup con il mondo ancora a metà
                 rolled_back = True
                 for dest, aside in reversed(undo):
                     try:
@@ -1239,9 +1274,22 @@ class BackupManager:
                     except OSError as re_err:
                         rolled_back = False
                         print(f"[Ripristino] {dest} non rimesso com'era: {re_err}")
+                # Dopo un ripristino interrotto annullare rimette solo i file toccati adesso: il mondo resta a metà
+                if rolled_back and not resume:
+                    _clear_marker()
                 with self.lock:
-                    self.progress["status"] = RESTORE_CANCELLED_MSG if rolled_back else RESTORE_CANCELLED_PARTIAL_MSG
+                    if resume:
+                        self.progress["status"] = RESTORE_INTERRUPTED_MSG
+                    else:
+                        self.progress["status"] = RESTORE_CANCELLED_MSG if rolled_back else RESTORE_CANCELLED_PARTIAL_MSG
                     self.progress["error"] = "Operazione annullata dall'utente."
+                    self.progress["active"] = False
+                    self.progress["percent"] = 0
+                    self.progress["speed_mb_s"] = 0
+                    self.progress["eta_seconds"] = 0
+                    self.progress["eta_formatted"] = "Annullato"
+                    self.cancel_requested = False
+                    self.is_running = False
                 self._notify_subscribers()
             except Exception as e:
                 with self.lock:
