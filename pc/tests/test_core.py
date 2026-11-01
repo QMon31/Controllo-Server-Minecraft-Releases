@@ -12,6 +12,7 @@ import shutil
 import sys
 import tempfile
 import time
+import threading
 import zipfile
 import types
 import urllib.parse
@@ -1918,6 +1919,13 @@ class StoreInstallVersionTest(unittest.TestCase):
         self.assertEqual(len(self.urls), 1)                  # prima seguiva una seconda richiesta senza filtri
         self.assertEqual(os.listdir(os.path.join(self.srv, "mods")), [])
 
+    def test_install_stays_in_mods_or_plugins(self):
+        # Prima target_subdir "../.." creava la cartella e metteva il .jar fuori dalla cartella del server
+        self._fake([])
+        self.ms.install_modrinth_project("x", self.srv, loader="forge", version="1.20.1", target_subdir="../fuori")
+        self.assertFalse(os.path.exists(os.path.join(self.d, "fuori")))
+        self.assertTrue(os.path.isdir(os.path.join(self.srv, "mods")))
+
     def test_loader_families(self):
         self._fake([])
         self.ms.install_modrinth_project("x", self.srv, loader="quilt", version="1.21.4")
@@ -2123,6 +2131,53 @@ class CodeAuditFixesTest(unittest.TestCase):
             with self.assertRaises(HTTPException) as ctx_open:
                 app_mod.api_open_server_folder(None)
             self.assertEqual(ctx_open.exception.status_code, 400)
+
+    def test_restore_end_is_not_announced_as_backup(self):
+        # Prima alla fine di un ripristino il telefono riceveva "Backup Server Completato!"
+        import app as app_mod
+        sent = []
+        with mock.patch.object(app_mod.manager, "send_push_notification", side_effect=lambda **k: sent.append(k)), \
+                mock.patch.object(app_mod.manager, "add_log"), \
+                mock.patch.object(app_mod, "active_websockets", []):
+            app_mod.broadcast_backup_to_ws({"operation": "restore", "active": False, "percent": 100,
+                                            "completed_at": "01/11/2026 10:00:01", "processed_mb": 50})
+            app_mod.broadcast_backup_to_ws({"operation": "backup", "active": False, "percent": 100,
+                                            "completed_at": "01/11/2026 10:05:02", "processed_mb": 50})
+        self.assertEqual([s["title"] for s in sent], ["Ripristino Completato!", "Backup Server Completato!"])
+        self.assertEqual(sent[0]["message"], app_mod.RESTORE_DONE_MSG)
+        with open(os.path.join(ROOT, "static", "app.js"), encoding="utf-8") as f:
+            self.assertIn("bData.operation === 'restore'", f.read())
+
+    def test_whitelist_and_ban_report_command_not_sent_when_online(self):
+        # Server riagganciato con RCON spento: prima il pannello rispondeva "aggiunto/bannato" senza averlo fatto
+        from fastapi import HTTPException
+        import app as app_mod
+        from routes import players as players_routes
+        failed = {"status": "error", "message": "RCON non risponde."}
+        with tempfile.TemporaryDirectory() as td:
+            w_path = os.path.join(td, "whitelist.json")
+            with open(w_path, "w", encoding="utf-8") as f:
+                json.dump([{"uuid": "u", "name": "Steve"}], f)
+            with mock.patch("routes.players.verify_admin_access"), \
+                    mock.patch.object(app_mod.manager, "state", "ONLINE"), \
+                    mock.patch.object(app_mod.backup_mgr, "is_running", False), \
+                    mock.patch.object(app_mod.manager, "config", {**app_mod.manager.config, "server_dir": td}), \
+                    mock.patch.object(app_mod.manager, "send_command", return_value=failed) as send:
+                for call in (lambda: players_routes.api_whitelist_add(app_mod.PlayerActionRequest(player="Alex"), None),
+                             lambda: players_routes.api_ban_player(app_mod.PlayerActionRequest(player="Alex"), None)):
+                    with self.assertRaises(HTTPException) as ctx:
+                        call()
+                    self.assertEqual(ctx.exception.status_code, 503)
+                    self.assertIn("RCON non risponde.", ctx.exception.detail)
+                with self.assertRaises(HTTPException) as ctx_rm:
+                    players_routes.api_whitelist_remove(app_mod.PlayerActionRequest(player="Steve"), None)
+                self.assertEqual(ctx_rm.exception.status_code, 503)
+                with open(w_path, encoding="utf-8") as f:
+                    self.assertEqual(json.load(f), [])   # il file è comunque aggiornato
+                send.return_value = {"status": "success", "message": "ok"}
+                with mock.patch("routes.players._console_replied", return_value=False):
+                    self.assertEqual(players_routes.api_whitelist_add(
+                        app_mod.PlayerActionRequest(player="Alex"), None)["status"], "success")
 
     def test_save_server_properties_validates_raw_port_and_syncs_port_and_blocks_backup(self):
         from fastapi import HTTPException
@@ -2396,6 +2451,26 @@ class SettingsDirAndInterruptedRestoreTest(unittest.TestCase):
             # Comando di un .jar che non c'è: resta l'avvio standard di server.jar
             m.config["server_command"] = "java -Xmx3G -jar non_esiste.jar nogui"
             self.assertEqual(m.get_launch_command(), ["java", "-Xmx4G", "-Xms2G", "-jar", "server.jar", "nogui"])
+
+    def test_launch_script_variables_are_expanded(self):
+        # "set RAM=6G" e poi "java -Xmx%RAM% ...": prima a Java arrivava "-Xmx%RAM%" e il server non partiva
+        import server_manager as sm
+        import platform_utils as pu
+        with tempfile.TemporaryDirectory() as td:
+            bat = os.path.join(td, "start.bat")
+            with open(bat, "w", encoding="utf-8") as f:
+                f.write('@echo off\nset RAM=6G\nset "JAR=paper 1.21.jar"\njava -Xms%ram% -Xmx%RAM% -jar "%JAR%" nogui\npause\n')
+            m = sm.ServerManager(config_path=os.path.join(td, "config.json"))
+            m.config.update({"server_dir": td, "server_run_bat": bat, "server_command": ""})
+            with mock.patch.object(m, "_find_run_bat", return_value=bat):
+                self.assertEqual(m.get_launch_command(), ["java", "-Xms6G", "-Xmx6G", "-jar", "paper 1.21.jar", "nogui"])
+                # Variabile che si conosce solo eseguendo lo script: lo si esegue, invece di passare "%X%" a Java
+                with open(bat, "w", encoding="utf-8") as f:
+                    f.write("for /f %%i in (ram.txt) do set RAM=%%i\njava -Xmx%MEM_SCONOSCIUTA% -jar server.jar\n")
+                self.assertEqual(m.get_launch_command(), pu.script_fallback_command(bat))
+        self.assertEqual(pu.expand_script_variables("java -Xmx${RAM} -jar $JAR", {"RAM": "4G", "JAR": "s.jar"}, False),
+                         "java -Xmx4G -jar s.jar")
+        self.assertEqual(pu.script_variable('RAM="8G"', False), ("RAM", "8G"))
 
     def test_failed_restart_does_not_stay_restarting(self):
         import server_manager as sm
@@ -2755,7 +2830,11 @@ class AttachedServerExitTest(unittest.TestCase):
         for p in patches:
             p.start()
             self.addCleanup(p.stop)
+        # Porta libera e custode chiuso alla fine: prima il custode restava aperto sulla 32769 predefinita (quella del
+        # server vero) e il pannello installato vedeva per qualche secondo un server acceso a ogni esecuzione dei test
+        m.config["server_port"] = _free_port()
         m.running = True
+        self.addCleanup(m._end_eco_sleep)
         self.addCleanup(setattr, m, "running", False)
         if attached:
             threading.Thread(target=m._monitor_attached_proc, args=(proc,), daemon=True).start()
@@ -2895,6 +2974,56 @@ class LatePingAfterStopTest(unittest.TestCase):
                 with mock.patch.object(sm, "query_server_status", return_value=online):
                     m._background_slp_query(25565)
                 self.assertEqual(m.state, "STOPPED")
+
+    def test_server_started_outside_panel_is_fully_attached(self):
+        # Prima il ping prendeva solo il processo: console vuota e un crash era "segnato come spento"
+        import server_manager as sm
+        with tempfile.TemporaryDirectory() as td:
+            m = sm.ServerManager(config_path=os.path.join(td, "config.json"))
+            m.running = False
+            m.intentional_stop = True   # arresto di prima dal pannello
+            proc = mock.Mock(pid=4242, is_running=lambda: True, create_time=lambda: 1.0)
+            online = {"online": True, "players_online": 0, "players_sample": []}
+            m.state = "STOPPED"
+            with mock.patch.object(m, "_find_running_minecraft_proc", return_value=proc), \
+                    mock.patch.object(sm, "query_server_status", return_value=online), \
+                    mock.patch.object(m, "_start_log_tailing") as tail, \
+                    mock.patch.object(sm.threading, "Thread") as th:
+                m._background_slp_query(25565)
+            self.assertEqual(m.state, "ONLINE")
+            self.assertIs(m.psutil_proc, proc)
+            tail.assert_called_once()
+            self.assertTrue(any(c.kwargs.get("target") == m._monitor_attached_proc for c in th.call_args_list))
+            self.assertFalse(m.intentional_stop)
+
+
+class LogTailAfterCrashTest(unittest.TestCase):
+    def test_tailer_stops_after_crash_and_follows_restarted_log(self):
+        import server_manager as sm
+        with tempfile.TemporaryDirectory() as td:
+            os.makedirs(os.path.join(td, "logs"))
+            log = os.path.join(td, "logs", "latest.log")
+            with open(log, "w", encoding="utf-8") as f:
+                f.write("riga vecchia lunga lunga lunga\n")
+            m = sm.ServerManager(config_path=os.path.join(td, "config.json"))
+            m.config["server_dir"] = td
+            alive = [True]
+            m.psutil_proc = mock.Mock(is_running=lambda: alive[0])
+            m.state = "ONLINE"
+            m._log_tail_active = True
+            t = threading.Thread(target=m._tail_log_worker, daemon=True)
+            t.start()
+            time.sleep(0.5)
+            with open(log, "w", encoding="utf-8") as f:   # Minecraft riparte con un registro nuovo, più corto
+                f.write("nuova\n")
+            time.sleep(1.0)
+            self.assertTrue(any(l.endswith("nuova") for l in m.log_buffer))
+            alive[0] = False
+            m.state = "CRASHED"
+            t.join(timeout=3)
+            m.running = False
+            self.assertFalse(t.is_alive())
+            self.assertFalse(m._log_tail_active)
 
 
 class JavaMissingTest(unittest.TestCase):
@@ -3101,11 +3230,13 @@ class EcoWakeTest(unittest.TestCase):
         w = eco_wake.EcoWakeListener(port, "", lambda n: names.append(n) or (eco_wake.BLOCKED_TEXT, False))
         w.start()
         try:
-            _mc_login(port, "Alice\n[Pannello] riga falsa")
-            _mc_login(port, "Bob_99")
+            self.assertEqual(_mc_login(port, "Alice\n[Pannello] riga falsa"), eco_wake.BLOCKED_TEXT)
+            self.assertEqual(_mc_login(port, ""), eco_wake.BLOCKED_TEXT)
+            self.assertEqual(_mc_login(port, "nome con spazi"), eco_wake.BLOCKED_TEXT)
+            _mc_login(port, "Mario.Rossi")   # launcher senza account: nome valido anche per Minecraft
         finally:
             w.stop()
-        self.assertEqual(names, ["?", "Bob_99"])
+        self.assertEqual(names, ["Mario.Rossi"])   # senza un nome valido il server non si accende
 
     def test_ping_answered_by_custode_ignored(self):
         import server_manager as sm
@@ -3130,7 +3261,11 @@ class EcoWakeTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             srv = os.path.join(td, "s")
             os.makedirs(srv)
+            with open(os.path.join(srv, "server.properties"), "w", encoding="utf-8") as f:
+                f.write(f"server-port={_free_port()}\n")   # mai la 32769 del server vero
             m = sm.ServerManager(config_path=os.path.join(td, "config.json"))
+            m.running = False
+            self.addCleanup(m._end_eco_sleep)
             m.config["server_dir"] = srv
             m.eco_mode_enabled, m.state = True, "STOPPED"
 

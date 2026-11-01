@@ -25,7 +25,8 @@ import psutil
 from mc_ping import query_server_status
 from eco_wake import BLOCKED_TEXT as ECO_BLOCKED_TEXT, STARTING_TEXT as ECO_STARTING_TEXT, EcoWakeListener
 from platform_utils import (IS_WINDOWS, LAUNCH_SCRIPT, LAUNCH_SCRIPT_CANDIDATES, split_java_line, script_fallback_command,
-                            is_java_line, java_token_end, refresh_path_from_system,
+                            is_java_line, java_token_end, refresh_path_from_system, script_variable,
+                            expand_script_variables,
                             read_json_with_backup, write_json_atomic, write_text_atomic)
 
 # Processi figli (java, jcmd, run.bat) senza finestra: il pannello gira senza console, quindi ogni processo
@@ -153,6 +154,9 @@ JAVA_NOT_FOUND_MSG = ("Java non trovata sul PC: installa la versione richiesta d
                       "e riprova, senza riaprire il programma.")
 
 ECO_SLEEP_ENDED_MSG = "Server in pausa fermato: resta spento e non si avvierà da solo finché non lo avvii tu."
+RESTART_ALREADY_MSG = "Riavvio già in corso."
+STOP_NOT_SENT_MSG = ("Arresto annullato: il comando stop non è arrivato a Minecraft ({0}). Il server resta acceso: "
+                     "chiudilo dalla sua finestra oppure usa l'arresto forzato.")
 
 # Avvisi in chat prima del riavvio programmato: segno in warning_sent_flags -> secondi mancanti
 RESTART_WARNING_SECONDS = {"w15m": 900, "w10m": 600, "w5m": 300, "w2m": 120, "w1m": 60, "w30s": 30}
@@ -160,14 +164,17 @@ RESTART_WARNING_SECONDS = {"w15m": 900, "w10m": 600, "w5m": 300, "w2m": 120, "w1
 
 class ServerManager:
     # Pre-compiled regex patterns for log parsing performance
-    _RE_SERVER_READY = re.compile(r'Done \([0-9.]+s\)! For help, type "help"')
+    # Anche con la virgola: fino alla 1.12 il tempo si scrive nella lingua del PC ("Done (12,345s)!" in italiano)
+    _RE_SERVER_READY = re.compile(r'Done \([0-9.,]+s\)! For help, type "help"')
     _RE_SERVER_READY2 = re.compile(r'Time elapsed: [0-9.]+ ms')
     _RE_SERVER_READY3 = re.compile(r'Listening on \/0\.0\.0\.0:[0-9]+')
     # Intestazione di una riga INFO, dall'inizio della riga fino al testo del messaggio: "[12:00:00] [Server thread/INFO]: "
     # (Vanilla), "[...] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: " (Forge), "[...] [Server
     # thread/INFO] (Minecraft) " (Fabric) o "[14:15:16 INFO]: " (console di Paper). Legata all'inizio della riga: prima
     # bastava scrivere in chat "x: Alice joined the game" o "Disconnecting Alice" per far entrare o uscire Alice
-    _INFO = (r'^(?:\[[^\]]*\] )?(?:\[Server thread/INFO\]|\[\d{1,2}:\d{2}:\d{2} INFO\])'
+    # Anche "[Async Chat Thread - #0/INFO]": in latest.log di Paper la chat arriva da lì (server riagganciato: prima
+    # la chat dei giocatori non compariva nel pannello)
+    _INFO = (r'^(?:\[[^\]]*\] )?(?:\[(?:Server thread|Async Chat Thread - #\d+)/INFO\]|\[\d{1,2}:\d{2}:\d{2} INFO\])'
              r'(?: \[[^\]]*\])*(?:: | \([^)]*\) )')
     # Nome del giocatore, anche Bedrock (Geyser/Floodgate: ".Steve" o "*Steve"): prima questi non risultavano mai entrati
     _NAME = r'([.*]?\w+)'
@@ -198,6 +205,9 @@ class ServerManager:
 
     # Secondi concessi a Minecraft per salvare e chiudersi dopo "stop", prima della chiusura forzata
     STOP_TIMEOUT_SECONDS = 180
+    # Comando stop non inviato (es. server riagganciato con RCON spento): secondi in cui si guarda se Minecraft si
+    # chiude lo stesso (la risposta RCON a "stop" può perdersi anche se il comando è arrivato)
+    STOP_CONFIRM_SECONDS = 20
 
     def __init__(self, config_path: str = DEFAULT_CONFIG_PATH):
         self.config_path = config_path
@@ -496,8 +506,15 @@ class ServerManager:
                             self.add_log(s)
                             self._parse_log_line(s)
                     else:
-                        if not is_active and self.state == "STOPPED":
+                        # Anche dopo un crash: prima il lettore restava sul latest.log vecchio e, riavviato il server
+                        # fuori dal pannello, il nuovo aggancio non ne apriva un altro (console vuota)
+                        if not is_active and self.state in ("STOPPED", "CRASHED"):
                             break
+                        try:
+                            if os.path.getsize(log_file) < f.tell():
+                                f.seek(0)   # file ricominciato da capo (registro nuovo di Minecraft)
+                        except OSError:
+                            pass
                         time.sleep(0.3)
         except Exception:
             pass
@@ -547,6 +564,9 @@ class ServerManager:
     def _attach_running_process(self, proc: psutil.Process):
         with self.lock:
             self._mc_stop_seen = self._mc_crash_seen = False
+            self._running_port = self.get_server_port()
+            # Un arresto di prima dal pannello non vale per questo processo: un suo crash era preso per uno stop voluto
+            self.intentional_stop = False
             self.psutil_proc = proc
             self.state = "ONLINE"
             self.auto_restart_paused = False
@@ -853,6 +873,15 @@ class ServerManager:
         except Exception as e:
             return {"status": "error", "message": f"Errore nel salvataggio: {e}"}
 
+    _running_port: Optional[int] = None   # porta con cui è partito il server acceso (vedi listening_port)
+
+    def listening_port(self) -> int:
+        """Porta su cui Minecraft è in ascolto adesso. Cambiata la porta a server acceso, vale dal prossimo avvio:
+        prima ping, router e indirizzo da copiare passavano subito alla nuova e gli amici da internet non entravano più."""
+        if self._running_port and self.state in ("STARTING", "ONLINE", "STOPPING", "RESTARTING"):
+            return self._running_port
+        return self.get_server_port()
+
     def get_server_port(self) -> int:
         server_dir = self.config.get("server_dir", "")
         props_path = os.path.join(server_dir, "server.properties") if server_dir else ""
@@ -1011,11 +1040,20 @@ class ServerManager:
         c_bat = self._find_run_bat()
         if c_bat:
             try:
+                windows = not c_bat.lower().endswith(".sh")
+                variables: Dict[str, str] = {}
                 with open(c_bat, "r", encoding="utf-8", errors="ignore") as f:
                     for line in f:
                         s = line.strip()
-                        if is_java_line(s):
-                            return split_java_line(s, server_dir)
+                        var = script_variable(s, windows)
+                        if var:
+                            variables[var[0]] = var[1]
+                        elif is_java_line(s):
+                            # "set RAM=6G" e poi "java -Xmx%RAM% ...": prima a Java arrivava "-Xmx%RAM%"
+                            expanded = expand_script_variables(s, variables, windows)
+                            if expanded is None:
+                                break   # variabile che si conosce solo eseguendo lo script: lo esegue cmd
+                            return split_java_line(expanded, server_dir)
             except Exception:
                 pass
             return script_fallback_command(c_bat)
@@ -1062,6 +1100,7 @@ class ServerManager:
 
             # Check if the server port is already listening
             port = self.get_server_port()
+            self._running_port = port
             slp = query_server_status(host="127.0.0.1", port=port, timeout=0.5)
             if slp.get("online"):
                 self.state = "ONLINE"
@@ -1352,7 +1391,9 @@ class ServerManager:
             time.sleep(1)
             self.send_command("save-all")
             time.sleep(2)
-            self.send_command("stop")
+            stop_res = self.send_command("stop")
+            if stop_res.get("status") == "error" and self._stop_not_delivered(stop_res.get("message") or ""):
+                return
 
             # Attesa fino a STOP_TIMEOUT_SECONDS: un server con molte mod o un mondo grande può metterci più di
             # un minuto a salvare. Prima dopo 25 s si chiudeva a forza, anche a metà del salvataggio del mondo.
@@ -1410,6 +1451,26 @@ class ServerManager:
                 if self.state == "STOPPING" and not alive:
                     self.state = "STOPPED"
 
+    def _stop_not_delivered(self, error: str) -> bool:
+        """Comando stop non partito: prima dopo STOP_TIMEOUT_SECONDS il server veniva chiuso a forza senza aver
+        salvato il mondo (anche dalla Modalità Eco e dal riavvio programmato). Se entro STOP_CONFIRM_SECONDS
+        Minecraft non si chiude e non scrive "Stopping server", l'arresto si annulla e il server resta acceso."""
+        for _ in range(self.STOP_CONFIRM_SECONDS):
+            alive = (self.process and self.process.poll() is None) or                     (self.psutil_proc and self.psutil_proc.is_running())
+            if not alive or self._mc_stop_seen:
+                return False
+            time.sleep(1)
+        with self.lock:
+            if self._mc_stop_seen:
+                return False
+            self.state = "ONLINE"
+            self.intentional_stop = False
+            self.scheduled_restart_in_progress = False
+            self.server_empty_since = None
+            self._end_eco_sleep()
+            self.add_log(f"[Pannello/WARN] {STOP_NOT_SENT_MSG.format(error)}")
+        return True
+
     @staticmethod
     def _proc_alive(p) -> bool:
         try:
@@ -1430,6 +1491,13 @@ class ServerManager:
                 else:
                     return self.start_server()
 
+            if self.scheduled_restart_in_progress or self.state in ("STOPPING", "RESTARTING"):
+                # Secondo Riavvia (o "riavvia" in chat) durante il conto alla rovescia: prima partivano due conti e
+                # due arresti sullo stesso server, con gli avvisi doppi in chat. Durante un arresto lo trasforma in
+                # riavvio (lo avvia l'arresto già in corso, alla fine); in RESTARTING il riavvio sta già partendo
+                if self.state == "STOPPING":
+                    self.scheduled_restart_in_progress = True
+                return {"status": "success", "message": RESTART_ALREADY_MSG}
             self.scheduled_restart_in_progress = True
             self.intentional_stop = True
 
@@ -1545,21 +1613,28 @@ class ServerManager:
 
         # Check for smart commands first
         t_lower = text.lower()
-        if t_lower in ("giorno", "fai giorno", "metti giorno", "/time set day"):
-            self.send_command("time set day")
-            reply = "Orario impostato su giorno." if is_online else "Server offline: comando non inviato."
-        elif t_lower in ("notte", "fai notte", "metti notte", "/time set night"):
-            self.send_command("time set night")
-            reply = "Orario impostato su notte." if is_online else "Server offline: comando non inviato."
-        elif t_lower in ("sole", "bel tempo", "metti sole", "metti sereno", "/weather clear"):
-            self.send_command("weather clear")
-            reply = "Meteo impostato su sereno." if is_online else "Server offline: comando non inviato."
-        elif t_lower in ("pioggia", "metti pioggia", "/weather rain"):
-            self.send_command("weather rain")
-            reply = "Meteo impostato su pioggia." if is_online else "Server offline: comando non inviato."
-        elif t_lower in ("salva", "salva tutto", "salvataggio", "/save-all"):
-            self.send_command("save-all")
-            reply = "Salvataggio forzato del mondo avviato." if is_online else "Server offline: nessun salvataggio necessario."
+        smart = (
+            (("giorno", "fai giorno", "metti giorno", "/time set day"), "time set day",
+             "Orario impostato su giorno.", "Server offline: comando non inviato."),
+            (("notte", "fai notte", "metti notte", "/time set night"), "time set night",
+             "Orario impostato su notte.", "Server offline: comando non inviato."),
+            (("sole", "bel tempo", "metti sole", "metti sereno", "/weather clear"), "weather clear",
+             "Meteo impostato su sereno.", "Server offline: comando non inviato."),
+            (("pioggia", "metti pioggia", "/weather rain"), "weather rain",
+             "Meteo impostato su pioggia.", "Server offline: comando non inviato."),
+            (("salva", "salva tutto", "salvataggio", "/save-all"), "save-all",
+             "Salvataggio forzato del mondo avviato.", "Server offline: nessun salvataggio necessario."),
+        )
+        match = next((m for m in smart if t_lower in m[0]), None)
+        if match:
+            sent = self.send_command(match[1])
+            # Prima "fatto" anche se il comando non partiva (server riagganciato con RCON spento)
+            if not is_online:
+                reply = match[3]
+            elif sent.get("status") == "error":
+                reply = f"Comando non inviato: {sent.get('message')}"
+            else:
+                reply = match[2]
         # Solo la frase esatta: prima "riavviamo dopo cena?" o "riavviate il gioco" riavviavano (o accendevano) il server
         elif t_lower in ("riavvia", "riavvia server", "riavvia il server"):
             if is_online:
@@ -1570,8 +1645,13 @@ class ServerManager:
                 reply = "Avvio del server in corso..."
         elif text.startswith("/"):
             # Raw command
-            self.send_command(text)
-            reply = f"Comando '{text}' inviato al server." if is_online else "Server offline: comando non eseguito."
+            sent = self.send_command(text)
+            if not is_online:
+                reply = "Server offline: comando non eseguito."
+            elif sent.get("status") == "error":
+                reply = f"Comando non inviato: {sent.get('message')}"
+            else:
+                reply = f"Comando '{text}' inviato al server."
         else:
             # Plain chat message to the players in-game!
             if is_online:
@@ -1966,7 +2046,7 @@ class ServerManager:
         time.sleep(delay)
         for _ in range(15):
             existing = self._find_running_minecraft_proc()
-            port = self.get_server_port()
+            port = self.listening_port()
             slp = query_server_status(host="127.0.0.1", port=port, timeout=0.3)
             if not existing and not slp.get("online"):
                 break
@@ -2099,6 +2179,12 @@ class ServerManager:
                                 )
                 else:
                     self.low_tps_start_time = None
+            elif self.state != "ONLINE":
+                # TPS e inizio del calo di prima del crash o dell'arresto: prima restavano e appena il server tornava
+                # acceso l'Anti-Lag scattava subito (pulizia degli oggetti e avviso "calo a 6 TPS") con TPS sbagliati
+                self.low_tps_start_time = None
+                self.current_tps = 20.0
+                self.last_tps_drop_time = 0.0
 
             self._eco_wake_tick()
 
@@ -2107,7 +2193,7 @@ class ServerManager:
                 state["query_counter"] = 0
                 # Con il custode sulla porta risponderebbe lui al ping e il server sembrerebbe acceso
                 if self.eco_wake is None:
-                    port = self.get_server_port()
+                    port = self.listening_port()
                     threading.Thread(target=self._background_slp_query, args=(port,), daemon=True).start()
 
             self._record_metrics_snapshot()
@@ -2223,13 +2309,18 @@ class ServerManager:
                 self.crash_countdown = 0
                 if not self.psutil_proc or not self.psutil_proc.is_running():
                     existing = self._find_running_minecraft_proc()
-                    if existing:
+                    if existing and no_process and self.state == "ONLINE":
+                        # Server avviato fuori dal pannello mentre il pannello era aperto: agganciato come all'avvio
+                        # del programma. Prima si prendeva solo il processo: console vuota e, a un crash, solo
+                        # "segnato come spento" (niente notifica né riavvio automatico)
+                        self._attach_running_process(existing)
+                    elif existing:
                         self.psutil_proc = existing
                         try:
                             self.start_time = existing.create_time()
                         except Exception:
                             pass
-                
+
                 online_cnt = res.get("players_online", 0)
                 sample = res.get("players_sample", [])
                 
@@ -2643,6 +2734,9 @@ class ServerManager:
         }
         total_files = 0
         cleanable_count = 0
+        # Cartella del mondo da level-name (anche _nether e _the_end dei server Paper): prima solo "world", e con un
+        # altro nome il mondo finiva in "Altro" e "Mondo" segnava 0 MB
+        level = (self._read_properties().get("level-name") or "world").strip().replace("\\", "/").strip("/").lower() or "world"
 
         for root, dirs, files in os.walk(s_dir):
             total_files += len(files)
@@ -2654,7 +2748,7 @@ class ServerManager:
                     sz = 0
                 categories["total"] += sz
                 rel = os.path.relpath(fp, s_dir).lower().replace('\\', '/')
-                if rel.startswith("world/") or rel.startswith("world_"):
+                if rel.startswith(level + "/") or rel.startswith(level + "_"):
                     categories["world"] += sz
                 elif rel.startswith("mods/"):
                     categories["mods"] += sz

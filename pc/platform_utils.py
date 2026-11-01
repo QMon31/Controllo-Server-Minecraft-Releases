@@ -7,12 +7,13 @@ Qui ci sono anche i salvataggi sicuri dei file (write_text_atomic / write_json_a
 
 import json
 import os
+import re
 import shlex
 import shutil
 import stat
 import threading
 import time
-from typing import Any, Callable, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 IS_WINDOWS = os.name == "nt"
 
@@ -250,6 +251,46 @@ def split_java_line(line: str, server_dir: str = "") -> List[str]:
             if os.path.isfile(os.path.join(server_dir, unix)):
                 parts[i] = "@" + unix
     return parts
+
+
+_RE_BAT_SET = re.compile(r'^@?set\s+"?([A-Za-z_]\w*)=(.*?)"?\s*$', re.IGNORECASE)
+_RE_SH_SET = re.compile(r'^(?:export\s+)?([A-Za-z_]\w*)=(.*)$')
+
+
+def script_variable(line: str, windows: bool = IS_WINDOWS) -> Optional[tuple]:
+    """(nome, valore) se la riga dello script imposta una variabile ("set RAM=6G" in run.bat, "RAM=6G" in run.sh)."""
+    s = line.strip()
+    m = (_RE_BAT_SET if windows else _RE_SH_SET).match(s)
+    if not m:
+        return None
+    value = m.group(2).strip()
+    if not windows and len(value) >= 2 and value[0] == value[-1] and value[0] in "'\"":
+        value = value[1:-1]
+    return m.group(1), value
+
+
+def expand_script_variables(line: str, variables: Dict[str, str], windows: bool = IS_WINDOWS) -> Optional[str]:
+    """Riga java con le variabili impostate prima nello script (%RAM% / $RAM / ${RAM}). Prima arrivavano a Java
+    così com'erano ("-Xmx%RAM%") e il server non partiva. None se resta una variabile che non si conosce."""
+    if windows:
+        low = {k.lower(): v for k, v in variables.items()}
+        pattern = re.compile(r'%([A-Za-z_]\w*)%')
+        known = lambda n: n.lower() in low or n in os.environ
+        value = lambda n: low.get(n.lower(), os.environ.get(n, ""))
+    else:
+        pattern = re.compile(r'\$\{([A-Za-z_]\w*)\}|\$([A-Za-z_]\w*)')
+        known = lambda n: n in variables or n in os.environ
+        value = lambda n: variables.get(n, os.environ.get(n, ""))
+    missing = []
+
+    def sub(m):
+        name = next(g for g in m.groups() if g)
+        if not known(name):
+            missing.append(name)
+            return m.group(0)
+        return value(name)
+    out = pattern.sub(sub, line)
+    return None if missing else out
 
 
 def script_fallback_command(script: str) -> List[str]:

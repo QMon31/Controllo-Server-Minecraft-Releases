@@ -299,6 +299,7 @@ def on_remote_url_changed(url: str):
 remote_access.url_subscribers.append(on_remote_url_changed)
 
 _last_backup_notified_timestamp = None
+RESTORE_DONE_MSG = "Ripristino del backup completato con successo: il server si può avviare."
 
 def broadcast_backup_to_ws(backup_item: dict):
     global _last_backup_notified_timestamp
@@ -317,11 +318,15 @@ def broadcast_backup_to_ws(backup_item: dict):
             cloud_str = " (Sincronizzato su Cloud)" if backup_item.get("cloud_synced") else ""
             elapsed_fmt = f" in {elapsed}s" if elapsed > 0 else ""
             msg = f"Il backup del server Minecraft da {size_mb} MB è terminato con successo{elapsed_fmt}!{cloud_str}"
+            title = "Backup Server Completato!"
+            if backup_item.get("operation") == "restore":
+                # Prima anche alla fine di un ripristino arrivava "Backup Server Completato!"
+                msg, title = RESTORE_DONE_MSG, "Ripristino Completato!"
             if hasattr(manager, 'add_log'):
                 manager.add_log(f"[Backup] {msg}")
             if hasattr(manager, 'send_push_notification'):
                 manager.send_push_notification(
-                    title="Backup Server Completato!",
+                    title=title,
                     message=msg,
                     priority="high",
                     tags="white_check_mark,package,backup"
@@ -731,12 +736,13 @@ def sync_minecraft_port(force: bool = False) -> Optional[Dict[str, Any]]:
     with _mc_port_lock:
         if not manager.config.get("server_dir"):
             return None
-        port = manager.get_server_port()
+        # Porta su cui il server è in ascolto: cambiata a server acceso, il router passa alla nuova al prossimo avvio
+        port = manager.listening_port()
         now = time.time()
         st = _mc_port_state
         changed = port != st["port"]
         if changed:
-            manager.remember_server_port(port)   # es. porta cambiata nell'editor di server.properties
+            manager.remember_server_port(manager.get_server_port())   # es. porta cambiata nell'editor di server.properties
         res = None
         due = now - st["last_open"] > MC_PORT_REOPEN_SECONDS and now >= st["retry_at"]
         if port in panel_ports():
@@ -1002,7 +1008,7 @@ def build_network_payload() -> Dict[str, Any]:
     local_ip = get_local_ip()
     pub_ip = get_public_ip()
     web_port = _valid_web_port(manager.config.get("web_port", 8080))
-    mc_port = manager.get_server_port()
+    mc_port = manager.listening_port()
     lan_url = f"http://{local_ip}:{web_port}"
 
     r_status = remote_status_payload()
@@ -1168,7 +1174,7 @@ def api_open_browser(req: OpenUrlRequest, request: Request):
 # UPnP Automatic Router Port Forwarding Routes
 @app.get("/api/upnp/status")
 def get_upnp_status(request: Request):
-    mc_port = manager.get_server_port()
+    mc_port = manager.listening_port()
     st = upnp_mgr.get_status(mc_port)
     if is_internet_request(request) and not has_admin_access(request):
         st = {k: v for k, v in st.items() if k != "router_ip"}   # indirizzo del router: solo per chi ha accesso

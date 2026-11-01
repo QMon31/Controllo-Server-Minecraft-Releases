@@ -136,7 +136,7 @@
 
       <button class="sidebar-nav-item" id="snav-changelog" onclick="toggleSidebarDrawer(false); openChangelogModal();">
         <span class="snav-icon info-circle-nav-icon">i</span>
-        <span class="snav-label">Info &amp; Versioni (v4.23.0)</span>
+        <span class="snav-label">Info &amp; Versioni (v4.23.1)</span>
       </button>
 
       <button class="sidebar-nav-item" id="snav-settings" onclick="toggleSidebarDrawer(false); openSettingsModal();">
@@ -2758,7 +2758,7 @@
           <div class="modal-info-circle-badge">i</div>
           <div>
             <h3 style="margin: 0; font-size: 1.15rem; color: #f4f4f5;" data-i18n="ui.informazioni_novita_cronologia_versioni">Informazioni, Novità &amp; Cronologia Versioni</h3>
-            <span id="changelog-header-badge" style="font-size: 0.75rem; color: #8db6e8; font-weight: 600;">Release Ufficiale v4.23.0 (Build 109) &bull; Attiva</span>
+            <span id="changelog-header-badge" style="font-size: 0.75rem; color: #8db6e8; font-weight: 600;">Release Ufficiale v4.23.1 (Build 110) &bull; Attiva</span>
           </div>
         </div>
         <div style="display: flex; gap: 8px; align-items: center;">
@@ -2774,7 +2774,7 @@
             <div class="row-center">
               <span style="font-size: 1.1rem;"></span>
               <span style="font-size: 0.92rem; font-weight: 700; color: #f4f4f5;" data-i18n="ui.diagnostica_specifiche_sistema">Diagnostica &amp; Specifiche di Sistema</span>
-              <span id="sys-release-badge" class="badge badge-emerald" style="font-size: 0.7rem;">v4.23.0 (Build 109)</span>
+              <span id="sys-release-badge" class="badge badge-emerald" style="font-size: 0.7rem;">v4.23.1 (Build 110)</span>
               <button class="btn btn-xs btn-secondary" onclick="checkPcUpdate(true)" title="Verifica la disponibilità di una nuova versione del programma PC" data-i18n-title="ui.verifica_disponibilita_nuova_versione_programma" data-i18n="ui.controlla_aggiornamenti_programma">Controlla aggiornamenti programma</button>
             </div>
             <div style="display: flex; gap: 6px;">
@@ -2827,7 +2827,7 @@
         <!-- SEZIONE 1: ULTIME NOVITÀ -->
         <h4 style="margin: 0 0 10px; color: #f4f4f5; font-size: 1rem; display: flex; align-items: center; gap: 8px;">
           <span></span>
-          <span>Novità Ultimo Aggiornamento (PC v4.23.0 - Build 109 &bull; App v4.13.4 - Build 110):</span>
+          <span>Novità Ultimo Aggiornamento (PC v4.23.1 - Build 110 &bull; App v4.13.4 - Build 110):</span>
         </h4>
 
         <!-- SOTTOSEZIONE: PC (Visibile solo su PC o in modalità Tutti) -->
@@ -2837,6 +2837,8 @@
             <span data-i18n="ui.novita_pc_server_pannello_desktop">NOVITÀ PER PC (Server &amp; Pannello Desktop):</span>
           </h5>
           <ul style="margin: 0; padding-left: 20px; font-size: 0.85rem; color: #e7e7e9; display: flex; flex-direction: column; gap: 8px;">
+            <li><b><span data-i18n="notes.correzioni">Correzioni</span> (v4.23.1)</b><span data-i18n="notes.correzioni_pc_4231">: arresto senza il comando stop (server avviato fuori dal pannello con RCON spento) annullato invece di chiudere Java senza salvare il mondo, anche dalla Modalità Eco e dal riavvio programmato; server avviato fuori dal pannello agganciato del tutto (console, crash con notifica e riavvio automatico); whitelist, ban e comandi della chat dicono quando il comando non arriva al server; l'Anti-Lag non scatta più appena il server riparte dopo un crash; porta cambiata a server acceso: router e indirizzo restano su quella in uso fino al riavvio; Riavvia premuto due volte non fa partire due riavvii; script di avvio con variabili (set RAM=6G) avviati correttamente.</span></li>
+            <li><b><span data-i18n="notes.correzioni">Correzioni</span> (v4.23.1)</b><span data-i18n="notes.correzioni_pc_4231_b">: il custode della Modalità Eco accende il server solo per un nome di giocatore valido; avviso «Ripristino completato» invece di «Backup completato»; Spazio su disco conta il mondo anche con un nome diverso da world; chat dei server Paper riagganciati; fine avvio riconosciuta su Minecraft 1.12 in italiano; lo Store installa solo in mods/ o plugins/.</span></li>
             <li><b><span data-i18n="notes.novita">Novità</span> (v4.23.0)</b><span data-i18n="notes.novita_pc_4230">: Modalità Eco con custode: con il server spento per risparmio, quando un giocatore prova a entrare il server si accende da solo; giocatori Bedrock (Geyser/Floodgate) riconosciuti all'ingresso, all'uscita e in chat; avvio senza Java con un messaggio chiaro.</span></li>
             <li><b><span data-i18n="notes.correzioni">Correzioni</span> (v4.23.0)</b><span data-i18n="notes.correzioni_pc_4230">: protezione dai crash ripetuti su 15 minuti; un server riagganciato dal pannello ha notifica, conteggio e riavvio automatico dopo un crash e /stop non conta più come crash; il riavvio programmato con avviso si annulla davvero con Arresta; la RAM dei nuovi server non supera quella del PC; la porta di Minecraft sul router resta ricordata; mod doppie riconosciute dall'ID; Java aggiornata trovata subito; i grafici delle ultime 24 ore coprono davvero 24 ore; un ripristino annullato risulta in corso finché il mondo non è rimesso a posto; dopo l'arresto il pannello non torna ONLINE per qualche secondo; sezione Giocatori più leggibile.</span></li>
             <li><b><span data-i18n="notes.sicurezza">Sicurezza</span> (v4.23.0)</b><span data-i18n="notes.sicurezza_pc_4230">: un titolo di mod nello Store non può più eseguire codice nel pannello; il Launcher apre nel browser solo pagine web; senza PIN chat, errori della console e ultimo crash non si leggono più (nemmeno da internet); telefono e PC Remoti riconoscono il PC Host con una prova segreta, così su un Wi-Fi esterno un pannello finto non riceve più il PIN; il PC Remoto non scambia più la rete di un bar per la rete di casa e lascia la pagina quando cambia rete.</span></li>

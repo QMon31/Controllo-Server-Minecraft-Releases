@@ -23,8 +23,9 @@ VERSION_NAME = "In pausa"
 MAX_PACKET = 32 * 1024          # i pacchetti del client in questa fase sono piccoli
 CLIENT_TIMEOUT = 5.0
 MAX_CLIENTS = 32                # connessioni contemporanee: la porta è raggiungibile anche da internet
-# Nome di un giocatore di Minecraft: arriva dal client e finisce nella console del pannello e nella notifica
-_VALID_NAME = re.compile(r"^[A-Za-z0-9_]{1,16}$")
+# Nome di un giocatore di Minecraft (stessa regola del server: caratteri stampabili senza spazi, anche dai launcher
+# senza account): arriva dal client e finisce nella console del pannello e nella notifica, mai con un "a capo"
+_VALID_NAME = re.compile(r"^[!-~]{1,16}$")
 
 
 def _pack_varint(val: int) -> bytes:
@@ -227,11 +228,13 @@ class EcoWakeListener:
                         name, _ = _read_string_buf(payload, 0)
                 except (OSError, ValueError, ConnectionError, IndexError):
                     pass
-                if not _VALID_NAME.match(name):
-                    name = "?"   # prima qualunque testo, anche con "a capo", finiva nella console del pannello
                 with self._wake_lock:
                     if self.woken:
                         text = STARTING_TEXT
+                    elif not _VALID_NAME.match(name):
+                        # Nessun nome valido: non è il gioco ma un programma che scansiona internet. Prima accendeva
+                        # il server (e il suo testo, anche con "a capo", finiva nella console del pannello)
+                        text = BLOCKED_TEXT
                     else:
                         text, wake = self.on_login(name)
                         self.woken = bool(wake)

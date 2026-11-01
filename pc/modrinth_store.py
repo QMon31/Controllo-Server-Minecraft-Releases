@@ -491,6 +491,9 @@ def install_modrinth_project(
         return {"success": False, "error": "Cartella del server non trovata."}
 
     # Decide target folder: if server_type or loader is paper/spigot/purpur -> plugins, else mods
+    # Solo mods o plugins: prima "../.." metteva il .jar fuori dalla cartella del server
+    if target_subdir not in ("mods", "plugins"):
+        target_subdir = ""
     if not target_subdir:
         if (loader or "").lower() in ["paper", "spigot", "purpur", "bukkit", "plugin"]:
             target_subdir = "plugins"

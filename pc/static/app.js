@@ -3909,8 +3909,13 @@ function startBackupPolling() {
           stopBackupPolling();
           if (bData.percent === 100 && bData.completed_at && bData.completed_at !== window._lastWebNotifiedBackup) {
             window._lastWebNotifiedBackup = bData.completed_at;
-            showToast(t('msg.backup_server_completato_successo', formatSizeHuman(bData.processed_mb)), 'success');
-            if (window.Notification && Notification.permission === 'granted') {
+            // Anche alla fine di un ripristino: prima compariva "Backup completato"
+            if (bData.operation === 'restore') {
+              showToast(t('msg.ripristino_completato_successo'), 'success');
+            } else {
+              showToast(t('msg.backup_server_completato_successo', formatSizeHuman(bData.processed_mb)), 'success');
+            }
+            if (bData.operation !== 'restore' && window.Notification && Notification.permission === 'granted') {
               try {
                 new Notification(t('msg.backup_server_completato'), {
                   body: t('msg.backup_terminato_successo', formatSizeHuman(bData.processed_mb)),

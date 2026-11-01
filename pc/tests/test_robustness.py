@@ -1134,6 +1134,21 @@ class PaperConsoleTest(unittest.TestCase):
         m.talk_to_server("riavvia")
         m.restart_server.assert_called_once()
 
+    def test_chat_shortcuts_report_command_not_sent(self):
+        # Server acceso ma comando non partito (RCON spento): prima la chat rispondeva "Orario impostato su giorno."
+        m = self.m
+        m.process = mock.Mock(poll=lambda: None, stdin=None)
+        m.send_command = lambda c: {"status": "error", "message": "RCON non risponde."}
+        for text in ("giorno", "salva", "/difficulty hard"):
+            reply = m.talk_to_server(text)["item"]["reply"]
+            self.assertEqual(reply, "Comando non inviato: RCON non risponde.", text)
+        m.send_command = lambda c: {"status": "success"}
+        self.assertEqual(m.talk_to_server("giorno")["item"]["reply"], "Orario impostato su giorno.")
+        self.assertEqual(m.talk_to_server("/difficulty hard")["item"]["reply"], "Comando '/difficulty hard' inviato al server.")
+        m.process = None
+        m.psutil_proc = None
+        self.assertEqual(m.talk_to_server("notte")["item"]["reply"], "Server offline: comando non inviato.")
+
     def test_ram_change_keeps_other_forge_jvm_options(self):
         m = self.m
         d = tempfile.mkdtemp()
@@ -1156,6 +1171,72 @@ class PaperConsoleTest(unittest.TestCase):
         self.assertNotIn("UseG1GC", text)
         self.assertEqual(text.count("generata da Voxarium"), 1)
 
+    def test_storage_counts_world_with_custom_level_name(self):
+        # level-name=survival: prima il mondo finiva in "Altro" e "Mondo" segnava 0 MB
+        m = self.m
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d, True)
+        for rel in ("survival/region/r.0.0.mca", "survival_nether/DIM-1/r.mca", "server.jar"):
+            os.makedirs(os.path.dirname(os.path.join(d, rel)) or d, exist_ok=True)
+            with open(os.path.join(d, rel), "wb") as f:
+                f.write(b"x" * (1024 * 1024))
+        with open(os.path.join(d, "server.properties"), "w", encoding="utf-8") as f:
+            f.write("level-name=survival\n")
+        m.config["server_dir"] = d
+        self.assertEqual(m.get_storage_breakdown()["world_mb"], 2.0)
+
+    def test_port_changed_while_online_applies_after_restart(self):
+        # Prima ping e router passavano subito alla porta nuova, con Minecraft ancora su quella vecchia
+        m = self.m
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d, True)
+        with open(os.path.join(d, "server.properties"), "w", encoding="utf-8") as f:
+            f.write("server-port=25565\n")
+        m.config["server_dir"] = d
+        proc = mock.Mock(pid=1, is_running=lambda: True, create_time=lambda: 1.0)
+        with mock.patch.object(m, "_start_log_tailing"), mock.patch("server_manager.threading.Thread"):
+            m._attach_running_process(proc)
+        m.write_port_to_properties(d, 25570)
+        self.assertEqual(m.get_server_port(), 25570)
+        self.assertEqual(m.listening_port(), 25565)
+        m.state = "STOPPED"
+        self.assertEqual(m.listening_port(), 25570)
+
+    def test_second_restart_during_countdown_does_not_start_another(self):
+        m = self.m
+        threads = []
+        m.process, m.psutil_proc = mock.Mock(poll=lambda: None), None
+        m.state, m.scheduled_restart_in_progress = "ONLINE", False
+        with mock.patch("server_manager.threading.Thread", side_effect=lambda **k: threads.append(k) or mock.Mock()):
+            m.restart_server(reason="Riavvio", warning_countdown=10)
+            res = m.restart_server(reason="Riavvio", warning_countdown=10)
+            self.assertEqual(len(threads), 1)
+            self.assertEqual(res["message"], "Riavvio già in corso.")
+            # In RESTARTING il riavvio sta già partendo: il flag non resta acceso per l'arresto successivo
+            m.scheduled_restart_in_progress, m.state = False, "RESTARTING"
+            m.restart_server()
+            self.assertFalse(m.scheduled_restart_in_progress)
+            # Durante un arresto lo trasforma in riavvio, senza un secondo arresto
+            m.state = "STOPPING"
+            m.restart_server()
+            self.assertTrue(m.scheduled_restart_in_progress)
+            self.assertEqual(len(threads), 1)
+
+    def test_paper_async_chat_from_latest_log(self):
+        m = self.m
+        m._parse_log_line("[19:30:05] [Async Chat Thread - #0/INFO]: <Notch> ciao da Paper")
+        self.assertEqual(list(m.chat_messages)[-1]["text"], "ciao da Paper")
+        # Il nome del thread non si può falsare dalla chat: l'intestazione resta legata all'inizio della riga
+        m._parse_log_line("[19:30:06] [Server thread/INFO]: <Eve> [Async Chat Thread - #0/INFO]: Bob joined the game")
+        self.assertNotIn("Bob", m.players)
+
+    def test_ready_line_with_comma_decimal(self):
+        # Minecraft 1.12 su un PC in italiano: "Done (12,345s)!" non veniva riconosciuto
+        m = self.m
+        m.state = "STARTING"
+        m._parse_log_line('[19:30:00] [Server thread/INFO]: Done (12,345s)! For help, type "help" or "?"')
+        self.assertEqual(m.state, "ONLINE")
+
     def test_clean_logs_without_server(self):
         self.m.config["server_dir"] = ""
         self.assertEqual(self.m.clean_old_logs()["status"], "error")
@@ -1174,6 +1255,31 @@ class PaperConsoleTest(unittest.TestCase):
             m._graceful_stop_worker("Riavvio programmato")
             self.assertEqual(m.state, "RESTARTING")
 
+    def test_stop_not_delivered_keeps_server_running(self):
+        # Server riagganciato con RCON spento: prima dopo 180 s Java veniva chiuso a forza senza salvare il mondo
+        m = self.m
+        proc = mock.Mock(is_running=lambda: True, children=lambda recursive=False: [])
+        m.process, m.psutil_proc = None, proc
+        m.send_command = lambda c: {"status": "error", "message": "RCON non risponde."}
+        m.STOP_TIMEOUT_SECONDS, m.STOP_CONFIRM_SECONDS = 0, 2
+        m._mc_stop_seen = False
+        m.eco_sleeping = m.config["eco_sleeping"] = "C:/srv"
+        with mock.patch("server_manager.time.sleep"):
+            m.state, m.scheduled_restart_in_progress, m.intentional_stop = "ONLINE", True, True
+            m._graceful_stop_worker("Spegnimento automatico Modalità Eco")
+        proc.kill.assert_not_called()
+        self.assertEqual(m.state, "ONLINE")
+        self.assertIs(m.psutil_proc, proc)
+        self.assertFalse(m.scheduled_restart_in_progress or m.intentional_stop or m.eco_sleeping)
+        self.assertNotIn("eco_sleeping", m.config)
+        self.assertIn("RCON non risponde.", list(m.log_buffer)[-1])
+        # Risposta RCON persa ma Minecraft ha scritto "Stopping server": l'arresto prosegue
+        m._mc_stop_seen = True
+        with mock.patch("server_manager.time.sleep"):
+            m._graceful_stop_worker("Arresto")
+        proc.kill.assert_called_once()
+        self.assertEqual(m.state, "STOPPED")
+
     def test_eco_stop_is_intentional(self):
         m = self.m
         started = []
@@ -1188,6 +1294,26 @@ class PaperConsoleTest(unittest.TestCase):
             m._ticker_step({"query_counter": 0})
         self.assertTrue(m.intentional_stop)
         self.assertTrue(started)
+
+    def test_anti_lag_does_not_fire_right_after_restart(self):
+        # Crash per lag: prima TPS bassi e inizio del calo restavano e l'Anti-Lag puliva subito dopo il riavvio
+        m = self.m
+        sent = []
+        m.send_command = lambda c: sent.append(c) or {"status": "success"}
+        m.send_push_notification = lambda **k: None
+        m._record_metrics_snapshot = lambda: None
+        m.eco_mode_enabled = m.scheduled_enabled = False
+        m.anti_lag_enabled = m.anti_lag_auto_clean = True
+        m._last_lag_alert_time = 0.0
+        m.current_tps, m.last_tps_drop_time = 6.0, time.time() - 120
+        m.low_tps_start_time = time.time() - 120
+        st = {"query_counter": -100}
+        m.state = "CRASHED"
+        m._ticker_step(st)
+        m.state = "ONLINE"
+        m._ticker_step(st)
+        self.assertNotIn("kill @e[type=item]", sent)
+        self.assertEqual(m.get_current_tps(), 20.0)
 
     def test_join_chat_leave_and_errors(self):
         m = self.m
